@@ -4,12 +4,14 @@ import type { TransformValues } from '../types/role';
 
 interface ShortcutActions {
   hasSelection: boolean;
+  canGroupSelected: boolean;
   editValues: TransformValues;
   undo(): void;
   redo(): void;
   copy(): void;
   paste(): void;
   selectAll(): void;
+  groupSelected(): void;
   deleteSelected(): void;
   clearSelection(): void;
   moveSelectedToBoundary(boundary: 'top' | 'bottom'): void;
@@ -64,6 +66,12 @@ export function useKeyboardShortcuts(actions: ShortcutActions) {
           case 'a':
             event.preventDefault();
             actions.selectAll();
+            return;
+          case 'g':
+            if (actions.canGroupSelected) {
+              event.preventDefault();
+              actions.groupSelected();
+            }
             return;
           default:
             return;

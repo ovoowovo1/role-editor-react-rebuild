@@ -106,11 +106,25 @@ export const optionById: Record<string, PartOption> = Object.fromEntries(
 );
 
 export const camps: CampOption[] = [
-  { code: 'camp1', name: 'Revolution', accent: '#31d6ff' },
-  { code: 'camp2', name: 'Empire', accent: '#ff7171' },
-  { code: 'camp3', name: 'Frontier', accent: '#8ef28a' },
-  { code: 'camp4', name: 'Campless', accent: '#facc15' }
+  { code: 'skydow', name: '天影十字軍', accent: '#31d6ff' },
+  { code: 'royal', name: '皇家騎士團', accent: '#ff7171' },
+  { code: 'third', name: '第三勢力', accent: '#8ef28a' },
+  { code: 'civil', name: '無關陣營', accent: '#facc15' }
 ];
+
+const legacyCampCodeMap: Record<string, string> = {
+  camp1: 'skydow',
+  camp2: 'royal',
+  camp3: 'third',
+  camp4: 'civil'
+};
+
+export function normalizeCampCode(raw: string | null | undefined): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const code = raw.trim();
+  if (!code) return undefined;
+  return legacyCampCodeMap[code] ?? code;
+}
 
 export const genders: { code: GenderCode; name: string }[] = [
   { code: 'male', name: 'Male' },

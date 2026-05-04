@@ -1,5 +1,5 @@
 import { gzip, ungzip } from 'pako';
-import { createDefaultRole, findOptionByCode, partOptions } from '../mock/options';
+import { createDefaultRole, findOptionByCode, normalizeCampCode, partOptions } from '../mock/options';
 import type {
   BodyPartTab,
   DecorationGroup,
@@ -387,7 +387,8 @@ function getLegacyDecoList(config: any): unknown[] {
 }
 
 function normalizeRoleDocument(rawRole: Partial<RoleDocument> & any, envelope?: any): RoleDocument {
-  const base = createDefaultRole(rawRole.camp, normalizeGender(rawRole.gender));
+  const normalizedCamp = normalizeCampCode(rawRole.camp);
+  const base = createDefaultRole(normalizedCamp, normalizeGender(rawRole.gender));
   const partFrames = { ...defaultPartFrames(), ...(rawRole.partFrames ?? {}) } as RolePartFrames;
   const partScales = { ...defaultPartScales(), ...(rawRole.partScales ?? {}) } as RolePartScales;
   const parts = { ...base.parts, ...(rawRole.parts ?? {}) };
@@ -413,7 +414,7 @@ function normalizeRoleDocument(rawRole: Partial<RoleDocument> & any, envelope?: 
     ...base,
     ...rawRole,
     schemaVersion: 1,
-    camp: String(rawRole.camp ?? base.camp),
+    camp: String(normalizedCamp ?? base.camp),
     gender: normalizeGender(rawRole.gender, base.gender),
     parts,
     partFrames,
@@ -430,7 +431,7 @@ function normalizeRoleDocument(rawRole: Partial<RoleDocument> & any, envelope?: 
 function convertLegacyRole(raw: any, envelope?: any): RoleDocument {
   const defaultRole = extractDefaultRole(raw);
   const campRaw = defaultRole?.defaultCamp?.code ?? defaultRole?.camp?.code ?? defaultRole?.defaultCamp ?? defaultRole?.camp;
-  const camp = typeof campRaw === 'string' && campRaw.trim() ? campRaw : undefined;
+  const camp = normalizeCampCode(campRaw);
   const gender = normalizeGender(defaultRole?.female ?? defaultRole?.gender ?? raw?.female ?? raw?.gender);
   const base = createDefaultRole(camp, gender);
   const config = extractConfig(raw) ?? {};

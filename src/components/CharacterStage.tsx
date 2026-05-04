@@ -17,6 +17,7 @@ interface CharacterStageProps {
   role: RoleDocument;
   selectedIds: string[];
   stageScale: number;
+  facingQuarterTurns: number;
   onSelectDecoration(id: string, additive: boolean): void;
   onClearSelection(): void;
   onUpdateDecoration(id: string, patch: Partial<DecorationLayer>, commit?: boolean): void;
@@ -242,6 +243,7 @@ export function CharacterStage({
   role,
   selectedIds,
   stageScale,
+  facingQuarterTurns,
   onSelectDecoration,
   onClearSelection,
   onUpdateDecoration,
@@ -314,6 +316,7 @@ export function CharacterStage({
 
       const actorStage = new Container();
       actorStage.scale.set(stageScale);
+      actorStage.rotation = (((facingQuarterTurns % 4) + 4) % 4) * (Math.PI / 2);
       stage.addChild(actorStage);
 
       const actorClipRoot = new Container();
@@ -422,7 +425,7 @@ export function CharacterStage({
       stageTeardownRef.current?.();
       stageTeardownRef.current = null;
     };
-  }, [role, selectedIds, stageScale, onBeginTransient, onClearSelection, onCommitTransient, onSelectDecoration, onUpdateDecoration]);
+  }, [role, selectedIds, stageScale, facingQuarterTurns, onBeginTransient, onClearSelection, onCommitTransient, onSelectDecoration, onUpdateDecoration]);
 
   return (
     <section className="stage-panel">

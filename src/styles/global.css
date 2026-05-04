@@ -123,7 +123,7 @@ input:disabled {
 
 .primary-button,
 .icon-actions button,
-.tool-row button,
+.edit-action-row button,
 .stage-control-row button {
   min-height: 34px;
   padding: 7px 13px;
@@ -136,7 +136,7 @@ input:disabled {
 
 .primary-button:hover,
 .icon-actions button:hover,
-.tool-row button:hover,
+.edit-action-row button:hover,
 .stage-control-row button:hover {
   filter: brightness(1.16);
 }
@@ -156,6 +156,14 @@ input:disabled {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.16);
   font-size: 22px;
+}
+
+.icon-actions .menu-shortcuts {
+  min-width: 72px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
 }
 
 .menu-spacer {
@@ -452,7 +460,60 @@ input:disabled {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.tool-row,
+.tool-row {
+  display: flex;
+  align-items: center;
+}
+
+.tool-row .tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.tool-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 32px;
+  padding: 2px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(238, 252, 255, 0.92);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.tool-icon-btn:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tool-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.tool-icon-btn .material-icons {
+  font-family: 'Material Icons', serif;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.tool-icon-btn.tool-icon-face .face-mat-icon {
+  transform: rotate(-90deg);
+}
+
+.layer-delete {
+  background: rgba(255, 92, 92, 0.88);
+}
+
 .stage-control-row {
   display: flex;
   flex-wrap: wrap;
@@ -460,15 +521,115 @@ input:disabled {
   gap: 8px;
 }
 
-.tool-row button {
-  min-height: 30px;
-  padding: 5px 10px;
-  background: rgba(255, 255, 255, 0.11);
+.shortcut-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.56);
+  backdrop-filter: blur(2px);
 }
 
-.tool-row button.danger,
-.layer-delete {
-  background: rgba(255, 92, 92, 0.88);
+.shortcut-modal {
+  width: min(720px, 92vw);
+  max-height: min(650px, 86vh);
+  padding: 16px;
+  overflow: hidden;
+  border: 2px solid rgba(232, 251, 255, 0.72);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #053242, #06101a);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7), inset 0 0 38px rgba(53, 208, 255, 0.1);
+}
+
+.shortcut-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: #e8fbff;
+  font-size: 15px;
+}
+
+.shortcut-header div {
+  display: grid;
+  gap: 3px;
+}
+
+.shortcut-header span {
+  display: block;
+  color: #9bddea;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.shortcut-close {
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+}
+
+.shortcut-close:hover {
+  filter: brightness(1.16);
+}
+
+.shortcut-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  max-height: calc(min(650px, 86vh) - 92px);
+  margin: 0;
+  overflow: auto;
+  padding: 2px 6px 2px 0;
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(128px, 0.95fr) minmax(150px, 1.2fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  color: #d7f7ff;
+  font-size: 13px;
+}
+
+.shortcut-row dt,
+.shortcut-row dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.shortcut-row dd {
+  color: #eefcff;
+}
+
+.shortcut-key-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.shortcut-plus {
+  color: rgba(215, 247, 255, 0.72);
+}
+
+.shortcut-row kbd {
+  display: inline-block;
+  min-width: 24px;
+  padding: 2px 6px 3px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .range-root {

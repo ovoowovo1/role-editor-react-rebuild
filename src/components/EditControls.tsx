@@ -3,7 +3,6 @@ import type { TransformValues } from '../types/role';
 interface EditControlsProps {
   disabled: boolean;
   editValues: TransformValues;
-  clipboardCount: number;
   selectedCount: number;
   stageScale: number;
   positionRange: number;
@@ -16,13 +15,9 @@ interface EditControlsProps {
   onCommitTransient(): void;
   onTransformChange(patch: Partial<TransformValues>, commit?: boolean): void;
   onFlip(): void;
-  onShow(): void;
-  onHide(): void;
-  onDelete(): void;
-  onCopy(): void;
-  onPaste(): void;
-  onMoveTop(): void;
-  onMoveBottom(): void;
+  onMirrorCopyHorizontal(): void;
+  onMirrorCopyVertical(): void;
+  onFaceRotate(): void;
   onStageScaleChange(scale: number): void;
 }
 
@@ -80,7 +75,6 @@ function RangeControl({ label, value, min, max, step, disabled, hint, onBegin, o
 export function EditControls({
   disabled,
   editValues,
-  clipboardCount,
   selectedCount,
   stageScale,
   positionRange,
@@ -92,43 +86,70 @@ export function EditControls({
   onCommitTransient,
   onTransformChange,
   onFlip,
-  onShow,
-  onHide,
-  onDelete,
-  onCopy,
-  onPaste,
-  onMoveTop,
-  onMoveBottom,
+  onMirrorCopyHorizontal,
+  onMirrorCopyVertical,
+  onFaceRotate,
   onStageScaleChange
 }: EditControlsProps) {
   const pr = Math.max(1, positionRange);
   return (
     <section className={`edit-function ${disabled ? 'disabled' : ''}`} aria-label="Edit controls">
-      <div className="tool-row">
-        <button type="button" disabled={disabled} onClick={onFlip} title="Flip selected layer horizontally">
-          Flip
-        </button>
-        <button type="button" disabled={disabled} onClick={onShow} title="Show selected layers">
-          Show
-        </button>
-        <button type="button" disabled={disabled} onClick={onHide} title="Hide selected layers">
-          Hide
-        </button>
-        <button type="button" disabled={disabled} onClick={onMoveTop} title="Move selected layers to top">
-          Top
-        </button>
-        <button type="button" disabled={disabled} onClick={onMoveBottom} title="Move selected layers to bottom">
-          Bottom
-        </button>
-        <button type="button" disabled={disabled} onClick={onCopy} title="Copy selected layers">
-          Copy
-        </button>
-        <button type="button" disabled={!clipboardCount} onClick={onPaste} title="Paste copied layers">
-          Paste{clipboardCount ? ` (${clipboardCount})` : ''}
-        </button>
-        <button type="button" className="danger" disabled={disabled} onClick={onDelete} title="Delete selected layers">
-          Delete
-        </button>
+      <div className="tool-row" aria-label="Icon toolbar">
+        <div className="tool">
+          <button type="button" disabled className="tool-icon-btn" aria-label="Touch mode（尚未啟用）" title="Touch mode">
+            <span className="material-icons" aria-hidden="true">
+              touch_app
+            </span>
+          </button>
+          <button
+            type="button"
+            className="tool-icon-btn"
+            disabled={disabled}
+            onClick={onFlip}
+            aria-label="水平翻轉"
+            title="水平翻轉"
+          >
+            <span className="material-icons" aria-hidden="true">
+              flip
+            </span>
+          </button>
+          <button
+            type="button"
+            className="tool-icon-btn"
+            disabled={disabled}
+            onClick={onMirrorCopyHorizontal}
+            aria-label="Mirror Copy Horizontal (左右鏡像)"
+            title="Mirror Copy Horizontal (左右鏡像)"
+          >
+            <span className="material-icons" aria-hidden="true">
+              swap_horiz
+            </span>
+          </button>
+          <button
+            type="button"
+            className="tool-icon-btn"
+            disabled={disabled}
+            onClick={onMirrorCopyVertical}
+            aria-label="Mirror Copy Vertical (上下鏡像)"
+            title="Mirror Copy Vertical (上下鏡像)"
+          >
+            <span className="material-icons" aria-hidden="true">
+              swap_vert
+            </span>
+          </button>
+          <button
+            type="button"
+            className="tool-icon-btn tool-icon-face"
+            disabled={disabled}
+            onClick={onFaceRotate}
+            aria-label="Face（對齊舊版占位）"
+            title="Face"
+          >
+            <span className="material-icons face-mat-icon" aria-hidden="true">
+              face
+            </span>
+          </button>
+        </div>
       </div>
 
       <div className="range-root">

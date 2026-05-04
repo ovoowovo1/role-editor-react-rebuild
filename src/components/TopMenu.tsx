@@ -17,6 +17,7 @@ interface TopMenuProps {
   onRedo(): void;
   onCampChange(camp: string): void;
   onGenderChange(gender: GenderCode): void;
+  onOpenShortcuts(): void;
 }
 
 export function TopMenu({
@@ -33,7 +34,8 @@ export function TopMenu({
   onUndo,
   onRedo,
   onCampChange,
-  onGenderChange
+  onGenderChange,
+  onOpenShortcuts
 }: TopMenuProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -74,6 +76,9 @@ export function TopMenu({
         </button>
         <button type="button" title="Redo (Ctrl+Y)" disabled={!canRedo} onClick={onRedo}>
           ↷
+        </button>
+        <button type="button" className="menu-shortcuts" title="角色編輯器常用快捷鍵" onClick={onOpenShortcuts}>
+          快捷鍵
         </button>
       </div>
 

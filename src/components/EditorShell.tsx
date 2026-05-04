@@ -6,6 +6,7 @@ import { LayerList } from './LayerList';
 import { TabBar } from './TabBar';
 import { TitleBar } from './TitleBar';
 import { TopMenu } from './TopMenu';
+import { ShortcutHelpModal } from './ShortcutHelpModal';
 import { optionById, partOptions, tabLabels } from '../mock/options';
 import { downloadBlob } from '../lib/math';
 import { createRoleJsonBlob, createTwroleBlob, parseRoleFile, roleToEnvelope } from '../lib/roleSerialization';
@@ -15,6 +16,8 @@ import { useRoleEditor } from '../hooks/useRoleEditor';
 export function EditorShell() {
   const editor = useRoleEditor();
   const [status, setStatus] = useState('Ready');
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [facingQuarterTurns, setFacingQuarterTurns] = useState(0);
 
   const selectedOptionId = useMemo(() => {
     if (editor.selectedTab === 'deco') return editor.selectedDecorations[0]?.assetId;
@@ -24,12 +27,18 @@ export function EditorShell() {
   const shortcutActions = useMemo(
     () => ({
       hasSelection: editor.selectedDecorationIds.length > 0,
+      canGroupSelected: editor.canGroupSelected,
       editValues: editor.editValues,
       undo: editor.undo,
       redo: editor.redo,
       copy: editor.copySelected,
       paste: editor.pasteClipboard,
       selectAll: editor.selectAllDecorations,
+      groupSelected: () => {
+        if (!editor.canGroupSelected) return;
+        editor.groupSelected();
+        setStatus('Created group from selected layers');
+      },
       deleteSelected: editor.deleteSelected,
       clearSelection: editor.clearSelection,
       moveSelectedToBoundary: editor.moveSelectedToBoundary,
@@ -92,6 +101,7 @@ export function EditorShell() {
           onRedo={editor.redo}
           onCampChange={editor.changeCamp}
           onGenderChange={editor.changeGender}
+          onOpenShortcuts={() => setShortcutsOpen(true)}
         />
         <TabBar value={editor.selectedTab} onChange={editor.setSelectedTab} />
 
@@ -115,6 +125,7 @@ export function EditorShell() {
               role={editor.role}
               selectedIds={editor.selectedDecorationIds}
               stageScale={editor.stageScale}
+              facingQuarterTurns={facingQuarterTurns}
               onSelectDecoration={editor.selectDecoration}
               onClearSelection={editor.clearSelection}
               onUpdateDecoration={editor.updateDecoration}
@@ -124,7 +135,6 @@ export function EditorShell() {
             <EditControls
               disabled={!editor.selectedDecorationIds.length}
               selectedCount={editor.selectedDecorationIds.length}
-              clipboardCount={editor.clipboardCount}
               editValues={editor.editValues}
               stageScale={editor.stageScale}
               positionRange={editor.role.positionRange ?? 60}
@@ -136,19 +146,9 @@ export function EditorShell() {
               onCommitTransient={editor.commitTransient}
               onTransformChange={editor.updateSelectedTransform}
               onFlip={editor.flipSelected}
-              onShow={() => editor.setSelectedVisible(true)}
-              onHide={() => editor.setSelectedVisible(false)}
-              onDelete={editor.deleteSelected}
-              onCopy={() => {
-                editor.copySelected();
-                setStatus(`Copied ${editor.selectedDecorationIds.length} layer(s)`);
-              }}
-              onPaste={() => {
-                editor.pasteClipboard();
-                setStatus('Pasted copied layer(s)');
-              }}
-              onMoveTop={() => editor.moveSelectedToBoundary('top')}
-              onMoveBottom={() => editor.moveSelectedToBoundary('bottom')}
+              onMirrorCopyHorizontal={editor.mirrorCopyHorizontalSelected}
+              onMirrorCopyVertical={editor.mirrorCopyVerticalSelected}
+              onFaceRotate={() => setFacingQuarterTurns((turns) => (turns + 1) % 4)}
               onStageScaleChange={editor.setStageScale}
             />
           </section>
@@ -176,6 +176,8 @@ export function EditorShell() {
             onClearSelection={editor.clearSelection}
           />
         </main>
+
+        <ShortcutHelpModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
         <footer className="editor-footer">
           <span>Mock runtime active: CgLibs/Base/TwilightWarsLib/GLT resources are replaced by local adapters.</span>

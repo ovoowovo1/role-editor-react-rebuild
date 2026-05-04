@@ -38,7 +38,7 @@ export const runtimeAdapter: RuntimeResourceAdapter = {
       return tabLabels[tab] ?? key;
     }
     if (key.startsWith('tw.label.')) {
-      const campCode = key.replace('tw.label.', '');
+      const campCode = key.replace('tw.label.', '').replace(/Full$/, '');
       return camps.find((camp) => camp.code === campCode)?.name ?? key;
     }
     return translations[key] ?? key;

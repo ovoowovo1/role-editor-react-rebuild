@@ -566,6 +566,41 @@ export function useRoleEditor() {
     });
   }, [groupSnapshot, groupTransform, selectedDecorationIds, updateRole]);
 
+  /** Vertical mirror: negate scaleY (single) or group parent scaleY (multi). */
+  const flipSelectedVertical = useCallback(() => {
+    if (groupSnapshot && selectedDecorationIds.length > 1) {
+      const nextParent: DecoGroupParentTransform = {
+        ...groupTransform,
+        scaleY: -groupTransform.scaleY
+      };
+      const range = positionRangeFromRole(roleRef.current);
+      const selected = new Set(selectedDecorationIds);
+      updateRole((current) => {
+        current.decorations = current.decorations.map((item) => {
+          if (!selected.has(item.id)) return item;
+          const derived = applyGroupParentToItem(nextParent, groupSnapshot, item.id);
+          if (!derived) return item;
+          return {
+            ...item,
+            x: clamp(derived.x, -range, range),
+            y: clamp(derived.y, -range, range),
+            scaleX: derived.scaleX,
+            scaleY: derived.scaleY,
+            rotation: normalizeDegrees(derived.rotation)
+          };
+        });
+        return current;
+      });
+      setGroupTransform(nextParent);
+      return;
+    }
+    updateRole((current) => {
+      const selected = new Set(selectedDecorationIds);
+      current.decorations = current.decorations.map((item) => (selected.has(item.id) ? { ...item, scaleY: -item.scaleY } : item));
+      return current;
+    });
+  }, [groupSnapshot, groupTransform, selectedDecorationIds, updateRole]);
+
   const setSelectedVisible = useCallback(
     (visible: boolean) => {
       updateRole((current) => {
@@ -635,6 +670,44 @@ export function useRoleEditor() {
       return current;
     });
   }, [clipboard, selectedDecorationIds, updateRole]);
+
+  const mirrorCopyHorizontalSelected = useCallback(() => {
+    if (!selectedDecorationIds.length) return;
+    updateRole((current) => {
+      const selected = current.decorations.filter((item) => selectedDecorationIds.includes(item.id));
+      if (!selected.length) return current;
+      const insertIndex = insertAfterSelection(current, selectedDecorationIds);
+      const mirrored = selected.map((item) => ({
+        ...item,
+        id: createId('deco'),
+        x: -item.x,
+        scaleX: -item.scaleX
+      }));
+      shiftHeadLayerForInsert(current, insertIndex, mirrored.length);
+      current.decorations = [...current.decorations.slice(0, insertIndex), ...mirrored, ...current.decorations.slice(insertIndex)];
+      window.setTimeout(() => setSelectedDecorationIds(mirrored.map((item) => item.id)), 0);
+      return current;
+    });
+  }, [selectedDecorationIds, updateRole]);
+
+  const mirrorCopyVerticalSelected = useCallback(() => {
+    if (!selectedDecorationIds.length) return;
+    updateRole((current) => {
+      const selected = current.decorations.filter((item) => selectedDecorationIds.includes(item.id));
+      if (!selected.length) return current;
+      const insertIndex = insertAfterSelection(current, selectedDecorationIds);
+      const mirrored = selected.map((item) => ({
+        ...item,
+        id: createId('deco'),
+        y: -item.y,
+        scaleY: -item.scaleY
+      }));
+      shiftHeadLayerForInsert(current, insertIndex, mirrored.length);
+      current.decorations = [...current.decorations.slice(0, insertIndex), ...mirrored, ...current.decorations.slice(insertIndex)];
+      window.setTimeout(() => setSelectedDecorationIds(mirrored.map((item) => item.id)), 0);
+      return current;
+    });
+  }, [selectedDecorationIds, updateRole]);
 
   const reorderDecorations = useCallback(
     (activeRowId: string, overRowId: string) => {
@@ -856,6 +929,7 @@ export function useRoleEditor() {
     scaleSelectedBy,
     ratioSelectedBy,
     flipSelected,
+    flipSelectedVertical,
     setSelectedVisible,
     toggleDecorationVisibility,
     selectGroup,
@@ -867,6 +941,8 @@ export function useRoleEditor() {
     deleteSelected,
     copySelected,
     pasteClipboard,
+    mirrorCopyHorizontalSelected,
+    mirrorCopyVerticalSelected,
     reorderDecorations,
     moveSelectedToBoundary,
     changeCamp,
