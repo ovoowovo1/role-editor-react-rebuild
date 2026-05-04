@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { camps, createDefaultRole, findOptionByCode, optionById, partOptions } from '../mock/options';
+import { camps, createDefaultRole, filterPartOptionsByCamp, findOptionByCode, optionById, partOptions } from '../mock/options';
 import type { BodyPartTab, DecorationGroup, DecorationLayer, EditorClipboardItem, GenderCode, PartOption, PartTab, RoleDocument, TransformValues } from '../types/role';
 import { clamp, clampToDisc, createId, moveBlock, normalizeDegrees, round } from '../lib/math';
 import { getPartFrame } from '../lib/twlibPartRuntime';
@@ -215,6 +215,16 @@ export function useRoleEditor() {
   }, [role.decorations]);
 
   const selectedDecorations = useMemo(() => orderedSelectedDecorations(role, selectedDecorationIds), [role, selectedDecorationIds]);
+  const visibleOptionsByTab = useMemo(
+    () => ({
+      deco: filterPartOptionsByCamp('deco', role.camp),
+      head: filterPartOptionsByCamp('head', role.camp),
+      hand: filterPartOptionsByCamp('hand', role.camp),
+      foot: filterPartOptionsByCamp('foot', role.camp),
+      cape: filterPartOptionsByCamp('cape', role.camp)
+    }),
+    [role.camp]
+  );
   const groupMap = useMemo(() => makeGroupMap(role.groups ?? []), [role.groups]);
   const canGroupSelected = useMemo(
     () => ungroupedSelectedIds(role, selectedDecorationIds).length >= 2,
@@ -899,6 +909,7 @@ export function useRoleEditor() {
     setSelectedTab,
     selectedDecorationIds,
     selectedDecorations,
+    visibleOptionsByTab,
     groups: role.groups ?? [],
     groupMap,
     canGroupSelected,

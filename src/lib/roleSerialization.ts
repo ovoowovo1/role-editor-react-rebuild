@@ -524,9 +524,7 @@ function tryDecodeBase64(text: string): Uint8Array | null {
   }
 }
 
-export async function parseRoleFile(file: File): Promise<ImportResult> {
-  const buffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
+export function parseRoleBytes(bytes: Uint8Array): ImportResult {
   let raw: unknown | null = null;
 
   if (bytes.length > 2 && bytes[0] === TWROLE_HEADER[0] && bytes[1] === TWROLE_HEADER[1]) {
@@ -562,6 +560,48 @@ export async function parseRoleFile(file: File): Promise<ImportResult> {
   }
 
   return normalizeImportedRole(raw);
+}
+
+export async function parseRoleFile(file: File): Promise<ImportResult> {
+  const buffer = await file.arrayBuffer();
+  return parseRoleBytes(new Uint8Array(buffer));
+}
+
+type WorkerRequest = { type: 'parse-role'; bytes: ArrayBuffer };
+type WorkerSuccess = { type: 'parse-role-ok'; result: ImportResult };
+type WorkerFailure = { type: 'parse-role-error'; error: string };
+type WorkerResponse = WorkerSuccess | WorkerFailure;
+
+export async function parseRoleFileInWorker(file: File): Promise<ImportResult> {
+  const bytes = await file.arrayBuffer();
+  return new Promise<ImportResult>((resolve, reject) => {
+    let worker: Worker | null = null;
+    try {
+      worker = new Worker(new URL('../workers/roleImportWorker.ts', import.meta.url), { type: 'module' });
+      const cleanup = () => {
+        worker?.terminate();
+        worker = null;
+      };
+      worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+        const message = event.data;
+        cleanup();
+        if (message?.type === 'parse-role-ok') {
+          resolve(message.result);
+        } else {
+          reject(new Error(message?.type === 'parse-role-error' ? message.error : 'Worker parse failed.'));
+        }
+      };
+      worker.onerror = (event) => {
+        cleanup();
+        reject(new Error(event.message || 'Role import worker crashed.'));
+      };
+      const request: WorkerRequest = { type: 'parse-role', bytes };
+      worker.postMessage(request, [bytes]);
+    } catch (error) {
+      worker?.terminate();
+      reject(error);
+    }
+  });
 }
 
 export function exportOriginalLikeRoleConfig(role: RoleDocument) {

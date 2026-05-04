@@ -44,7 +44,7 @@ export function TopMenu({
       <input
         ref={inputRef}
         type="file"
-        accept=".json,.twrole,application/json,application/octet-stream"
+        accept=".twrole"
         hidden
         onChange={(event) => {
           const file = event.target.files?.[0];

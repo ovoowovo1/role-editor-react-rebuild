@@ -31,6 +31,11 @@ interface DragState {
   offsetY: number;
 }
 
+interface DisguiseDecoOptions {
+  selectedSet: Set<string>;
+  onPointerDown(deco: DecorationLayer, event: FederatedPointerEvent, disguiseRoot: Container): void;
+}
+
 function positionRange(role: RoleDocument): number {
   const raw = role.positionRange;
   const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
@@ -102,15 +107,13 @@ function getRolePartScale(role: RoleDocument, category: BodyPartTab): number {
  * `actorClip.headClip.setDisguise(...)`. The head layer clip and decoration
  * sprites are inserted bottom-to-top to mirror RoleDecosConfig.generateDisguise.
  */
-function buildDisguiseRoot(
+type LayerEntry = { kind: 'head' } | { kind: 'deco'; deco: DecorationLayer };
+
+function prepareDisguiseRoot(
   role: RoleDocument,
   headFrame: number,
-  failedTextures: Set<string>,
-  decoOptions: {
-    selectedSet: Set<string>;
-    onPointerDown(deco: DecorationLayer, event: FederatedPointerEvent, disguiseRoot: Container): void;
-  }
-): { disguiseRoot: Container; headLayerClip: GafMovieClip } {
+  failedTextures: Set<string>
+): { disguiseRoot: Container; headLayerClip: GafMovieClip; orderedEntries: LayerEntry[] } {
   const disguiseRoot = new Container();
 
   const headLibrary = actorPartRuntime.head.library;
@@ -146,58 +149,49 @@ function buildDisguiseRoot(
     Math.min(role.decorations.length, Math.round(role.headLayerIndex ?? role.decorations.length))
   );
 
-  type LayerEntry = { kind: 'head' } | { kind: 'deco'; deco: DecorationLayer };
   const ordered: LayerEntry[] = role.decorations.map((deco) => ({ kind: 'deco' as const, deco }));
   ordered.splice(headLayerIndex, 0, { kind: 'head' as const });
 
-  ordered
-    .slice()
-    .reverse()
-    .forEach((entry) => {
-      if (entry.kind === 'head') {
-        disguiseRoot.addChild(headLayerClip);
-        return;
-      }
+  return { disguiseRoot, headLayerClip, orderedEntries: ordered.slice().reverse() };
+}
 
-      const deco = entry.deco;
-      if (!deco.visible) return;
+function createDisguiseEntryDisplay(
+  entry: LayerEntry,
+  failedTextures: Set<string>,
+  disguiseRoot: Container,
+  decoOptions: DisguiseDecoOptions,
+  headLayerClip: GafMovieClip
+): Container | GafMovieClip | null {
+  if (entry.kind === 'head') return headLayerClip;
+  const deco = entry.deco;
+  if (!deco.visible) return null;
 
-      const option = optionById[deco.assetId];
-      const missing = !option || isMissingDecoAssetId(deco.assetId);
+  const option = optionById[deco.assetId];
+  const missing = !option || isMissingDecoAssetId(deco.assetId);
+  const wrapper = new Container();
+  wrapper.position.set(deco.x, deco.y);
+  wrapper.rotation = (deco.rotation * Math.PI) / 180;
+  wrapper.scale.set(deco.scaleX, deco.scaleY);
+  wrapper.alpha = clamp(deco.opacity, 0, 1);
+  wrapper.eventMode = 'static';
+  wrapper.cursor = 'pointer';
 
-      const wrapper = new Container();
-      wrapper.position.set(deco.x, deco.y);
-      wrapper.rotation = (deco.rotation * Math.PI) / 180;
-      wrapper.scale.set(deco.scaleX, deco.scaleY);
-      wrapper.alpha = clamp(deco.opacity, 0, 1);
-      wrapper.eventMode = 'static';
-      wrapper.cursor = 'pointer';
+  if (missing) {
+    wrapper.addChild(makeMissingDecoGraphic(28));
+  } else {
+    const sprite = makeOptionSprite(option, failedTextures);
+    if (!sprite) return null;
+    applySpriteRegistration(sprite, option, 64, failedTextures);
+    wrapper.addChild(sprite);
+  }
 
-      if (missing) {
-        // Preserve the imported transform on a visible placeholder instead of
-        // swapping the layer onto an unrelated deco. fixIngameRoleDesign would
-        // drop the entry entirely; we keep it so the user can decide whether
-        // to delete or remap the unknown `c` code.
-        wrapper.addChild(makeMissingDecoGraphic(28));
-      } else {
-        const sprite = makeOptionSprite(option, failedTextures);
-        if (!sprite) return;
-        applySpriteRegistration(sprite, option, 64, failedTextures);
-        wrapper.addChild(sprite);
-      }
-
-      if (decoOptions.selectedSet.has(deco.id)) {
-        wrapper.filters = [createDecoSelectionGlowFilter()];
-      }
-
-      wrapper.on('pointerdown', (event: FederatedPointerEvent) => {
-        decoOptions.onPointerDown(deco, event, disguiseRoot);
-      });
-
-      disguiseRoot.addChild(wrapper);
-    });
-
-  return { disguiseRoot, headLayerClip };
+  if (decoOptions.selectedSet.has(deco.id)) {
+    wrapper.filters = [createDecoSelectionGlowFilter()];
+  }
+  wrapper.on('pointerdown', (event: FederatedPointerEvent) => {
+    decoOptions.onPointerDown(deco, event, disguiseRoot);
+  });
+  return wrapper;
 }
 
 function buildActorClipForRole(role: RoleDocument, failedTextures: Set<string>): ActorClip {
@@ -258,10 +252,6 @@ export function CharacterStage({
   const stageTeardownRef = useRef<(() => void) | null>(null);
   const baseDevicePixelRatioRef = useRef(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
   const selectedSet = new Set(selectedIds);
-
-  const browserZoomRatio =
-    typeof window !== 'undefined' ? (window.devicePixelRatio || 1) / (baseDevicePixelRatioRef.current || 1) : 1;
-  const stageBgTop = `${0.2 * stageScale * browserZoomRatio * 100}%`;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -330,7 +320,7 @@ export function CharacterStage({
       const headOption = getBodyPartOption('head', role.parts.head);
       const headFrame = getRolePartFrame(role, 'head', headOption);
 
-      const { disguiseRoot } = buildDisguiseRoot(role, headFrame, failedTextures, {
+      const decoOptions: DisguiseDecoOptions = {
         selectedSet,
         onPointerDown: (deco, event, root) => {
           event.stopPropagation();
@@ -343,9 +333,31 @@ export function CharacterStage({
             offsetY: local.y - deco.y
           };
         }
-      });
+      };
+      const { disguiseRoot, headLayerClip, orderedEntries } = prepareDisguiseRoot(role, headFrame, failedTextures);
 
       actorClip.headClip.setDisguise(disguiseRoot);
+      const headEntryIndex = orderedEntries.findIndex((entry) => entry.kind === 'head');
+      if (headEntryIndex >= 0) {
+        disguiseRoot.addChild(headLayerClip);
+      }
+      let chunkRafId = 0;
+      let chunkCursor = 0;
+      const CHUNK_SIZE = 180;
+      const appendChunk = () => {
+        if (cancelled || buildId !== stageBuildGenerationRef.current) return;
+        const end = Math.min(chunkCursor + CHUNK_SIZE, orderedEntries.length);
+        for (let i = chunkCursor; i < end; i += 1) {
+          if (i === headEntryIndex) continue;
+          const display = createDisguiseEntryDisplay(orderedEntries[i], failedTextures, disguiseRoot, decoOptions, headLayerClip);
+          if (display) disguiseRoot.addChild(display);
+        }
+        chunkCursor = end;
+        if (chunkCursor < orderedEntries.length) {
+          chunkRafId = requestAnimationFrame(appendChunk);
+        }
+      };
+      appendChunk();
 
       const updatePosition = () => {
         const hostEl = hostRef.current;
@@ -410,6 +422,7 @@ export function CharacterStage({
       stageTeardownRef.current = () => {
         dragRef.current = null;
         cancelAnimationFrame(rafId);
+        cancelAnimationFrame(chunkRafId);
         positionObserver.disconnect();
         if (stage.destroyed) return;
         stage.off('pointermove', handleMove);
@@ -434,7 +447,7 @@ export function CharacterStage({
         className="stage-bg"
         aria-hidden="true"
         style={{
-          top: stageBgTop,
+          top: '50%',
           transform: `translate(-50%, -50%) rotate(90deg) scale(${stageScale})`
         }}
       >

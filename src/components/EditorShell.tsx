@@ -7,9 +7,9 @@ import { TabBar } from './TabBar';
 import { TitleBar } from './TitleBar';
 import { TopMenu } from './TopMenu';
 import { ShortcutHelpModal } from './ShortcutHelpModal';
-import { optionById, partOptions, tabLabels } from '../mock/options';
+import { optionById, tabLabels } from '../mock/options';
 import { downloadBlob } from '../lib/math';
-import { createRoleJsonBlob, createTwroleBlob, parseRoleFile, roleToEnvelope } from '../lib/roleSerialization';
+import { createRoleJsonBlob, createTwroleBlob, parseRoleFile, parseRoleFileInWorker, roleToEnvelope } from '../lib/roleSerialization';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useRoleEditor } from '../hooks/useRoleEditor';
 
@@ -53,8 +53,9 @@ export function EditorShell() {
   useKeyboardShortcuts(shortcutActions);
 
   const handleImport = async (file: File) => {
+    setStatus(`Importing ${file.name}...`);
     try {
-      const result = await parseRoleFile(file);
+      const result = await parseRoleFileInWorker(file).catch(() => parseRoleFile(file));
       editor.importRole(result.role);
       setStatus(result.warnings.length ? result.warnings.join(' ') : `Imported ${file.name}`);
     } catch (error) {
@@ -108,7 +109,7 @@ export function EditorShell() {
         <main className="bottom-body">
           <ChoiceGrid
             tab={editor.selectedTab}
-            options={partOptions[editor.selectedTab]}
+            options={editor.visibleOptionsByTab[editor.selectedTab]}
             selectedOptionId={selectedOptionId}
             onPick={(option) => {
               editor.choosePart(editor.selectedTab, option);

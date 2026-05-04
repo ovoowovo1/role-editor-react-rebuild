@@ -725,6 +725,25 @@ input[type='range']::-webkit-slider-thumb {
   padding: 8px 10px 12px;
 }
 
+.layer-list-virtual-space {
+  position: relative;
+  width: 100%;
+}
+
+.layer-list-virtual-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding-bottom: 6px;
+  box-sizing: border-box;
+}
+
+.layer-list-virtual-row .layer-row,
+.layer-list-virtual-row .layer-group,
+.layer-list-virtual-row .layer-spacer {
+  margin: 0;
+}
+
 .layer-row {
   position: relative;
   display: grid;

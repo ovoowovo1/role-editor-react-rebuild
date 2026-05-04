@@ -1,4 +1,4 @@
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -66,6 +66,21 @@ interface SortableGroupHeaderProps {
   onToggleGroupVisibility(groupId: string): void;
   onUngroup(groupId: string): void;
 }
+
+interface LayerRowModel {
+  key: string;
+  rowId: string;
+  type: 'item' | 'group';
+  deco?: DecorationLayer;
+  group?: DecorationGroup;
+  index?: number;
+  grouped?: boolean;
+  selected: boolean;
+  itemCount?: number;
+}
+
+const ROW_HEIGHT = 78;
+const OVERSCAN_ROWS = 10;
 
 function SortableLayer({ deco, index, selected, grouped = false, onSelect, onToggleVisibility, onDelete }: SortableLayerProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: itemRowId(deco.id) });
@@ -203,14 +218,14 @@ export function LayerList({
   onDelete,
   onClearSelection
 }: LayerListProps) {
+  const parentRef = useRef<HTMLDivElement | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(520);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
-  const selectedSet = new Set(selectedIds);
-  const decoById = new Map(decorations.map((deco) => [deco.id, deco]));
-  const groupByItemId = new Map<string, DecorationGroup>();
-  groups.forEach((group) => group.itemIds.forEach((id) => groupByItemId.set(id, group)));
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -218,64 +233,84 @@ export function LayerList({
     onReorder(String(active.id), String(over.id));
   };
 
-  const renderedGroupIds = new Set<string>();
-  const rowIds: string[] = [];
-  const rows: JSX.Element[] = [];
+  useLayoutEffect(() => {
+    const node = parentRef.current;
+    if (!node) return;
+    const update = () => setViewportHeight(node.clientHeight || 520);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
-  decorations.forEach((deco, index) => {
-    const group = groupByItemId.get(deco.id);
-    if (!group) {
-      rowIds.push(itemRowId(deco.id));
-      rows.push(
-        <SortableLayer
-          key={deco.id}
-          deco={deco}
-          index={index}
-          selected={selectedSet.has(deco.id)}
-          onSelect={onSelect}
-          onToggleVisibility={onToggleVisibility}
-          onDelete={onDelete}
-        />
-      );
-      return;
-    }
+  const rowModels = useMemo(() => {
+    const indexById = new Map<string, number>();
+    decorations.forEach((deco, index) => indexById.set(deco.id, index));
 
-    if (renderedGroupIds.has(group.id)) return;
-    renderedGroupIds.add(group.id);
-    const groupItems = decorations.filter((item) => group.itemIds.includes(item.id));
-    const selected = groupItems.length > 0 && groupItems.every((item) => selectedSet.has(item.id));
-    rowIds.push(groupRowId(group.id));
-    rows.push(
-      <SortableGroupHeader
-        key={group.id}
-        group={group}
-        itemCount={groupItems.length}
-        selected={selected}
-        onSelectGroup={onSelectGroup}
-        onToggleGroupCollapsed={onToggleGroupCollapsed}
-        onToggleGroupVisibility={onToggleGroupVisibility}
-        onUngroup={onUngroup}
-      />
-    );
+    const groupById = new Map(groups.map((group) => [group.id, group]));
+    const groupByItemId = new Map<string, DecorationGroup>();
+    groups.forEach((group) => group.itemIds.forEach((id) => groupByItemId.set(id, group)));
 
-    if (!group.collapsed) {
-      groupItems.forEach((item) => {
-        rowIds.push(itemRowId(item.id));
-        rows.push(
-          <SortableLayer
-            key={item.id}
-            deco={item}
-            index={decorations.findIndex((candidate) => candidate.id === item.id)}
-            selected={selectedSet.has(item.id)}
-            grouped
-            onSelect={onSelect}
-            onToggleVisibility={onToggleVisibility}
-            onDelete={onDelete}
-          />
-        );
+    const itemsByGroupId = new Map<string, DecorationLayer[]>();
+    groups.forEach((group) => itemsByGroupId.set(group.id, []));
+    decorations.forEach((deco) => {
+      const group = groupByItemId.get(deco.id);
+      if (group) itemsByGroupId.get(group.id)?.push(deco);
+    });
+
+    const renderedGroupIds = new Set<string>();
+    const models: LayerRowModel[] = [];
+    decorations.forEach((deco) => {
+      const group = groupByItemId.get(deco.id);
+      if (!group) {
+        models.push({
+          key: deco.id,
+          rowId: itemRowId(deco.id),
+          type: 'item',
+          deco,
+          index: indexById.get(deco.id) ?? 0,
+          selected: selectedSet.has(deco.id)
+        });
+        return;
+      }
+
+      if (renderedGroupIds.has(group.id)) return;
+      renderedGroupIds.add(group.id);
+      const stableGroup = groupById.get(group.id) ?? group;
+      const groupItems = itemsByGroupId.get(group.id) ?? [];
+      const selected = groupItems.length > 0 && groupItems.every((item) => selectedSet.has(item.id));
+      models.push({
+        key: stableGroup.id,
+        rowId: groupRowId(stableGroup.id),
+        type: 'group',
+        group: stableGroup,
+        selected,
+        itemCount: groupItems.length
       });
-    }
-  });
+
+      if (!stableGroup.collapsed) {
+        for (const item of groupItems) {
+          models.push({
+            key: item.id,
+            rowId: itemRowId(item.id),
+            type: 'item',
+            deco: item,
+            index: indexById.get(item.id) ?? 0,
+            grouped: true,
+            selected: selectedSet.has(item.id)
+          });
+        }
+      }
+    });
+    return models;
+  }, [decorations, groups, selectedSet]);
+
+  const totalRows = rowModels.length + 1;
+  const totalHeight = totalRows * ROW_HEIGHT;
+  const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS);
+  const endRow = Math.min(totalRows, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN_ROWS);
+  const visibleRows = rowModels.slice(startRow, Math.min(endRow, rowModels.length));
+  const visibleRowIds = visibleRows.map((row) => row.rowId);
 
   return (
     <aside className="edit-list" aria-label="Layer list">
@@ -290,12 +325,46 @@ export function LayerList({
         <small>{groups.length ? `${groups.length} group${groups.length === 1 ? '' : 's'} · drag header to move group` : 'Ctrl / Cmd click for multi-select'}</small>
       </div>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
-          <div className="layer-list-scroll">
-            {rows}
-            <button className="layer-spacer" type="button" onClick={onClearSelection}>
-              {decorations.length ? 'Click empty area to clear selection' : 'Add a Deco to create layers'}
-            </button>
+        <SortableContext items={visibleRowIds} strategy={verticalListSortingStrategy}>
+          <div className="layer-list-scroll" ref={parentRef} onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
+            <div className="layer-list-virtual-space" style={{ height: totalHeight }}>
+              {visibleRows.map((row, offset) => {
+                const rowIndex = startRow + offset;
+                const top = rowIndex * ROW_HEIGHT;
+                return (
+                  <div key={row.key} className="layer-list-virtual-row" style={{ top, height: ROW_HEIGHT }}>
+                    {row.type === 'group' && row.group ? (
+                      <SortableGroupHeader
+                        group={row.group}
+                        itemCount={row.itemCount ?? 0}
+                        selected={row.selected}
+                        onSelectGroup={onSelectGroup}
+                        onToggleGroupCollapsed={onToggleGroupCollapsed}
+                        onToggleGroupVisibility={onToggleGroupVisibility}
+                        onUngroup={onUngroup}
+                      />
+                    ) : row.deco ? (
+                      <SortableLayer
+                        deco={row.deco}
+                        index={row.index ?? 0}
+                        selected={row.selected}
+                        grouped={row.grouped}
+                        onSelect={onSelect}
+                        onToggleVisibility={onToggleVisibility}
+                        onDelete={onDelete}
+                      />
+                    ) : null}
+                  </div>
+                );
+              })}
+              {endRow > rowModels.length ? (
+                <div className="layer-list-virtual-row" style={{ top: rowModels.length * ROW_HEIGHT, height: ROW_HEIGHT }}>
+                  <button className="layer-spacer" type="button" onClick={onClearSelection}>
+                    {decorations.length ? 'Click empty area to clear selection' : 'Add a Deco to create layers'}
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </SortableContext>
       </DndContext>
