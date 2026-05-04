@@ -47,8 +47,10 @@ src/
     roleSerialization.ts    # JSON / .twrole gzip 导入导出
   mock/
     assets.ts               # SVG fallback asset generator
-    gafManifest.ts          # symbol manifest extracted from uploaded GAF files
+    gafManifest.ts          # loads `generated/gafManifest.json` + injects texture URLs
     options.ts              # GAF-backed role/deco option list with fallback previews
+  generated/
+    gafManifest.json        # produced by `npm run generate:gaf` (or copied from `scripts/gafManifest.fallback.json`)
   styles/
     global.css
   types/
@@ -116,6 +118,13 @@ The rebuild now extracts and uses real GAF symbol codes where possible:
 - The choice grid shows `GAF` badges for options whose code came from these files.
 
 The uploaded `.gaf` files are metadata/timeline files. They reference external texture-atlas PNG files named `decorations.png` and `twactor.png`; those PNG files are not embedded in the GAF binaries. This build now extracts atlas rectangles from the GAF files. If you add `public/assets/gaf/decorations.png` and `public/assets/gaf/twactor.png`, the choice grid, layer list, and PIXI preview will use cropped atlas sprites. If either PNG is missing or named differently, the UI falls back to SVG placeholder previews.
+
+### Regenerating `gafManifest.json`
+
+- `npm run generate:gaf` — reads `public/assets/gaf/decorations.gaf` and `twactor.gaf` (raw GAF config or ZIP-wrapped `.bin`) and writes `src/generated/gafManifest.json`.
+- `predev` / `prebuild` run this script automatically so `npm run dev` and `npm run build` stay in sync with your local binaries.
+- If the `.gaf` files are absent, the generator copies `scripts/gafManifest.fallback.json` instead (CI / fresh clone friendly).
+- To refresh the fallback snapshot from an old inline TypeScript manifest, place the legacy `gafManifest.ts` back and run `node scripts/extractFallbackFromLegacyTs.mjs`.
 
 ## 文件格式说明
 
