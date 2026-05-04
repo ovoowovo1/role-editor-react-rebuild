@@ -71,7 +71,7 @@ export function EditorShell() {
 
   const handleExportJson = () => {
     downloadBlob(createRoleJsonBlob(editor.role), 'role.json');
-    setStatus('Exported readable role JSON');
+    setStatus('Exported legacy-compatible compact role JSON');
   };
 
   const handleSaveMock = () => {

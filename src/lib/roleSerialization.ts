@@ -111,13 +111,21 @@ export function roleToEnvelope(role: RoleDocument): ExportEnvelope {
 }
 
 export function createRoleJsonBlob(role: RoleDocument): Blob {
-  return new Blob([JSON.stringify(roleToEnvelope(role), null, 2)], { type: 'application/json' });
+  return new Blob([JSON.stringify(buildLegacyCompactPayload(role), null, 2)], { type: 'application/json' });
 }
 
 export function createTwroleBlob(role: RoleDocument): Blob {
+  const payload = buildLegacyCompactPayload(role);
+  const json = JSON.stringify(payload);
+  const compressed = gzip(json, { level: 1 });
+  const header = new Uint8Array(TWROLE_HEADER);
+  return new Blob([header, compressed], { type: 'application/octet-stream' });
+}
+
+function buildLegacyCompactPayload(role: RoleDocument): LegacyTwrolePayload {
   const normalized = normalizeRoleDocument(role);
   const legacyConfig = exportOriginalLikeRoleConfig(normalized);
-  const payload: LegacyTwrolePayload = {
+  return {
     data: {
       dr: 8,
       cr: legacyConfig
@@ -125,10 +133,6 @@ export function createTwroleBlob(role: RoleDocument): Blob {
     hash: '',
     thumb: null
   };
-  const json = JSON.stringify(payload);
-  const compressed = gzip(json, { level: 1 });
-  const header = new Uint8Array(TWROLE_HEADER);
-  return new Blob([header, compressed], { type: 'application/octet-stream' });
 }
 
 function resolvePart(tab: BodyPartTab, raw: unknown, fallbackScale = 1): PartSelection {
