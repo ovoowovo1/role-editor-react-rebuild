@@ -1,4 +1,4 @@
-/** Build-time serialized GAF timeline data for Pixi timeline preview (TW actor parts). */
+/** Build-time serialized GAF timeline data for Pixi timeline preview. */
 
 export interface GafElementSerialized {
   atlasID: string;
@@ -26,6 +26,8 @@ export interface GafFrameInstanceSerialized {
   alpha: number;
   /** Mask slot / state reference when present in binary */
   maskId: string | null;
+  /** GAF color transform params: alpha multiplier, RGB multipliers and RGB offsets. */
+  colorTransform: number[] | null;
   matrix: GafMatrixSerialized;
 }
 
@@ -45,8 +47,10 @@ export interface GafTimelineSerialized {
   frames: Record<string, GafFrameInstanceSerialized[]>;
 }
 
-export interface ActorGafRuntimeManifest {
+export interface GafRuntimeManifest {
   elements: Record<string, GafElementSerialized>;
   timelinesById: Record<string, GafTimelineSerialized>;
   timelinesByLinkage: Record<string, string>;
 }
+
+export type ActorGafRuntimeManifest = GafRuntimeManifest;

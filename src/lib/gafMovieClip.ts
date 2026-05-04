@@ -1,6 +1,7 @@
-import { Container, Matrix, Rectangle, Sprite, Texture } from 'pixi.js';
+import { ColorMatrixFilter, Container, Matrix, Rectangle, Sprite, Texture } from 'pixi.js';
 import type {
   ActorGafRuntimeManifest,
+  GafRuntimeManifest,
   GafElementSerialized,
   GafFrameInstanceSerialized,
   GafTimelineSerialized
@@ -13,12 +14,29 @@ const TYPE_TIMELINE = 'timeline';
 
 export type GafMovieClipSpec =
   | { kind: 'atlas'; frames: readonly GafAtlasFrame[] }
-  | { kind: 'timeline'; manifest: ActorGafRuntimeManifest; timelineId: string; textureUrl: string };
+  | { kind: 'timeline'; manifest: GafRuntimeManifest; timelineId: string; textureUrl: string; alphaMask?: boolean };
+
+interface CreateGafClipOptions {
+  alphaMask?: boolean;
+}
 
 function clamp01(a: number): number {
   if (!Number.isFinite(a)) return 1;
   return Math.min(Math.max(a, 0), 1);
 }
+
+function createAlphaMaskColorFilter(): ColorMatrixFilter {
+  const filter = new ColorMatrixFilter();
+  filter.matrix = [
+    0, 0, 0, 1, 0,
+    0, 0, 0, 1, 0,
+    0, 0, 0, 1, 0,
+    0, 0, 0, 1, 0
+  ];
+  return filter;
+}
+
+const ALPHA_MASK_COLOR_FILTER = createAlphaMaskColorFilter();
 
 function elementPivotMatrix(el: GafElementSerialized): Matrix {
   const sx = Math.abs(el.scaleX) > 1e-8 ? el.scaleX : 1;
@@ -48,14 +66,39 @@ function applyMatrixToDisplayObject(target: Container, m: Matrix): void {
   }
 }
 
-export function resolveActorTimelineId(manifest: ActorGafRuntimeManifest, linkageOrId: string): string | null {
+export function resolveGafTimelineId(manifest: GafRuntimeManifest, linkageOrId: string): string | null {
   const fromLinkage = manifest.timelinesByLinkage[linkageOrId];
   if (fromLinkage != null && fromLinkage !== '') return fromLinkage;
   if (manifest.timelinesById[linkageOrId]) return linkageOrId;
   return null;
 }
 
+export const resolveActorTimelineId = resolveGafTimelineId;
+
 /** Prefer serialized GAF runtime; fall back to single-atlas sprites (CI / missing binaries). */
+export function createGafClip(
+  failedTextures: Set<string>,
+  linkage: string,
+  manifest: GafRuntimeManifest | undefined,
+  textureUrl: string,
+  atlasFallback: readonly GafAtlasFrame[],
+  options: CreateGafClipOptions = {}
+): GafMovieClip {
+  if (manifest) {
+    const id = resolveGafTimelineId(manifest, linkage);
+    if (id) {
+      return new GafMovieClip(failedTextures, {
+        kind: 'timeline',
+        manifest,
+        timelineId: id,
+        textureUrl,
+        alphaMask: options.alphaMask
+      });
+    }
+  }
+  return new GafMovieClip(failedTextures, { kind: 'atlas', frames: atlasFallback });
+}
+
 export function createActorGafClip(
   failedTextures: Set<string>,
   linkage: string,
@@ -63,18 +106,7 @@ export function createActorGafClip(
   textureUrl: string,
   atlasFallback: readonly GafAtlasFrame[]
 ): GafMovieClip {
-  if (manifest) {
-    const id = resolveActorTimelineId(manifest, linkage);
-    if (id) {
-      return new GafMovieClip(failedTextures, {
-        kind: 'timeline',
-        manifest,
-        timelineId: id,
-        textureUrl
-      });
-    }
-  }
-  return new GafMovieClip(failedTextures, { kind: 'atlas', frames: atlasFallback });
+  return createGafClip(failedTextures, linkage, manifest, textureUrl, atlasFallback);
 }
 
 /**
@@ -90,9 +122,10 @@ export class GafMovieClip extends Container {
   private _atlasFrames: readonly GafAtlasFrame[] = [];
   private _sprite: Sprite | null = null;
 
-  private _manifest: ActorGafRuntimeManifest | null = null;
+  private _manifest: GafRuntimeManifest | null = null;
   private _timeline: GafTimelineSerialized | null = null;
   private _textureUrl = '';
+  private _alphaMask = false;
 
   private _currentFrame = 1;
   loop = true;
@@ -108,6 +141,7 @@ export class GafMovieClip extends Container {
     }
     this._manifest = spec.manifest;
     this._textureUrl = spec.textureUrl;
+    this._alphaMask = !!spec.alphaMask;
     this._timeline = spec.manifest.timelinesById[spec.timelineId] ?? null;
     if (!this._timeline) {
       console.warn(`[GafMovieClip] Unknown timeline "${spec.timelineId}"`);
@@ -212,6 +246,9 @@ export class GafMovieClip extends Container {
         const sprite = this._makeTextureSprite(el);
         if (!sprite) continue;
         sprite.alpha = clamp01(inst.alpha);
+        if (this._alphaMask) {
+          sprite.filters = [ALPHA_MASK_COLOR_FILTER];
+        }
 
         const world = composeWorldMatrix(instanceMatrix(inst.matrix), elementPivotMatrix(el));
         applyMatrixToDisplayObject(sprite, world);

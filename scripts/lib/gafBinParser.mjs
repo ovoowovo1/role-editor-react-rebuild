@@ -126,12 +126,25 @@ function readMatrix6(r) {
   };
 }
 
+function readColorTransform(r) {
+  return [
+    r.readFloat(),
+    r.readFloat(),
+    r.readFloat(),
+    r.readFloat(),
+    r.readFloat(),
+    r.readFloat(),
+    r.readFloat()
+  ];
+}
+
 function cloneInstances(inst) {
   return inst.map((x) => ({
     objectId: x.objectId,
     zIndex: x.zIndex,
     alpha: x.alpha,
     maskId: x.maskId,
+    colorTransform: x.colorTransform ? [...x.colorTransform] : null,
     matrix: x.matrix
       ? { a: x.matrix.a, b: x.matrix.b, c: x.matrix.c, d: x.matrix.d, tx: x.matrix.tx, ty: x.matrix.ty }
       : { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
@@ -353,7 +366,7 @@ function readAnimationFrames(tagID, r, timeline) {
 
         const matrix = readMatrix6(r);
 
-        if (hasColorTransform) r.skip(4 * 7);
+        const colorTransform = hasColorTransform ? readColorTransform(r) : null;
 
         if (hasEffect) {
           const filterLength = r.readSByte();
@@ -370,6 +383,7 @@ function readAnimationFrames(tagID, r, timeline) {
           zIndex,
           alpha,
           maskId,
+          colorTransform,
           matrix
         });
       }

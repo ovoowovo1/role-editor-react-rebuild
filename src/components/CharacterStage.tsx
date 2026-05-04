@@ -2,7 +2,13 @@ import { useEffect, useRef } from 'react';
 import { Application, Container, FederatedPointerEvent, Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
 import type { BodyPartTab, DecorationLayer, PartOption, RoleDocument } from '../types/role';
 import { getBodyPartOption, optionById } from '../mock/options';
-import { actorAtlasFrames, actorRuntimeManifest, gafSources } from '../mock/gafManifest';
+import {
+  actorAtlasFrames,
+  actorRuntimeManifest,
+  decorationAtlasFrames,
+  decorationRuntimeManifest,
+  gafSources
+} from '../mock/gafManifest';
 import { clamp, clampToDisc } from '../lib/math';
 import { ACTOR_BODY_SCALE } from '../lib/actorClipAdapter';
 import { actorPartRuntime, getPartFrame, isRuntimeEmptyFrame, sanitizePartScale } from '../lib/twlibPartRuntime';
@@ -10,7 +16,7 @@ import { collectAtlasTextureUrlsForRole, partitionAtlasTextureUrls } from '../li
 import { applyGafAtlasToSprite } from '../lib/gafAtlasSprite';
 import { createDecoSelectionGlowFilter } from '../lib/decoSelectionFilter';
 import { ActorClip } from '../lib/actorClip';
-import { createActorGafClip, type GafMovieClip } from '../lib/gafMovieClip';
+import { createActorGafClip, createGafClip, type GafMovieClip } from '../lib/gafMovieClip';
 import { isMissingDecoAssetId } from '../lib/roleSerialization';
 
 interface CharacterStageProps {
@@ -35,6 +41,8 @@ interface DisguiseDecoOptions {
   selectedSet: Set<string>;
   onPointerDown(deco: DecorationLayer, event: FederatedPointerEvent, disguiseRoot: Container): void;
 }
+
+const ALPHA_MASK_DECO_CODES = new Set(['third_deco_34', 'third_deco_05', 'skydow_deco_302']);
 
 function positionRange(role: RoleDocument): number {
   const raw = role.positionRange;
@@ -178,6 +186,18 @@ function createDisguiseEntryDisplay(
 
   if (missing) {
     wrapper.addChild(makeMissingDecoGraphic(28));
+  } else if (decorationRuntimeManifest) {
+    const linkage = option.code || deco.code;
+    const fallback = option.atlas ? [option.atlas] : decorationAtlasFrames[linkage] ? [decorationAtlasFrames[linkage]] : [];
+    const clip = createGafClip(
+      failedTextures,
+      linkage,
+      decorationRuntimeManifest,
+      gafSources.decorationsTexture,
+      fallback,
+      { alphaMask: ALPHA_MASK_DECO_CODES.has(linkage) }
+    );
+    wrapper.addChild(clip);
   } else {
     const sprite = makeOptionSprite(option, failedTextures);
     if (!sprite) return null;

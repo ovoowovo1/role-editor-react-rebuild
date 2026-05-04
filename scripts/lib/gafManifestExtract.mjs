@@ -89,6 +89,7 @@ function serializeTimelineForRuntime(tl) {
       alpha:
         typeof inst.alpha === 'number' && Number.isFinite(inst.alpha) ? clampDisplayAlpha(inst.alpha) : 1,
       maskId: inst.maskId ?? null,
+      colorTransform: Array.isArray(inst.colorTransform) ? inst.colorTransform : null,
       matrix:
         inst.matrix && typeof inst.matrix === 'object'
           ? inst.matrix
@@ -112,11 +113,7 @@ function clampDisplayAlpha(a) {
   return Math.min(Math.max(a, 0), 1);
 }
 
-/**
- * Full twactor timelines + elements — nested actor clips reference arbitrary timeline IDs.
- * @param {Record<string, any[]> | undefined} [actorAtlasFrameData] when set, warn if timeline frame count != thumbnail slice length
- */
-export function extractActorRuntime(parsed, actorAtlasFrameData) {
+export function extractGafRuntime(parsed) {
   const elementsObj = {};
   for (const [id, el] of parsed.defaultElements) {
     elementsObj[String(id)] = serializeElementForRuntime(el);
@@ -133,11 +130,29 @@ export function extractActorRuntime(parsed, actorAtlasFrameData) {
     }
   }
 
+  return {
+    elements: elementsObj,
+    timelinesById,
+    timelinesByLinkage
+  };
+}
+
+export function extractDecorationRuntime(parsed) {
+  return { decorationRuntime: extractGafRuntime(parsed) };
+}
+
+/**
+ * Full twactor timelines + elements — nested actor clips reference arbitrary timeline IDs.
+ * @param {Record<string, any[]> | undefined} [actorAtlasFrameData] when set, warn if timeline frame count != thumbnail slice length
+ */
+export function extractActorRuntime(parsed, actorAtlasFrameData) {
+  const actorRuntime = extractGafRuntime(parsed);
+
   const actorLinkages = ['lib_actor_head', 'lib_actor_hand', 'lib_actor_foot', 'lib_actor_cape'];
 
   for (const link of actorLinkages) {
-    const id = timelinesByLinkage[link];
-    const tl = id ? timelinesById[id] : null;
+    const id = actorRuntime.timelinesByLinkage[link];
+    const tl = id ? actorRuntime.timelinesById[id] : null;
     if (!tl) {
       console.warn(`[generate:gaf] Actor runtime missing timeline linkage "${link}"`);
       continue;
@@ -150,13 +165,7 @@ export function extractActorRuntime(parsed, actorAtlasFrameData) {
     }
   }
 
-  return {
-    actorRuntime: {
-      elements: elementsObj,
-      timelinesById,
-      timelinesByLinkage
-    }
-  };
+  return { actorRuntime };
 }
 
 export function extractActorSlice(parsed) {

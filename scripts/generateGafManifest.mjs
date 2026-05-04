@@ -11,6 +11,7 @@ import { parseGafBinary } from './lib/gafBinParser.mjs';
 import {
   extractActorRuntime,
   extractActorSlice,
+  extractDecorationRuntime,
   extractDecorationSlice,
   flattenActorFrames,
   flattenDecorationFrames,
@@ -93,6 +94,7 @@ async function main() {
 
   const deco = extractDecorationSlice(decParsed);
   const actor = extractActorSlice(actParsed);
+  const { decorationRuntime } = extractDecorationRuntime(decParsed);
   const { actorRuntime } = extractActorRuntime(actParsed, actor.actorAtlasFrameData);
 
   if (fs.existsSync(DEC_PNG)) {
@@ -123,6 +125,7 @@ async function main() {
     },
     decorationGafSymbols: deco.decorationGafSymbols,
     decorationAtlasFrameData: deco.decorationAtlasFrameData,
+    decorationRuntime,
     actorAtlasFrameData: actor.actorAtlasFrameData,
     actorFallbackFrameCounts: actor.actorFallbackFrameCounts,
     actorRuntime
