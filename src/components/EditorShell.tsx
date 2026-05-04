@@ -1,6 +1,5 @@
-import { useMemo, useState } from 'react';
+import { Suspense, lazy, useMemo, useState } from 'react';
 import { ChoiceGrid } from './ChoiceGrid';
-import { CharacterStage } from './CharacterStage';
 import { EditControls } from './EditControls';
 import { LayerList } from './LayerList';
 import { TabBar } from './TabBar';
@@ -12,6 +11,8 @@ import { downloadBlob } from '../lib/math';
 import { createRoleJsonBlob, createTwroleBlob, parseRoleFile, parseRoleFileInWorker, roleToEnvelope } from '../lib/roleSerialization';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useRoleEditor } from '../hooks/useRoleEditor';
+
+const CharacterStage = lazy(async () => import('./CharacterStage').then((module) => ({ default: module.CharacterStage })));
 
 export function EditorShell() {
   const editor = useRoleEditor();
@@ -122,17 +123,19 @@ export function EditorShell() {
           />
 
           <section className="edit-block">
-            <CharacterStage
-              role={editor.role}
-              selectedIds={editor.selectedDecorationIds}
-              stageScale={editor.stageScale}
-              facingQuarterTurns={facingQuarterTurns}
-              onSelectDecoration={editor.selectDecoration}
-              onClearSelection={editor.clearSelection}
-              onUpdateDecoration={editor.updateDecoration}
-              onBeginTransient={editor.beginTransient}
-              onCommitTransient={editor.commitTransient}
-            />
+            <Suspense fallback={<div className="stage-panel" />}>
+              <CharacterStage
+                role={editor.role}
+                selectedIds={editor.selectedDecorationIds}
+                stageScale={editor.stageScale}
+                facingQuarterTurns={facingQuarterTurns}
+                onSelectDecoration={editor.selectDecoration}
+                onClearSelection={editor.clearSelection}
+                onUpdateDecoration={editor.updateDecoration}
+                onBeginTransient={editor.beginTransient}
+                onCommitTransient={editor.commitTransient}
+              />
+            </Suspense>
             <EditControls
               disabled={!editor.selectedDecorationIds.length}
               faceAlwaysEnabled
