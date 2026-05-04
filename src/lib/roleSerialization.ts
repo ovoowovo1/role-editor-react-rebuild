@@ -32,6 +32,32 @@ interface ExportEnvelope {
   mockAdapters: string[];
 }
 
+interface LegacyTwrolePayload {
+  data: {
+    dr: number;
+    cr: LegacyCompactRoleConfig;
+  };
+  hash: string;
+  thumb: null | { dataUrl: string; pivot: { x: number; y: number } };
+}
+
+interface LegacyCompactDecoEntry {
+  c: string;
+  x: number;
+  y: number;
+  sx: number;
+  sy: number;
+  r: number;
+}
+
+interface LegacyCompactRoleConfig {
+  head: { f: number; s: number };
+  cape: { f: number; s: number };
+  hand: { f: number; s: number };
+  foot: { f: number; s: number };
+  deco: LegacyCompactDecoEntry[];
+}
+
 interface PartSelection {
   id: string;
   frame: number;
@@ -89,7 +115,17 @@ export function createRoleJsonBlob(role: RoleDocument): Blob {
 }
 
 export function createTwroleBlob(role: RoleDocument): Blob {
-  const json = JSON.stringify(roleToEnvelope(role));
+  const normalized = normalizeRoleDocument(role);
+  const legacyConfig = exportOriginalLikeRoleConfig(normalized);
+  const payload: LegacyTwrolePayload = {
+    data: {
+      dr: 8,
+      cr: legacyConfig
+    },
+    hash: '',
+    thumb: null
+  };
+  const json = JSON.stringify(payload);
   const compressed = gzip(json, { level: 1 });
   const header = new Uint8Array(TWROLE_HEADER);
   return new Blob([header, compressed], { type: 'application/octet-stream' });
@@ -604,11 +640,11 @@ export async function parseRoleFileInWorker(file: File): Promise<ImportResult> {
   });
 }
 
-export function exportOriginalLikeRoleConfig(role: RoleDocument) {
+function exportOldEditorDecolist(role: RoleDocument): LegacyCompactDecoEntry[] {
   const normalized = normalizeRoleDocument(role);
   const topFirstLayers: Array<DecorationLayer | 'head'> = [...normalized.decorations];
   topFirstLayers.splice(normalized.headLayerIndex, 0, 'head');
-  const deco = topFirstLayers.reverse().map((layer) => {
+  return topFirstLayers.reverse().map((layer) => {
     if (layer === 'head') {
       return {
         c: 'head',
@@ -629,6 +665,11 @@ export function exportOriginalLikeRoleConfig(role: RoleDocument) {
       r: (layer.rotation * Math.PI) / 180
     };
   });
+}
+
+export function exportOriginalLikeRoleConfig(role: RoleDocument): LegacyCompactRoleConfig {
+  const normalized = normalizeRoleDocument(role);
+  const deco = exportOldEditorDecolist(normalized);
 
   return {
     head: { f: normalized.partFrames.head, s: normalized.headLayer.scaleX },

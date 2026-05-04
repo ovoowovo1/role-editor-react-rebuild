@@ -66,7 +66,7 @@ export function EditorShell() {
 
   const handleDownloadTwrole = () => {
     downloadBlob(createTwroleBlob(editor.role), 'role.twrole');
-    setStatus('Downloaded compressed mock .twrole file');
+    setStatus('Downloaded legacy-compatible .twrole file');
   };
 
   const handleExportJson = () => {

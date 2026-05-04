@@ -12,7 +12,7 @@ export function createDecoSelectionGlowFilter(): GlowFilter {
     innerStrength: 0,
     color: 0x99ff99,
     quality: 1,
-    knockout: true,
+    knockout: false,
     alpha: 1
   });
 }

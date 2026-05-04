@@ -38,11 +38,39 @@ interface DragState {
 }
 
 interface DisguiseDecoOptions {
-  selectedSet: Set<string>;
-  onPointerDown(deco: DecorationLayer, event: FederatedPointerEvent, disguiseRoot: Container): void;
+  onPointerDown(id: string, event: FederatedPointerEvent, disguiseRoot: Container): void;
+}
+
+interface DecoDisplayRecord {
+  container: Container;
+  displayKey: string;
+  selected: boolean;
+}
+
+interface StageSceneState {
+  actorStage: Container;
+  disguiseRoot: Container;
+  headLayerClip: GafMovieClip;
+  failedTextures: Set<string>;
+  decoDisplays: Map<string, DecoDisplayRecord>;
+  updatePosition(): void;
 }
 
 const ALPHA_MASK_DECO_CODES = new Set(['third_deco_34', 'third_deco_05', 'skydow_deco_302']);
+
+function actorSceneKey(role: RoleDocument): string {
+  return JSON.stringify({
+    camp: role.camp,
+    gender: role.gender,
+    parts: role.parts,
+    partFrames: role.partFrames,
+    partScales: role.partScales
+  });
+}
+
+function decorationDisplayKey(deco: DecorationLayer): string {
+  return `${deco.assetId}\u0000${deco.code}`;
+}
 
 function positionRange(role: RoleDocument): number {
   const raw = role.positionRange;
@@ -110,18 +138,11 @@ function getRolePartScale(role: RoleDocument, category: BodyPartTab): number {
   return sanitizePartScale(role.partScales?.[category], 1);
 }
 
-/**
- * Builds a decoManager.root equivalent: a plain Container that is attached to
- * `actorClip.headClip.setDisguise(...)`. The head layer clip and decoration
- * sprites are inserted bottom-to-top to mirror RoleDecosConfig.generateDisguise.
- */
-type LayerEntry = { kind: 'head' } | { kind: 'deco'; deco: DecorationLayer };
-
 function prepareDisguiseRoot(
   role: RoleDocument,
   headFrame: number,
   failedTextures: Set<string>
-): { disguiseRoot: Container; headLayerClip: GafMovieClip; orderedEntries: LayerEntry[] } {
+): { disguiseRoot: Container; headLayerClip: GafMovieClip } {
   const disguiseRoot = new Container();
 
   const headLibrary = actorPartRuntime.head.library;
@@ -152,28 +173,15 @@ function prepareDisguiseRoot(
     headLayerClip.visible = false;
   }
 
-  const headLayerIndex = Math.max(
-    0,
-    Math.min(role.decorations.length, Math.round(role.headLayerIndex ?? role.decorations.length))
-  );
-
-  const ordered: LayerEntry[] = role.decorations.map((deco) => ({ kind: 'deco' as const, deco }));
-  ordered.splice(headLayerIndex, 0, { kind: 'head' as const });
-
-  return { disguiseRoot, headLayerClip, orderedEntries: ordered.slice().reverse() };
+  return { disguiseRoot, headLayerClip };
 }
 
 function createDisguiseEntryDisplay(
-  entry: LayerEntry,
+  deco: DecorationLayer,
   failedTextures: Set<string>,
   disguiseRoot: Container,
-  decoOptions: DisguiseDecoOptions,
-  headLayerClip: GafMovieClip
-): Container | GafMovieClip | null {
-  if (entry.kind === 'head') return headLayerClip;
-  const deco = entry.deco;
-  if (!deco.visible) return null;
-
+  decoOptions: DisguiseDecoOptions
+): Container | null {
   const option = optionById[deco.assetId];
   const missing = !option || isMissingDecoAssetId(deco.assetId);
   const wrapper = new Container();
@@ -181,6 +189,7 @@ function createDisguiseEntryDisplay(
   wrapper.rotation = (deco.rotation * Math.PI) / 180;
   wrapper.scale.set(deco.scaleX, deco.scaleY);
   wrapper.alpha = clamp(deco.opacity, 0, 1);
+  wrapper.visible = deco.visible !== false;
   wrapper.eventMode = 'static';
   wrapper.cursor = 'pointer';
 
@@ -205,13 +214,102 @@ function createDisguiseEntryDisplay(
     wrapper.addChild(sprite);
   }
 
-  if (decoOptions.selectedSet.has(deco.id)) {
-    wrapper.filters = [createDecoSelectionGlowFilter()];
-  }
   wrapper.on('pointerdown', (event: FederatedPointerEvent) => {
-    decoOptions.onPointerDown(deco, event, disguiseRoot);
+    decoOptions.onPointerDown(deco.id, event, disguiseRoot);
   });
   return wrapper;
+}
+
+function applyDecorationDisplayTransform(wrapper: Container, deco: DecorationLayer): void {
+  wrapper.position.set(deco.x, deco.y);
+  wrapper.rotation = (deco.rotation * Math.PI) / 180;
+  wrapper.scale.set(deco.scaleX, deco.scaleY);
+  wrapper.alpha = clamp(deco.opacity, 0, 1);
+  wrapper.visible = deco.visible !== false;
+}
+
+function applyHeadLayerDisplayTransform(headLayerClip: GafMovieClip, role: RoleDocument): void {
+  const headLayer = role.headLayer ?? {
+    x: 0,
+    y: 0,
+    scaleX: getRolePartScale(role, 'head'),
+    scaleY: getRolePartScale(role, 'head'),
+    rotation: 0,
+    visible: true,
+    opacity: 1
+  };
+  const headOption = getBodyPartOption('head', role.parts.head);
+  const headFrame = getRolePartFrame(role, 'head', headOption);
+
+  headLayerClip.position.set(headLayer.x, headLayer.y);
+  headLayerClip.rotation = (headLayer.rotation * Math.PI) / 180;
+  headLayerClip.scale.set(headLayer.scaleX, headLayer.scaleY);
+  headLayerClip.alpha = clamp(headLayer.opacity, 0, 1);
+  headLayerClip.visible = headLayer.visible !== false && !isRuntimeEmptyFrame('head', headFrame);
+}
+
+function syncDecorationSelection(record: DecoDisplayRecord, selected: boolean): void {
+  if (record.selected === selected) return;
+  record.container.filters = selected ? [createDecoSelectionGlowFilter()] : null;
+  record.selected = selected;
+}
+
+function syncDisguiseChildOrder(scene: StageSceneState, role: RoleDocument): void {
+  const orderedChildren: Container[] = [scene.headLayerClip];
+  for (let i = role.decorations.length - 1; i >= 0; i -= 1) {
+    const record = scene.decoDisplays.get(role.decorations[i].id);
+    if (record) orderedChildren.push(record.container);
+  }
+
+  orderedChildren.forEach((child, index) => {
+    if (child.parent !== scene.disguiseRoot) {
+      scene.disguiseRoot.addChild(child);
+    }
+    if (scene.disguiseRoot.getChildIndex(child) !== index) {
+      scene.disguiseRoot.setChildIndex(child, index);
+    }
+  });
+}
+
+function syncDecorationDisplays(
+  scene: StageSceneState,
+  role: RoleDocument,
+  selectedIds: string[],
+  decoOptions: DisguiseDecoOptions
+): void {
+  const decorationsById = new Map(role.decorations.map((deco) => [deco.id, deco]));
+  const selectedSet = new Set(selectedIds);
+
+  for (const [id, record] of scene.decoDisplays) {
+    const deco = decorationsById.get(id);
+    if (deco && record.displayKey === decorationDisplayKey(deco)) continue;
+    if (record.container.parent === scene.disguiseRoot) {
+      scene.disguiseRoot.removeChild(record.container);
+    }
+    if (!record.container.destroyed) {
+      record.container.destroy({ children: true });
+    }
+    scene.decoDisplays.delete(id);
+  }
+
+  for (const deco of role.decorations) {
+    let record = scene.decoDisplays.get(deco.id);
+    if (!record) {
+      const container = createDisguiseEntryDisplay(deco, scene.failedTextures, scene.disguiseRoot, decoOptions);
+      if (!container) continue;
+      record = {
+        container,
+        displayKey: decorationDisplayKey(deco),
+        selected: false
+      };
+      scene.decoDisplays.set(deco.id, record);
+    }
+
+    applyDecorationDisplayTransform(record.container, deco);
+    syncDecorationSelection(record, selectedSet.has(deco.id));
+  }
+
+  syncDisguiseChildOrder(scene, role);
 }
 
 function buildActorClipForRole(role: RoleDocument, failedTextures: Set<string>): ActorClip {
@@ -268,10 +366,37 @@ export function CharacterStage({
   const stageBgRef = useRef<HTMLDivElement | null>(null);
   const appRef = useRef<Application | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const sceneRef = useRef<StageSceneState | null>(null);
+  const roleRef = useRef(role);
+  const selectedIdsRef = useRef(selectedIds);
+  const callbacksRef = useRef({
+    onSelectDecoration,
+    onClearSelection,
+    onUpdateDecoration,
+    onBeginTransient,
+    onCommitTransient
+  });
   const stageBuildGenerationRef = useRef(0);
   const stageTeardownRef = useRef<(() => void) | null>(null);
-  const baseDevicePixelRatioRef = useRef(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
-  const selectedSet = new Set(selectedIds);
+  const sceneKey = actorSceneKey(role);
+
+  useEffect(() => {
+    roleRef.current = role;
+  }, [role]);
+
+  useEffect(() => {
+    selectedIdsRef.current = selectedIds;
+  }, [selectedIds]);
+
+  useEffect(() => {
+    callbacksRef.current = {
+      onSelectDecoration,
+      onClearSelection,
+      onUpdateDecoration,
+      onBeginTransient,
+      onCommitTransient
+    };
+  }, [onBeginTransient, onClearSelection, onCommitTransient, onSelectDecoration, onUpdateDecoration]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -294,6 +419,8 @@ export function CharacterStage({
 
     return () => {
       resizeObserver.disconnect();
+      stageTeardownRef.current?.();
+      stageTeardownRef.current = null;
       if (appRef.current === app) {
         appRef.current = null;
       }
@@ -311,14 +438,15 @@ export function CharacterStage({
 
     const buildId = ++stageBuildGenerationRef.current;
     let cancelled = false;
-
-    const urls = collectAtlasTextureUrlsForRole(role);
+    const buildRole = roleRef.current;
+    const urls = collectAtlasTextureUrlsForRole(buildRole);
 
     partitionAtlasTextureUrls(urls).then(({ failed: failedTextures }) => {
       if (cancelled || buildId !== stageBuildGenerationRef.current) return;
 
       stageTeardownRef.current?.();
       stageTeardownRef.current = null;
+      sceneRef.current = null;
 
       stage.removeChildren();
       stage.eventMode = 'static';
@@ -333,51 +461,14 @@ export function CharacterStage({
       actorClipRoot.scale.set(ACTOR_BODY_SCALE);
       actorStage.addChild(actorClipRoot);
 
-      const actorClip = buildActorClipForRole(role, failedTextures);
+      const actorClip = buildActorClipForRole(buildRole, failedTextures);
       actorClipRoot.addChild(actorClip);
 
-      const range = positionRange(role);
-      const headOption = getBodyPartOption('head', role.parts.head);
-      const headFrame = getRolePartFrame(role, 'head', headOption);
-
-      const decoOptions: DisguiseDecoOptions = {
-        selectedSet,
-        onPointerDown: (deco, event, root) => {
-          event.stopPropagation();
-          onSelectDecoration(deco.id, event.ctrlKey || event.metaKey);
-          onBeginTransient();
-          const local = root.toLocal(event.global);
-          dragRef.current = {
-            id: deco.id,
-            offsetX: local.x - deco.x,
-            offsetY: local.y - deco.y
-          };
-        }
-      };
-      const { disguiseRoot, headLayerClip, orderedEntries } = prepareDisguiseRoot(role, headFrame, failedTextures);
-
+      const headOption = getBodyPartOption('head', buildRole.parts.head);
+      const headFrame = getRolePartFrame(buildRole, 'head', headOption);
+      const { disguiseRoot, headLayerClip } = prepareDisguiseRoot(buildRole, headFrame, failedTextures);
       actorClip.headClip.setDisguise(disguiseRoot);
-      const headEntryIndex = orderedEntries.findIndex((entry) => entry.kind === 'head');
-      if (headEntryIndex >= 0) {
-        disguiseRoot.addChild(headLayerClip);
-      }
-      let chunkRafId = 0;
-      let chunkCursor = 0;
-      const CHUNK_SIZE = 180;
-      const appendChunk = () => {
-        if (cancelled || buildId !== stageBuildGenerationRef.current) return;
-        const end = Math.min(chunkCursor + CHUNK_SIZE, orderedEntries.length);
-        for (let i = chunkCursor; i < end; i += 1) {
-          if (i === headEntryIndex) continue;
-          const display = createDisguiseEntryDisplay(orderedEntries[i], failedTextures, disguiseRoot, decoOptions, headLayerClip);
-          if (display) disguiseRoot.addChild(display);
-        }
-        chunkCursor = end;
-        if (chunkCursor < orderedEntries.length) {
-          chunkRafId = requestAnimationFrame(appendChunk);
-        }
-      };
-      appendChunk();
+      disguiseRoot.addChild(headLayerClip);
 
       const updatePosition = () => {
         const hostEl = hostRef.current;
@@ -396,6 +487,36 @@ export function CharacterStage({
         actorStage.position.set(posX, posY);
       };
 
+      const scene: StageSceneState = {
+        actorStage,
+        disguiseRoot,
+        headLayerClip,
+        failedTextures,
+        decoDisplays: new Map(),
+        updatePosition
+      };
+      sceneRef.current = scene;
+
+      const decoOptions: DisguiseDecoOptions = {
+        onPointerDown: (id, event, root) => {
+          const deco = roleRef.current.decorations.find((item) => item.id === id);
+          if (!deco) return;
+          event.stopPropagation();
+          callbacksRef.current.onSelectDecoration(id, event.ctrlKey || event.metaKey);
+          callbacksRef.current.onBeginTransient();
+          const local = root.toLocal(event.global);
+          dragRef.current = {
+            id,
+            offsetX: local.x - deco.x,
+            offsetY: local.y - deco.y
+          };
+        }
+      };
+
+      const currentRole = roleRef.current;
+      applyHeadLayerDisplayTransform(headLayerClip, currentRole);
+      syncDecorationDisplays(scene, currentRole, selectedIdsRef.current, decoOptions);
+
       updatePosition();
       const rafId = requestAnimationFrame(updatePosition);
 
@@ -407,14 +528,21 @@ export function CharacterStage({
 
       const handleMove = (event: FederatedPointerEvent) => {
         const dragging = dragRef.current;
-        if (!dragging) return;
-        const local = disguiseRoot.toLocal(event.global);
+        const currentScene = sceneRef.current;
+        if (!dragging || !currentScene) return;
+        const local = currentScene.disguiseRoot.toLocal(event.global);
         let nx = local.x - dragging.offsetX;
         let ny = local.y - dragging.offsetY;
-        const disc = clampToDisc(nx, ny, range);
+        const disc = clampToDisc(nx, ny, positionRange(roleRef.current));
         nx = disc.x;
         ny = disc.y;
-        onUpdateDecoration(
+
+        const record = currentScene.decoDisplays.get(dragging.id);
+        if (record) {
+          record.container.position.set(nx, ny);
+        }
+
+        callbacksRef.current.onUpdateDecoration(
           dragging.id,
           {
             x: nx,
@@ -427,11 +555,11 @@ export function CharacterStage({
       const handleUp = () => {
         if (!dragRef.current) return;
         dragRef.current = null;
-        onCommitTransient();
+        callbacksRef.current.onCommitTransient();
       };
 
       const handleStagePointerDown = (event: FederatedPointerEvent) => {
-        if (event.target === stage) onClearSelection();
+        if (event.target === stage) callbacksRef.current.onClearSelection();
       };
 
       stage.on('pointermove', handleMove);
@@ -442,14 +570,19 @@ export function CharacterStage({
       stageTeardownRef.current = () => {
         dragRef.current = null;
         cancelAnimationFrame(rafId);
-        cancelAnimationFrame(chunkRafId);
         positionObserver.disconnect();
         if (stage.destroyed) return;
         stage.off('pointermove', handleMove);
         stage.off('pointerup', handleUp);
         stage.off('pointerupoutside', handleUp);
         stage.off('pointerdown', handleStagePointerDown);
-        stage.removeChildren();
+        for (const child of stage.removeChildren()) {
+          if (!child.destroyed) child.destroy({ children: true });
+        }
+        scene.decoDisplays.clear();
+        if (sceneRef.current === scene) {
+          sceneRef.current = null;
+        }
       };
     });
 
@@ -458,7 +591,41 @@ export function CharacterStage({
       stageTeardownRef.current?.();
       stageTeardownRef.current = null;
     };
-  }, [role, selectedIds, stageScale, facingQuarterTurns, onBeginTransient, onClearSelection, onCommitTransient, onSelectDecoration, onUpdateDecoration]);
+  }, [sceneKey]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const decoOptions: DisguiseDecoOptions = {
+      onPointerDown: (id, event, root) => {
+        const deco = roleRef.current.decorations.find((item) => item.id === id);
+        if (!deco) return;
+        event.stopPropagation();
+        callbacksRef.current.onSelectDecoration(id, event.ctrlKey || event.metaKey);
+        callbacksRef.current.onBeginTransient();
+        const local = root.toLocal(event.global);
+        dragRef.current = {
+          id,
+          offsetX: local.x - deco.x,
+          offsetY: local.y - deco.y
+        };
+      }
+    };
+
+    applyHeadLayerDisplayTransform(scene.headLayerClip, role);
+    syncDecorationDisplays(scene, role, selectedIds, decoOptions);
+  }, [role, selectedIds]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    scene.actorStage.scale.set(stageScale);
+    scene.actorStage.rotation = (((facingQuarterTurns % 4) + 4) % 4) * (Math.PI / 2);
+    scene.updatePosition();
+    const rafId = requestAnimationFrame(scene.updatePosition);
+    return () => cancelAnimationFrame(rafId);
+  }, [stageScale, facingQuarterTurns]);
 
   return (
     <section className="stage-panel">
