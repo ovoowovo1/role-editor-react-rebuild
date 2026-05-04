@@ -135,6 +135,7 @@ export function EditorShell() {
             />
             <EditControls
               disabled={!editor.selectedDecorationIds.length}
+              faceAlwaysEnabled
               selectedCount={editor.selectedDecorationIds.length}
               editValues={editor.editValues}
               stageScale={editor.stageScale}

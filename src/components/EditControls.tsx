@@ -2,6 +2,7 @@ import type { TransformValues } from '../types/role';
 
 interface EditControlsProps {
   disabled: boolean;
+  faceAlwaysEnabled?: boolean;
   editValues: TransformValues;
   selectedCount: number;
   stageScale: number;
@@ -74,6 +75,7 @@ function RangeControl({ label, value, min, max, step, disabled, hint, onBegin, o
 
 export function EditControls({
   disabled,
+  faceAlwaysEnabled = false,
   editValues,
   selectedCount,
   stageScale,
@@ -92,6 +94,7 @@ export function EditControls({
   onStageScaleChange
 }: EditControlsProps) {
   const pr = Math.max(1, positionRange);
+  const faceDisabled = faceAlwaysEnabled ? false : disabled;
   return (
     <section className={`edit-function ${disabled ? 'disabled' : ''}`} aria-label="Edit controls">
       <div className="tool-row" aria-label="Icon toolbar">
@@ -140,7 +143,7 @@ export function EditControls({
           <button
             type="button"
             className="tool-icon-btn tool-icon-face"
-            disabled={disabled}
+            disabled={faceDisabled}
             onClick={onFaceRotate}
             aria-label="Face（對齊舊版占位）"
             title="Face"
