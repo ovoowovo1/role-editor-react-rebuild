@@ -115,8 +115,27 @@ function createTimeline(versionMajor, versionMinor, id, assetId, framesCount, bo
   };
 }
 
+function readMatrix6(r) {
+  return {
+    a: r.readFloat(),
+    b: r.readFloat(),
+    c: r.readFloat(),
+    d: r.readFloat(),
+    tx: r.readFloat(),
+    ty: r.readFloat()
+  };
+}
+
 function cloneInstances(inst) {
-  return inst.map((x) => ({ ...x }));
+  return inst.map((x) => ({
+    objectId: x.objectId,
+    zIndex: x.zIndex,
+    alpha: x.alpha,
+    maskId: x.maskId,
+    matrix: x.matrix
+      ? { a: x.matrix.a, b: x.matrix.b, c: x.matrix.c, d: x.matrix.d, tx: x.matrix.tx, ty: x.matrix.ty }
+      : { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
+  }));
 }
 
 function cloneFrame(prevFrame, frameNumber) {
@@ -307,7 +326,7 @@ function readAnimationFrames(tagID, r, timeline) {
       hasActions = r.readBoolean();
     }
 
-    /** @type {{frameNumber:number, instances:{objectId:string,zIndex:number}[]}} */
+    /** @type {{frameNumber:number, instances:any[]}} */
     let currentFrame;
     if (prevFrame != null) {
       currentFrame = cloneFrame(prevFrame, frameNumber);
@@ -330,9 +349,9 @@ function readAnimationFrames(tagID, r, timeline) {
         const hasEffect = r.readBoolean();
         const stateID = String(r.readUint32());
         const zIndex = r.readInt32();
-        r.readFloat(); // alpha
+        const alpha = r.readFloat();
 
-        r.skip(4 * 6); // matrix
+        const matrix = readMatrix6(r);
 
         if (hasColorTransform) r.skip(4 * 7);
 
@@ -344,9 +363,15 @@ function readAnimationFrames(tagID, r, timeline) {
           }
         }
 
-        if (hasMask) r.readUint32();
+        const maskId = hasMask ? String(r.readUint32()) : null;
 
-        currentFrame.instances.push({ objectId: stateID, zIndex });
+        currentFrame.instances.push({
+          objectId: stateID,
+          zIndex,
+          alpha,
+          maskId,
+          matrix
+        });
       }
       sortInstances(currentFrame);
     }
@@ -407,6 +432,8 @@ function finalizeDefaults(cfg) {
     if (csfRow?.elements) elementsMap = csfRow.elements;
   }
   cfg.defaultElements = elementsMap;
+
+  cfg.timelineById = new Map(cfg.timelines.map((t) => [String(t.id), t]));
 }
 
 /**

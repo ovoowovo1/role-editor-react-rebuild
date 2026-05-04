@@ -4,9 +4,11 @@
  */
 
 import type { GafAtlasFrame as GafAtlasFrameType } from '../types/role';
+import type { ActorGafRuntimeManifest as ActorGafRuntimeManifestType } from '../types/gafRuntime';
 import generatedManifest from '../generated/gafManifest.json';
 
 export type GafAtlasFrame = GafAtlasFrameType;
+export type ActorGafRuntimeManifest = ActorGafRuntimeManifestType;
 
 export interface GafAssetManifest {
   decorations: string;
@@ -29,6 +31,8 @@ interface GeneratedGafManifest {
     foot: number;
     cape: number;
   };
+  /** Present when built from twactor.gaf (schema >= 2); optional in scripts/gafManifest.fallback.json */
+  actorRuntime?: ActorGafRuntimeManifest;
 }
 
 type GafAtlasFrameData = Omit<GafAtlasFrame, 'texture'>;
@@ -75,3 +79,5 @@ export const actorAtlasFrames: Record<string, GafAtlasFrame[]> = withTextureList
 );
 
 export const actorFallbackFrameCounts = manifest.actorFallbackFrameCounts;
+
+export const actorRuntimeManifest: ActorGafRuntimeManifest | undefined = manifest.actorRuntime;

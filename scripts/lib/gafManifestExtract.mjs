@@ -51,8 +51,117 @@ export function extractDecorationSlice(parsed) {
   return { decorationGafSymbols, decorationAtlasFrameData };
 }
 
+function serializeElementForRuntime(el) {
+  return {
+    atlasID: el.atlasID,
+    elementAtlasID: el.elementAtlasID,
+    region: el.region,
+    pivotX: el.pivotX,
+    pivotY: el.pivotY,
+    scaleX: el.scaleX,
+    scaleY: el.scaleY,
+    linkageName: el.linkageName ?? ''
+  };
+}
+
+function serializeTimelineForRuntime(tl) {
+  const animationObjects = {};
+  for (const [objId, ao] of tl.animationObjects) {
+    animationObjects[objId] = {
+      regionId: ao.regionId,
+      type: ao.type,
+      mask: !!ao.mask
+    };
+  }
+
+  /** @type {Record<string, { objectId:string, zIndex:number, alpha:number, maskId:null|string, matrix:any }[]>} */
+  const framesObj = {};
+
+  const total = tl.framesCount;
+
+  for (let f = 1; f <= total; f += 1) {
+    const raw = tl.frames.get(f);
+    const source = Array.isArray(raw) ? raw : [];
+
+    framesObj[String(f)] = source.map((inst) => ({
+      objectId: inst.objectId,
+      zIndex: inst.zIndex,
+      alpha:
+        typeof inst.alpha === 'number' && Number.isFinite(inst.alpha) ? clampDisplayAlpha(inst.alpha) : 1,
+      maskId: inst.maskId ?? null,
+      matrix:
+        inst.matrix && typeof inst.matrix === 'object'
+          ? inst.matrix
+          : { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
+    }));
+  }
+
+  return {
+    id: String(tl.id),
+    linkage: tl.linkage,
+    framesCount: total,
+    bounds: tl.bounds,
+    pivot: tl.pivot,
+    animationObjects,
+    frames: framesObj
+  };
+}
+
+function clampDisplayAlpha(a) {
+  if (a > 1.000001) return Math.min(Math.max(a / 255, 0), 1);
+  return Math.min(Math.max(a, 0), 1);
+}
+
+/**
+ * Full twactor timelines + elements — nested actor clips reference arbitrary timeline IDs.
+ * @param {Record<string, any[]> | undefined} [actorAtlasFrameData] when set, warn if timeline frame count != thumbnail slice length
+ */
+export function extractActorRuntime(parsed, actorAtlasFrameData) {
+  const elementsObj = {};
+  for (const [id, el] of parsed.defaultElements) {
+    elementsObj[String(id)] = serializeElementForRuntime(el);
+  }
+
+  const timelines = parsed.timelines.map((tl) => serializeTimelineForRuntime(tl));
+  const timelinesById = {};
+  const timelinesByLinkage = {};
+
+  for (const tl of timelines) {
+    timelinesById[tl.id] = tl;
+    if (tl.linkage) {
+      timelinesByLinkage[tl.linkage] = tl.id;
+    }
+  }
+
+  const actorLinkages = ['lib_actor_head', 'lib_actor_hand', 'lib_actor_foot', 'lib_actor_cape'];
+
+  for (const link of actorLinkages) {
+    const id = timelinesByLinkage[link];
+    const tl = id ? timelinesById[id] : null;
+    if (!tl) {
+      console.warn(`[generate:gaf] Actor runtime missing timeline linkage "${link}"`);
+      continue;
+    }
+    const sliceLen = actorAtlasFrameData?.[link]?.length;
+    if (sliceLen != null && sliceLen > 0 && tl.framesCount !== sliceLen) {
+      console.warn(
+        `[generate:gaf] Actor runtime "${link}" framesCount=${tl.framesCount} != actorAtlasFrame slice length ${sliceLen}`
+      );
+    }
+  }
+
+  return {
+    actorRuntime: {
+      elements: elementsObj,
+      timelinesById,
+      timelinesByLinkage
+    }
+  };
+}
+
 export function extractActorSlice(parsed) {
   const elements = parsed.defaultElements;
+  /** Thumbnail / choice-grid only: pick one texture drawable per actor frame */
   const timelines = parsed.timelines.filter((t) => t.linkage && isActorLinkage(t.linkage));
 
   /** @type {Record<string, AtlasFrame[]>} */

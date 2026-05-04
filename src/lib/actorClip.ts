@@ -1,14 +1,15 @@
 import { Container, Matrix } from 'pixi.js';
-import { actorAtlasFrames } from '../mock/gafManifest';
+import { actorAtlasFrames, actorRuntimeManifest, gafSources } from '../mock/gafManifest';
 import { actorPreviewSlots, type ActorPreviewSlot } from './actorClipAdapter';
 import { actorPartRuntime } from './twlibPartRuntime';
-import { GafMovieClip } from './gafMovieClip';
+import { createActorGafClip, type GafMovieClip } from './gafMovieClip';
 
 /**
  * Lightweight recreation of the TWLibLib ActorClip runtime hierarchy used by
- * the original RoleEditor preview. The rebuild renders with atlas Sprites
- * instead of true GAFMovieClips, so these classes only expose the subset of
- * API touched by the editor:
+ * the original RoleEditor preview. When `actorRuntime` is present in the GAF manifest,
+ * each part uses timeline display-list rendering (`GafMovieClip` timeline mode).
+ * Missing runtime (CI fallback) falls back to one cropped atlas sprite per frame.
+ * These wrappers only expose the subset of API touched by the editor:
  *
  *   actorClip.footContainer.{loop, gotoAndPlay}
  *   actorClip.leftFoot/rightFoot/leftHand/rightHand.setFrame
@@ -47,7 +48,13 @@ function applySlotMatrix(target: Container, slot: ActorPreviewSlot): void {
 }
 
 function makeClip(library: string, failedTextures: Set<string>): GafMovieClip {
-  return new GafMovieClip(actorAtlasFrames[library] ?? [], failedTextures);
+  return createActorGafClip(
+    failedTextures,
+    library,
+    actorRuntimeManifest,
+    gafSources.actorTexture,
+    actorAtlasFrames[library] ?? []
+  );
 }
 
 /**

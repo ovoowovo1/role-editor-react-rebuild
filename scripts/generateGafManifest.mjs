@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
 import { parseGafBinary } from './lib/gafBinParser.mjs';
 import {
+  extractActorRuntime,
   extractActorSlice,
   extractDecorationSlice,
   flattenActorFrames,
@@ -92,6 +93,7 @@ async function main() {
 
   const deco = extractDecorationSlice(decParsed);
   const actor = extractActorSlice(actParsed);
+  const { actorRuntime } = extractActorRuntime(actParsed, actor.actorAtlasFrameData);
 
   if (fs.existsSync(DEC_PNG)) {
     const dims = readPngDimensions(fs.readFileSync(DEC_PNG));
@@ -108,7 +110,7 @@ async function main() {
   }
 
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     source: 'parsed',
     assetManifest: {
@@ -122,7 +124,8 @@ async function main() {
     decorationGafSymbols: deco.decorationGafSymbols,
     decorationAtlasFrameData: deco.decorationAtlasFrameData,
     actorAtlasFrameData: actor.actorAtlasFrameData,
-    actorFallbackFrameCounts: actor.actorFallbackFrameCounts
+    actorFallbackFrameCounts: actor.actorFallbackFrameCounts,
+    actorRuntime
   };
 
   fs.mkdirSync(path.dirname(OUT), { recursive: true });

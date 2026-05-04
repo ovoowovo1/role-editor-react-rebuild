@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Application, Container, FederatedPointerEvent, Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
 import type { BodyPartTab, DecorationLayer, PartOption, RoleDocument } from '../types/role';
 import { getBodyPartOption, optionById } from '../mock/options';
-import { actorAtlasFrames } from '../mock/gafManifest';
+import { actorAtlasFrames, actorRuntimeManifest, gafSources } from '../mock/gafManifest';
 import { clamp, clampToDisc } from '../lib/math';
 import { ACTOR_BODY_SCALE } from '../lib/actorClipAdapter';
 import { actorPartRuntime, getPartFrame, isRuntimeEmptyFrame, sanitizePartScale } from '../lib/twlibPartRuntime';
@@ -10,7 +10,7 @@ import { collectAtlasTextureUrlsForRole, partitionAtlasTextureUrls } from '../li
 import { applyGafAtlasToSprite } from '../lib/gafAtlasSprite';
 import { createDecoSelectionGlowFilter } from '../lib/decoSelectionFilter';
 import { ActorClip } from '../lib/actorClip';
-import { GafMovieClip } from '../lib/gafMovieClip';
+import { createActorGafClip, type GafMovieClip } from '../lib/gafMovieClip';
 import { isMissingDecoAssetId } from '../lib/roleSerialization';
 
 interface CharacterStageProps {
@@ -113,7 +113,13 @@ function buildDisguiseRoot(
   const disguiseRoot = new Container();
 
   const headLibrary = actorPartRuntime.head.library;
-  const headLayerClip = new GafMovieClip(actorAtlasFrames[headLibrary] ?? [], failedTextures);
+  const headLayerClip = createActorGafClip(
+    failedTextures,
+    headLibrary,
+    actorRuntimeManifest,
+    gafSources.actorTexture,
+    actorAtlasFrames[headLibrary] ?? []
+  );
   headLayerClip.gotoAndStop(headFrame);
 
   const headLayer = role.headLayer ?? {
