@@ -42,10 +42,30 @@ type VirtualLayer =
 
 const TWROLE_HEADER = [0, 1] as const;
 const HEAD_LAYER_ID = '__head_layer__';
+const DEFAULT_LEGACY_DR = 8;
+
+const LEGACY_DR_BY_CAMP: Record<string, number> = {
+  skydow: 0,
+  camp1: 0,
+  '天影十字軍': 0,
+  royal: 4,
+  camp2: 4,
+  '皇家騎士團': 4,
+  third: 8,
+  camp3: 8,
+  '第三勢力': 8,
+  civil: 13,
+  camp4: 13,
+  '無關陣營': 13
+};
 
 function asFiniteNumber(value: unknown, fallback: number): number {
   const numeric = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
   return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function getLegacyDr(role: RoleDocument): number {
+  return LEGACY_DR_BY_CAMP[String(role.camp ?? '').trim()] ?? DEFAULT_LEGACY_DR;
 }
 
 function normalizeDegrees(value: unknown): number {
@@ -136,7 +156,7 @@ function exportLegacyDecoGroups(role: RoleDocument): LegacyDecoGroup[] {
 export function buildLegacyCompactPayload(role: RoleDocument): LegacyTwrolePayload {
   return {
     data: {
-      dr: 8,
+      dr: getLegacyDr(role),
       cr: {
         head: { f: getPartFrame(role, 'head'), s: getPartScale(role, 'head') },
         cape: { f: getPartFrame(role, 'cape'), s: getPartScale(role, 'cape') },
