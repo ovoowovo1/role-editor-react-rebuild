@@ -24,6 +24,17 @@ function roundPosition(value: number): number {
 export function useRoleEditor() {
   const editor = useHeadLayerEditor();
 
+  const selectDecoration = useCallback(
+    (id: string, additive = false) => {
+      const isAlreadyInMultiSelection = !additive && editor.selectedDecorationIds.length > 1 && editor.selectedDecorationIds.includes(id);
+      if (isAlreadyInMultiSelection) {
+        return;
+      }
+      editor.selectDecoration(id, additive);
+    },
+    [editor]
+  );
+
   const selectAllDecorations = useCallback(() => {
     const ids = getAllLayerIdsIncludingHead(editor.role);
     editor.clearSelection();
@@ -75,6 +86,7 @@ export function useRoleEditor() {
 
   return {
     ...editor,
+    selectDecoration,
     selectAllDecorations,
     updateDecoration
   };
