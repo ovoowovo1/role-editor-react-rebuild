@@ -1,9 +1,11 @@
 import { PART_TABS, type PartTab } from '../types/role';
 import { tabLabels } from '../mock/options';
 
+export type TopBarMode = PartTab | 'colorBlock';
+
 interface TabBarProps {
-  value: PartTab;
-  onChange(tab: PartTab): void;
+  value: TopBarMode;
+  onChange(tab: TopBarMode): void;
 }
 
 export function TabBar({ value, onChange }: TabBarProps) {
@@ -19,6 +21,14 @@ export function TabBar({ value, onChange }: TabBarProps) {
           {tabLabels[tab]}
         </button>
       ))}
+      <button
+        key="colorBlock"
+        className={`top-bar-button ${value === 'colorBlock' ? 'selected' : ''}`}
+        type="button"
+        onClick={() => onChange('colorBlock')}
+      >
+        Color Block
+      </button>
     </nav>
   );
 }
