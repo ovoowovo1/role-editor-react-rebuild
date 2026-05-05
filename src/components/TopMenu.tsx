@@ -7,7 +7,6 @@ interface TopMenuProps {
   gender: GenderCode;
   canUndo: boolean;
   canRedo: boolean;
-  canMerge: boolean;
   status: string;
   onImport(file: File): void;
   onMerge(file: File): void;
@@ -19,7 +18,6 @@ interface TopMenuProps {
   onGenderChange(gender: GenderCode): void;
   onOpenShortcuts(): void;
   onOpenInsertSettings(): void;
-  onMergeSelected(): void;
 }
 
 export function TopMenu({
@@ -27,7 +25,6 @@ export function TopMenu({
   gender,
   canUndo,
   canRedo,
-  canMerge,
   status,
   onImport,
   onMerge,
@@ -38,8 +35,7 @@ export function TopMenu({
   onCampChange,
   onGenderChange,
   onOpenShortcuts,
-  onOpenInsertSettings,
-  onMergeSelected
+  onOpenInsertSettings
 }: TopMenuProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const mergeInputRef = useRef<HTMLInputElement | null>(null);
@@ -83,9 +79,6 @@ export function TopMenu({
         </button>
         <button className="primary-button subtle" type="button" onClick={() => mergeInputRef.current?.click()}>
           Merge File
-        </button>
-        <button className="primary-button subtle" type="button" disabled={!canMerge} onClick={onMergeSelected}>
-          Merge Selected
         </button>
       </div>
 
