@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HEAD_LAYER_ID } from '../components/LayerList';
 import { useRoleEditor as useHeadLayerEditor, type InsertDraftSettings } from './useRoleEditorWithHeadLayerDrag';
-import type { DecorationLayer, RoleDocument } from '../types/role';
+import type { DecorationLayer, RoleDocument, TransformValues } from '../types/role';
 
 export type { InsertDraftSettings };
 
@@ -29,6 +29,21 @@ function getAllLayerIdsIncludingHead(role: RoleDocument): string[] {
 
 function roundPosition(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function roundValue(value: number, digits = 3): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function transformValuesFromSingleDeco(deco: DecorationLayer): TransformValues {
+  return {
+    rotate: roundValue(deco.rotation, 3),
+    scale: roundValue(Math.abs(deco.scaleX), 3),
+    ratio: roundValue(Math.abs(deco.scaleY / (deco.scaleX || 1)), 3),
+    posX: roundValue(deco.x, 2),
+    posY: roundValue(deco.y, 2)
+  };
 }
 
 function removeSelectedDecos(role: RoleDocument, selectedIds: string[]): RoleDocument | null {
@@ -67,6 +82,11 @@ function validSelectionIds(role: RoleDocument, ids: string[]): string[] {
   return ids.filter((id, index) => valid.has(id) && ids.indexOf(id) === index);
 }
 
+function nextSelection(current: string[], id: string, additive: boolean): string[] {
+  if (!additive) return [id];
+  return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
+}
+
 export function useRoleEditor() {
   const editor = useHeadLayerEditor();
   const roleRef = useRef(editor.role);
@@ -81,8 +101,36 @@ export function useRoleEditor() {
   }, [editor.role]);
 
   useEffect(() => {
-    selectedIdsRef.current = editor.selectedDecorationIds;
+    if (editor.selectedDecorationIds.length) {
+      selectedIdsRef.current = editor.selectedDecorationIds;
+    } else if (!transientBeforeRef.current) {
+      selectedIdsRef.current = [];
+    }
   }, [editor.selectedDecorationIds]);
+
+  const stableSelectedDecorationIds = useMemo(() => {
+    const current = validSelectionIds(editor.role, editor.selectedDecorationIds);
+    if (current.length) return current;
+    if (transientBeforeRef.current) {
+      const fallback = transientSelectionBeforeRef.current.length ? transientSelectionBeforeRef.current : selectedIdsRef.current;
+      return validSelectionIds(editor.role, fallback);
+    }
+    return [];
+  }, [editor.role, editor.selectedDecorationIds]);
+
+  const stableSelectedDecorations = useMemo(
+    () => editor.role.decorations.filter((deco) => stableSelectedDecorationIds.includes(deco.id)),
+    [editor.role.decorations, stableSelectedDecorationIds]
+  );
+
+  const stableEditValues = useMemo<TransformValues>(() => {
+    const decoIds = stableSelectedDecorationIds.filter((id) => id !== HEAD_LAYER_ID);
+    if (decoIds.length === 1) {
+      const deco = editor.role.decorations.find((item) => item.id === decoIds[0]);
+      if (deco) return transformValuesFromSingleDeco(deco);
+    }
+    return editor.editValues;
+  }, [editor.editValues, editor.role.decorations, stableSelectedDecorationIds]);
 
   const restoreSelection = useCallback(
     (ids: string[]) => {
@@ -92,6 +140,7 @@ export function useRoleEditor() {
       window.setTimeout(() => {
         const stillValid = validSelectionIds(roleRef.current, nextIds);
         if (!stillValid.length) return;
+        selectedIdsRef.current = stillValid;
         editor.clearSelection();
         stillValid.forEach((id, index) => editor.selectDecoration(id, index > 0));
       }, 0);
@@ -128,6 +177,7 @@ export function useRoleEditor() {
       const previous = localPast[localPast.length - 1];
       setLocalPast((items) => items.slice(0, -1));
       setLocalFuture((items) => [cloneRole(roleRef.current), ...items].slice(0, HISTORY_LIMIT));
+      selectedIdsRef.current = [];
       editor.importRole(previous);
       editor.clearSelection();
       return;
@@ -140,6 +190,7 @@ export function useRoleEditor() {
       const next = localFuture[0];
       setLocalFuture((items) => items.slice(1));
       setLocalPast((items) => [...items, cloneRole(roleRef.current)].slice(-HISTORY_LIMIT));
+      selectedIdsRef.current = [];
       editor.importRole(next);
       editor.clearSelection();
       return;
@@ -149,24 +200,26 @@ export function useRoleEditor() {
 
   const selectDecoration = useCallback(
     (id: string, additive = false) => {
-      const isAlreadyInMultiSelection = !additive && editor.selectedDecorationIds.length > 1 && editor.selectedDecorationIds.includes(id);
+      const isAlreadyInMultiSelection = !additive && stableSelectedDecorationIds.length > 1 && stableSelectedDecorationIds.includes(id);
       if (isAlreadyInMultiSelection) return;
+      selectedIdsRef.current = nextSelection(stableSelectedDecorationIds, id, additive);
       editor.selectDecoration(id, additive);
     },
-    [editor]
+    [editor, stableSelectedDecorationIds]
   );
 
   const selectAllDecorations = useCallback(() => {
     const ids = getAllLayerIdsIncludingHead(editor.role);
+    selectedIdsRef.current = ids;
     editor.clearSelection();
     ids.forEach((id, index) => editor.selectDecoration(id, index > 0));
   }, [editor]);
 
   const beginTransient = useCallback(() => {
     transientBeforeRef.current = cloneRole(roleRef.current);
-    transientSelectionBeforeRef.current = [...selectedIdsRef.current];
+    transientSelectionBeforeRef.current = stableSelectedDecorationIds.length ? [...stableSelectedDecorationIds] : [...selectedIdsRef.current];
     editor.beginTransient();
-  }, [editor]);
+  }, [editor, stableSelectedDecorationIds]);
 
   const commitTransient = useCallback(() => {
     const before = transientBeforeRef.current;
@@ -182,9 +235,9 @@ export function useRoleEditor() {
 
   const updateDecoration = useCallback(
     (id: string, patch: Partial<DecorationLayer>, commit?: boolean) => {
-      const selectionBefore = [...selectedIdsRef.current];
+      const selectionBefore = stableSelectedDecorationIds.length ? [...stableSelectedDecorationIds] : [...selectedIdsRef.current];
       const runUpdate = () => {
-        const selectedDecoIds = selectedIdsRef.current.filter((itemId) => itemId !== HEAD_LAYER_ID);
+        const selectedDecoIds = (selectionBefore.length ? selectionBefore : selectedIdsRef.current).filter((itemId) => itemId !== HEAD_LAYER_ID);
         const shouldMoveSelection =
           selectedDecoIds.length > 1 &&
           selectedDecoIds.includes(id) &&
@@ -226,33 +279,43 @@ export function useRoleEditor() {
       if (commit) withImmediateHistory(runUpdate, selectionBefore);
       else runUpdate();
     },
-    [editor, withImmediateHistory]
+    [editor, stableSelectedDecorationIds, withImmediateHistory]
   );
 
   const updateSelectedTransform = useCallback(
     (patch: Parameters<typeof editor.updateSelectedTransform>[0], commit?: boolean) => {
-      const selectionBefore = [...selectedIdsRef.current];
+      const selectionBefore = stableSelectedDecorationIds.length ? [...stableSelectedDecorationIds] : [...selectedIdsRef.current];
       if (commit) withImmediateHistory(() => editor.updateSelectedTransform(patch, commit), selectionBefore);
       else editor.updateSelectedTransform(patch, commit);
     },
-    [editor, withImmediateHistory]
+    [editor, stableSelectedDecorationIds, withImmediateHistory]
   );
 
+  const clearSelection = useCallback(() => {
+    selectedIdsRef.current = [];
+    transientSelectionBeforeRef.current = [];
+    editor.clearSelection();
+  }, [editor]);
+
   const deleteSelected = useCallback(() => {
-    const nextRole = removeSelectedDecos(roleRef.current, selectedIdsRef.current);
+    const nextRole = removeSelectedDecos(roleRef.current, stableSelectedDecorationIds.length ? stableSelectedDecorationIds : selectedIdsRef.current);
     if (!nextRole) return;
     commitRole(nextRole);
-    editor.clearSelection();
-  }, [commitRole, editor]);
+    clearSelection();
+  }, [clearSelection, commitRole, stableSelectedDecorationIds]);
 
   return {
     ...editor,
+    selectedDecorationIds: stableSelectedDecorationIds,
+    selectedDecorations: stableSelectedDecorations,
+    editValues: stableEditValues,
     canUndo: localPast.length > 0 || editor.canUndo,
     canRedo: localFuture.length > 0 || editor.canRedo,
     undo,
     redo,
     selectDecoration,
     selectAllDecorations,
+    clearSelection,
     beginTransient,
     commitTransient,
     updateDecoration,
