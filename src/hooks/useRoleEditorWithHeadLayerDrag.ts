@@ -81,6 +81,12 @@ function atomsForActive(role: RoleDocument, target: LayerDragTarget, selectedIds
   return [target.id];
 }
 
+function groupIdForTarget(role: RoleDocument, target: LayerDragTarget): string | null {
+  if (target.kind === 'group') return target.id;
+  if (target.kind === 'head') return role.groups?.find((group) => group.itemIds.includes(HEAD_LAYER_ID))?.id ?? null;
+  return role.groups?.find((group) => group.itemIds.includes(target.id))?.id ?? null;
+}
+
 function deriveRoleFromAtoms(role: RoleDocument, atoms: string[]): RoleDocument {
   const decorationById = new Map(role.decorations.map((item) => [item.id, item]));
   const decorations = atoms
@@ -97,21 +103,45 @@ function deriveRoleFromAtoms(role: RoleDocument, atoms: string[]): RoleDocument 
   };
 }
 
-function removeSingleItemFromGroups(role: RoleDocument, active: LayerDragTarget, movingAtoms: string[], over: LayerDragTarget): void {
-  if (active.kind !== 'item' || over.kind !== 'head' || movingAtoms.length !== 1) return;
+function syncGroupsForMovedAtoms(role: RoleDocument, active: LayerDragTarget, over: LayerDragTarget, movingAtoms: string[]): void {
+  const movingIds = movingAtoms.map(atomToLayerId);
+  const movingSet = new Set(movingIds);
+  const sourceGroupIds = new Set<string>();
+  for (const group of role.groups ?? []) {
+    if (group.itemIds.some((id) => movingSet.has(id))) sourceGroupIds.add(group.id);
+  }
+  const targetGroupId = groupIdForTarget(role, over);
+
   role.groups = (role.groups ?? [])
-    .map((group) => ({ ...group, itemIds: group.itemIds.filter((id) => id !== active.id) }))
-    .filter((group) => group.itemIds.length >= 2);
+    .map((group) => {
+      let itemIds = group.itemIds.filter((id) => !movingSet.has(id));
+      if (targetGroupId && group.id === targetGroupId) {
+        itemIds = [...itemIds, ...movingIds.filter((id) => !itemIds.includes(id))];
+      }
+      return { ...group, itemIds };
+    })
+    .filter((group) => group.itemIds.length >= 2 || sourceGroupIds.has(group.id) === false);
+
+  role.groups = (role.groups ?? []).filter((group) => group.itemIds.length >= 2 || group.id === targetGroupId);
+
+  if (!targetGroupId && active.kind === 'item' && over.kind === 'head' && movingAtoms.length === 1) {
+    role.groups = (role.groups ?? [])
+      .map((group) => ({ ...group, itemIds: group.itemIds.filter((id) => id !== active.id) }))
+      .filter((group) => group.itemIds.length >= 2);
+  }
 }
 
 function reorderIncludingHead(role: RoleDocument, activeRowId: string, overRowId: string, selectedIds: string[]): RoleDocument | null {
   const active = parseLayerDragTarget(activeRowId);
   const over = parseLayerDragTarget(overRowId);
-  const involvesHead = active.kind === 'head' || over.kind === 'head' || (active.kind === 'group' && atomsForTarget(role, active).includes(HEAD_ATOM)) || (over.kind === 'group' && atomsForTarget(role, over).includes(HEAD_ATOM));
-  if (!involvesHead) return null;
+  const activeAtoms = atomsForTarget(role, active);
+  const overAtoms = atomsForTarget(role, over);
+  const involvesHead = activeAtoms.includes(HEAD_ATOM) || overAtoms.includes(HEAD_ATOM);
+  const targetGroupId = groupIdForTarget(role, over);
+  const canMoveIntoGroup = Boolean(targetGroupId && activeAtoms.some((atom) => !overAtoms.includes(atom)));
+  if (!involvesHead && !canMoveIntoGroup) return null;
 
   const movingAtoms = atomsForActive(role, active, selectedIds);
-  const overAtoms = atomsForTarget(role, over);
   if (!movingAtoms.length || !overAtoms.length) return role;
 
   const originalAtoms = atomsForRole(role);
@@ -132,7 +162,7 @@ function reorderIncludingHead(role: RoleDocument, activeRowId: string, overRowId
   const targetIndex = sourceStart < overStart ? Math.max(...remainingOverIndexes) + 1 : Math.min(...remainingOverIndexes);
   const nextAtoms = [...remainingAtoms.slice(0, targetIndex), ...movingAtoms, ...remainingAtoms.slice(targetIndex)];
   const nextRole = deriveRoleFromAtoms(role, nextAtoms);
-  removeSingleItemFromGroups(nextRole, active, movingAtoms, over);
+  syncGroupsForMovedAtoms(nextRole, active, over, movingAtoms);
   return nextRole;
 }
 
