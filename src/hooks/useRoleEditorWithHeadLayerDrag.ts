@@ -1,12 +1,37 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { DecorationGroup, RoleDocument } from '../types/role';
+import type { DecorationGroup, DecorationLayer, EditorClipboardItem, PartOption, RoleDocument } from '../types/role';
+import { createId, round } from '../lib/math';
 import { HEAD_LAYER_ID } from '../components/LayerList';
 import { useRoleEditor as useBaseRoleEditor } from './useRoleEditor';
+
+export type InsertDraftPlacement = 'top' | 'bottom' | 'after_index';
+
+export interface InsertDraftScopes {
+  palette: boolean;
+  copy: boolean;
+  mergeBatch: boolean;
+}
+
+export interface InsertDraftSettings {
+  placement: InsertDraftPlacement;
+  index: string;
+  scopes: InsertDraftScopes;
+}
 
 const HEAD_ROW_ID = 'head:singleton';
 const HEAD_ATOM = '__HEAD_LAYER__';
 const GROUP_ROW_PREFIX = 'group:';
 const ITEM_ROW_PREFIX = 'item:';
+
+const DEFAULT_INSERT_SETTINGS: InsertDraftSettings = {
+  placement: 'top',
+  index: '1',
+  scopes: {
+    palette: true,
+    copy: true,
+    mergeBatch: true
+  }
+};
 
 type LayerDragTarget =
   | { kind: 'head' }
@@ -87,8 +112,9 @@ function groupIdForTarget(role: RoleDocument, target: LayerDragTarget): string |
   return role.groups?.find((group) => group.itemIds.includes(target.id))?.id ?? null;
 }
 
-function deriveRoleFromAtoms(role: RoleDocument, atoms: string[]): RoleDocument {
+function deriveRoleFromAtoms(role: RoleDocument, atoms: string[], extraDecorations: Map<string, DecorationLayer> = new Map()): RoleDocument {
   const decorationById = new Map(role.decorations.map((item) => [item.id, item]));
+  extraDecorations.forEach((item, id) => decorationById.set(id, item));
   const decorations = atoms
     .filter((id) => id !== HEAD_ATOM)
     .map((id) => decorationById.get(id))
@@ -246,9 +272,103 @@ function toggleLayerSelection(current: string[], ids: string[], additive: boolea
   return Array.from(next);
 }
 
+function makeDecoration(option: PartOption, index: number): DecorationLayer {
+  const spread = 14;
+  return {
+    id: createId('deco'),
+    code: option.code,
+    assetId: option.id,
+    name: option.label,
+    x: round(((index % 5) - 2) * spread, 2),
+    y: round(-50 + Math.floor(index / 5) * 8, 2),
+    scaleX: 0.5,
+    scaleY: 0.5,
+    rotation: 0,
+    visible: true,
+    opacity: 1
+  };
+}
+
+function copyDecorationForInsert(item: DecorationLayer | EditorClipboardItem, offset = 0): DecorationLayer {
+  return {
+    ...item,
+    id: createId('deco'),
+    x: round(item.x + offset, 2),
+    y: round(item.y + offset, 2)
+  };
+}
+
+function getInsertVirtualIndex(role: RoleDocument, settings: InsertDraftSettings): number {
+  const atoms = atomsForRole(role);
+  if (settings.placement === 'top') return 0;
+  if (settings.placement === 'bottom') return atoms.length;
+  const numeric = Number(settings.index);
+  if (!Number.isInteger(numeric) || numeric < 1) return atoms.length;
+  return clamp(numeric, 0, atoms.length);
+}
+
+function settingsForScope(settings: InsertDraftSettings, enabled: boolean): InsertDraftSettings {
+  return enabled ? settings : { ...settings, placement: 'bottom' };
+}
+
+function insertDecorations(role: RoleDocument, decorations: DecorationLayer[], settings: InsertDraftSettings): RoleDocument {
+  if (!decorations.length) return role;
+  const atoms = atomsForRole(role);
+  const insertIndex = getInsertVirtualIndex(role, settings);
+  const newAtoms = decorations.map((item) => item.id);
+  const nextAtoms = [...atoms.slice(0, insertIndex), ...newAtoms, ...atoms.slice(insertIndex)];
+  const extras = new Map(decorations.map((item) => [item.id, item]));
+  return deriveRoleFromAtoms(role, nextAtoms, extras);
+}
+
+function mergeImportedRoleIntoCurrent(role: RoleDocument, incoming: RoleDocument, settings: InsertDraftSettings): RoleDocument {
+  const idMap = new Map<string, string>();
+  const copied = incoming.decorations.map((item, index) => {
+    const next = copyDecorationForInsert(item, index * 2);
+    idMap.set(item.id, next.id);
+    return next;
+  });
+  const nextRole = insertDecorations(role, copied, settings);
+  const importedGroups = (incoming.groups ?? [])
+    .map((group): DecorationGroup | null => {
+      const itemIds = group.itemIds
+        .map((id) => idMap.get(id))
+        .filter((id): id is string => Boolean(id));
+      if (itemIds.length < 2) return null;
+      return {
+        id: nextGroupId(),
+        name: group.name || nextGroupName(nextRole),
+        visible: group.visible !== false,
+        collapsed: group.collapsed === true,
+        itemIds
+      };
+    })
+    .filter((group): group is DecorationGroup => group !== null);
+  return {
+    ...nextRole,
+    groups: [...(nextRole.groups ?? []), ...importedGroups],
+    updatedAt: new Date().toISOString()
+  };
+}
+
 export function useRoleEditor() {
   const editor = useBaseRoleEditor();
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>(editor.selectedDecorationIds);
+  const [insertDraftSettings, setInsertDraftSettingsState] = useState<InsertDraftSettings>(DEFAULT_INSERT_SETTINGS);
+  const [localClipboard, setLocalClipboard] = useState<EditorClipboardItem[]>([]);
+  const [localPasteCount, setLocalPasteCount] = useState(0);
+
+  const setInsertDraftSettings = useCallback((settings: InsertDraftSettings) => {
+    setInsertDraftSettingsState({
+      placement: settings.placement,
+      index: settings.index,
+      scopes: {
+        palette: Boolean(settings.scopes.palette),
+        copy: Boolean(settings.scopes.copy),
+        mergeBatch: Boolean(settings.scopes.mergeBatch)
+      }
+    });
+  }, []);
 
   useEffect(() => {
     setSelectedLayerIds((ids) => {
@@ -271,6 +391,8 @@ export function useRoleEditor() {
     () => ungroupedSelectedLayerIds(editor.role, selectedLayerIds).length >= 2,
     [editor.role, selectedLayerIds]
   );
+
+  const canMergeSelected = selectedDecorations.length > 0;
 
   const selectDecoration = useCallback(
     (id: string, additive = false) => {
@@ -355,11 +477,90 @@ export function useRoleEditor() {
     [editor]
   );
 
+  const choosePart = useCallback(
+    (tab: Parameters<typeof editor.choosePart>[0], option: PartOption) => {
+      if (tab === 'deco' && insertDraftSettings.scopes.palette) {
+        const deco = makeDecoration(option, editor.role.decorations.length);
+        const nextRole = insertDecorations(editor.role, [deco], insertDraftSettings);
+        editor.importRole(nextRole);
+        setSelectedLayerIds([deco.id]);
+        return;
+      }
+      editor.choosePart(tab, option);
+    },
+    [editor, insertDraftSettings]
+  );
+
+  const copySelected = useCallback(() => {
+    const copied = selectedDecorations.map(({ id: _id, ...item }) => item);
+    setLocalClipboard(copied);
+    editor.copySelected();
+  }, [editor, selectedDecorations]);
+
+  const pasteClipboard = useCallback(() => {
+    if (!insertDraftSettings.scopes.copy || !localClipboard.length) {
+      editor.pasteClipboard();
+      return;
+    }
+    const offset = 8 + localPasteCount * 4;
+    const pasted = localClipboard.map((item) => copyDecorationForInsert(item, offset));
+    const nextRole = insertDecorations(editor.role, pasted, insertDraftSettings);
+    editor.importRole(nextRole);
+    setSelectedLayerIds(pasted.map((item) => item.id));
+    setLocalPasteCount((count) => count + 1);
+  }, [editor, insertDraftSettings, localClipboard, localPasteCount]);
+
+  const mirrorCopyHorizontalSelected = useCallback(() => {
+    if (!insertDraftSettings.scopes.copy || !selectedDecorations.length) {
+      editor.mirrorCopyHorizontalSelected();
+      return;
+    }
+    const copied = selectedDecorations.map((item) => ({ ...copyDecorationForInsert(item), x: round(-item.x, 2) }));
+    const nextRole = insertDecorations(editor.role, copied, insertDraftSettings);
+    editor.importRole(nextRole);
+    setSelectedLayerIds(copied.map((item) => item.id));
+  }, [editor, insertDraftSettings, selectedDecorations]);
+
+  const mirrorCopyVerticalSelected = useCallback(() => {
+    if (!insertDraftSettings.scopes.copy || !selectedDecorations.length) {
+      editor.mirrorCopyVerticalSelected();
+      return;
+    }
+    const copied = selectedDecorations.map((item) => ({ ...copyDecorationForInsert(item), y: round(-item.y, 2) }));
+    const nextRole = insertDecorations(editor.role, copied, insertDraftSettings);
+    editor.importRole(nextRole);
+    setSelectedLayerIds(copied.map((item) => item.id));
+  }, [editor, insertDraftSettings, selectedDecorations]);
+
+  const mergeSelectedAsBatch = useCallback(() => {
+    if (!selectedDecorations.length) return;
+    const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
+    const copied = selectedDecorations.map((item, index) => copyDecorationForInsert(item, index * 2));
+    const nextRole = insertDecorations(editor.role, copied, settings);
+    editor.importRole(nextRole);
+    setSelectedLayerIds(copied.map((item) => item.id));
+  }, [editor, insertDraftSettings, selectedDecorations]);
+
+  const mergeImportedRole = useCallback(
+    (incoming: RoleDocument) => {
+      const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
+      const nextRole = mergeImportedRoleIntoCurrent(editor.role, incoming, settings);
+      editor.importRole(nextRole);
+      const incomingCount = incoming.decorations.length;
+      const nextIds = nextRole.decorations.slice(Math.max(0, nextRole.decorations.length - incomingCount)).map((item) => item.id);
+      setSelectedLayerIds(nextIds);
+    },
+    [editor, insertDraftSettings]
+  );
+
   return {
     ...editor,
     selectedDecorationIds: selectedLayerIds,
     selectedDecorations,
     canGroupSelected,
+    canMergeSelected,
+    insertDraftSettings,
+    setInsertDraftSettings,
     selectDecoration,
     clearSelection,
     selectGroup,
@@ -368,6 +569,13 @@ export function useRoleEditor() {
     ungroup,
     reorderDecorations,
     toggleDecorationVisibility,
+    choosePart,
+    copySelected,
+    pasteClipboard,
+    mirrorCopyHorizontalSelected,
+    mirrorCopyVerticalSelected,
+    mergeSelectedAsBatch,
+    mergeImportedRole,
     selectedDecorationIdsOnly
   };
 }
