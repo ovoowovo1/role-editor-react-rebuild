@@ -1,17 +1,20 @@
 import { Suspense, lazy, useMemo, useState } from 'react';
 import { ChoiceGrid } from './ChoiceGrid';
+import { ColorBlockGrid } from './ColorBlockGrid';
 import { EditControls } from './EditControls';
 import { LayerList } from './LayerList';
-import { TabBar } from './TabBar';
+import { TabBar, type TopBarMode } from './TabBar';
 import { TitleBar } from './TitleBar';
 import { TopMenu } from './TopMenu';
 import { ShortcutHelpModal } from './ShortcutHelpModal';
 import { optionById, tabLabels } from '../mock/options';
+import { colorBlockToRole, getVisibleColorBlocks } from '../mock/colorBlocks';
 import { downloadBlob } from '../lib/math';
 import { createRoleJsonBlob, createTwroleBlob } from '../lib/legacyTwroleExport';
 import { parseRoleFileWithLegacyGroups, parseRoleFileInWorkerWithLegacyGroups } from '../lib/legacyGroupImport';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useRoleEditor, type InsertDraftSettings } from '../hooks/useRoleEditorWithMergeSelection';
+import type { PartTab } from '../types/role';
 
 const CharacterStage = lazy(async () => import('./CharacterStage').then((module) => ({ default: module.CharacterStage })));
 
@@ -140,11 +143,22 @@ export function EditorShell() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [insertSettingsOpen, setInsertSettingsOpen] = useState(false);
   const [facingQuarterTurns, setFacingQuarterTurns] = useState(0);
+  const [topBarMode, setTopBarMode] = useState<TopBarMode>(editor.selectedTab);
+
+  const colorBlockPresets = useMemo(() => getVisibleColorBlocks(editor.role.camp), [editor.role.camp]);
 
   const selectedOptionId = useMemo(() => {
+    if (topBarMode === 'colorBlock') return undefined;
     if (editor.selectedTab === 'deco') return editor.selectedDecorations[0]?.assetId;
     return editor.role.parts[editor.selectedTab as keyof typeof editor.role.parts];
-  }, [editor.role.parts, editor.selectedDecorations, editor.selectedTab]);
+  }, [editor.role.parts, editor.selectedDecorations, editor.selectedTab, topBarMode]);
+
+  const handleTopBarChange = (mode: TopBarMode) => {
+    setTopBarMode(mode);
+    if (mode !== 'colorBlock') {
+      editor.setSelectedTab(mode as PartTab);
+    }
+  };
 
   const shortcutActions = useMemo(
     () => ({
@@ -229,18 +243,28 @@ export function EditorShell() {
           onOpenShortcuts={() => setShortcutsOpen(true)}
           onOpenInsertSettings={() => setInsertSettingsOpen(true)}
         />
-        <TabBar value={editor.selectedTab} onChange={editor.setSelectedTab} />
+        <TabBar value={topBarMode} onChange={handleTopBarChange} />
 
         <main className="bottom-body">
-          <ChoiceGrid
-            tab={editor.selectedTab}
-            options={editor.visibleOptionsByTab[editor.selectedTab]}
-            selectedOptionId={selectedOptionId}
-            onPick={(option) => {
-              editor.choosePart(editor.selectedTab, option);
-              setStatus(editor.selectedTab === 'deco' ? `Added ${option.label}` : `Changed ${tabLabels[editor.selectedTab]} to ${option.label}`);
-            }}
-          />
+          {topBarMode === 'colorBlock' ? (
+            <ColorBlockGrid
+              presets={colorBlockPresets}
+              onPick={(preset) => {
+                editor.mergeImportedRole(colorBlockToRole(preset, editor.role));
+                setStatus(`Added color block: ${preset.label}`);
+              }}
+            />
+          ) : (
+            <ChoiceGrid
+              tab={editor.selectedTab}
+              options={editor.visibleOptionsByTab[editor.selectedTab]}
+              selectedOptionId={selectedOptionId}
+              onPick={(option) => {
+                editor.choosePart(editor.selectedTab, option);
+                setStatus(editor.selectedTab === 'deco' ? `Added ${option.label}` : `Changed ${tabLabels[editor.selectedTab]} to ${option.label}`);
+              }}
+            />
+          )}
 
           <section className="edit-block">
             <Suspense fallback={<div className="stage-panel" />}>
