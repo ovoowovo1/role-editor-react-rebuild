@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DecorationGroup, RoleDocument } from '../types/role';
 import { HEAD_LAYER_ID } from '../components/LayerList';
 import { useRoleEditor as useBaseRoleEditor } from './useRoleEditor';
@@ -28,13 +28,17 @@ function getHeadLayerIndex(role: RoleDocument): number {
   return clamp(Math.round(role.headLayerIndex ?? role.decorations.length), 0, role.decorations.length);
 }
 
-function groupForItem(groups: DecorationGroup[], itemId: string): DecorationGroup | undefined {
-  return groups.find((group) => group.itemIds.includes(itemId));
+function atomToLayerId(atom: string): string {
+  return atom === HEAD_ATOM ? HEAD_LAYER_ID : atom;
 }
 
-function orderedIds(role: RoleDocument, ids: string[]): string[] {
-  const wanted = new Set(ids);
-  return role.decorations.filter((item) => wanted.has(item.id)).map((item) => item.id);
+function layerIdToAtom(id: string): string {
+  return id === HEAD_LAYER_ID ? HEAD_ATOM : id;
+}
+
+function decorationIdsFromLayerIds(role: RoleDocument, layerIds: string[]): string[] {
+  const existing = new Set(role.decorations.map((item) => item.id));
+  return layerIds.filter((id) => existing.has(id));
 }
 
 function atomsForRole(role: RoleDocument): string[] {
@@ -44,11 +48,20 @@ function atomsForRole(role: RoleDocument): string[] {
   return atoms;
 }
 
+function orderedLayerIds(role: RoleDocument, ids: string[]): string[] {
+  const wanted = new Set(ids.map(layerIdToAtom));
+  return atomsForRole(role).filter((atom) => wanted.has(atom)).map(atomToLayerId);
+}
+
+function groupForItem(groups: DecorationGroup[], itemId: string): DecorationGroup | undefined {
+  return groups.find((group) => group.itemIds.includes(itemId));
+}
+
 function atomsForTarget(role: RoleDocument, target: LayerDragTarget): string[] {
   if (target.kind === 'head') return [HEAD_ATOM];
   if (target.kind === 'group') {
     const group = role.groups?.find((item) => item.id === target.id);
-    return group ? orderedIds(role, group.itemIds) : [];
+    return group ? orderedLayerIds(role, group.itemIds).map(layerIdToAtom) : [];
   }
   return role.decorations.some((item) => item.id === target.id) ? [target.id] : [];
 }
@@ -63,7 +76,7 @@ function atomsForActive(role: RoleDocument, target: LayerDragTarget, selectedIds
   const sourceGroup = groupForItem(role.groups ?? [], target.id);
   const selected = new Set(selectedIds);
   if (!sourceGroup && selected.has(target.id)) {
-    return role.decorations.filter((item) => selected.has(item.id)).map((item) => item.id);
+    return atomsForRole(role).filter((atom) => selected.has(atomToLayerId(atom)));
   }
   return [target.id];
 }
@@ -94,7 +107,8 @@ function removeSingleItemFromGroups(role: RoleDocument, active: LayerDragTarget,
 function reorderIncludingHead(role: RoleDocument, activeRowId: string, overRowId: string, selectedIds: string[]): RoleDocument | null {
   const active = parseLayerDragTarget(activeRowId);
   const over = parseLayerDragTarget(overRowId);
-  if (active.kind !== 'head' && over.kind !== 'head') return null;
+  const involvesHead = active.kind === 'head' || over.kind === 'head' || (active.kind === 'group' && atomsForTarget(role, active).includes(HEAD_ATOM)) || (over.kind === 'group' && atomsForTarget(role, over).includes(HEAD_ATOM));
+  if (!involvesHead) return null;
 
   const movingAtoms = atomsForActive(role, active, selectedIds);
   const overAtoms = atomsForTarget(role, over);
@@ -133,19 +147,146 @@ function toggleHeadVisibility(role: RoleDocument): RoleDocument {
   };
 }
 
+function nextGroupName(role: RoleDocument): string {
+  return `Group ${(role.groups ?? []).length + 1}`;
+}
+
+function nextGroupId(): string {
+  return `group-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function ungroupedSelectedLayerIds(role: RoleDocument, selectedIds: string[]): string[] {
+  const selected = new Set(selectedIds);
+  const grouped = new Set((role.groups ?? []).flatMap((group) => group.itemIds));
+  return orderedLayerIds(role, selectedIds).filter((id) => selected.has(id) && !grouped.has(id));
+}
+
+function createGroupFromSelection(role: RoleDocument, selectedIds: string[]): RoleDocument | null {
+  const itemIds = ungroupedSelectedLayerIds(role, selectedIds);
+  if (itemIds.length < 2) return null;
+  return {
+    ...role,
+    groups: [
+      ...(role.groups ?? []),
+      {
+        id: nextGroupId(),
+        name: nextGroupName(role),
+        itemIds,
+        visible: true,
+        collapsed: false
+      }
+    ],
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function setGroupVisibilityIncludingHead(role: RoleDocument, groupId: string, visible: boolean): RoleDocument {
+  const group = role.groups?.find((item) => item.id === groupId);
+  if (!group) return role;
+  const ids = new Set(group.itemIds);
+  return {
+    ...role,
+    groups: (role.groups ?? []).map((item) => (item.id === groupId ? { ...item, visible } : item)),
+    decorations: role.decorations.map((item) => (ids.has(item.id) ? { ...item, visible } : item)),
+    headLayer: ids.has(HEAD_LAYER_ID) ? { ...role.headLayer, visible } : role.headLayer,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function ungroupIncludingHead(role: RoleDocument, groupId: string): RoleDocument {
+  const group = role.groups?.find((item) => item.id === groupId);
+  const ids = new Set(group?.itemIds ?? []);
+  return {
+    ...role,
+    groups: (role.groups ?? []).filter((item) => item.id !== groupId),
+    decorations: role.decorations.map((item) => (ids.has(item.id) ? { ...item, visible: true } : item)),
+    headLayer: ids.has(HEAD_LAYER_ID) ? { ...role.headLayer, visible: true } : role.headLayer,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function toggleLayerSelection(current: string[], ids: string[], additive: boolean): string[] {
+  if (!additive) return ids;
+  const next = new Set(current);
+  const allSelected = ids.every((id) => next.has(id));
+  ids.forEach((id) => {
+    if (allSelected) next.delete(id);
+    else next.add(id);
+  });
+  return Array.from(next);
+}
+
 export function useRoleEditor() {
   const editor = useBaseRoleEditor();
+  const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>(editor.selectedDecorationIds);
+
+  useEffect(() => {
+    setSelectedLayerIds((ids) => {
+      const valid = new Set([...editor.role.decorations.map((item) => item.id), HEAD_LAYER_ID]);
+      return ids.filter((id) => valid.has(id));
+    });
+  }, [editor.role.decorations]);
+
+  const selectedDecorationIdsOnly = useMemo(
+    () => decorationIdsFromLayerIds(editor.role, selectedLayerIds),
+    [editor.role, selectedLayerIds]
+  );
+
+  const selectedDecorations = useMemo(
+    () => editor.role.decorations.filter((item) => selectedLayerIds.includes(item.id)),
+    [editor.role.decorations, selectedLayerIds]
+  );
+
+  const canGroupSelected = useMemo(
+    () => ungroupedSelectedLayerIds(editor.role, selectedLayerIds).length >= 2,
+    [editor.role, selectedLayerIds]
+  );
+
+  const selectDecoration = useCallback(
+    (id: string, additive = false) => {
+      if (id === HEAD_LAYER_ID) {
+        setSelectedLayerIds((current) => toggleLayerSelection(current, [HEAD_LAYER_ID], additive));
+        if (!additive) editor.clearSelection();
+        return;
+      }
+      setSelectedLayerIds((current) => toggleLayerSelection(current, [id], additive));
+      editor.selectDecoration(id, additive);
+    },
+    [editor]
+  );
+
+  const clearSelection = useCallback(() => {
+    setSelectedLayerIds([]);
+    editor.clearSelection();
+  }, [editor]);
+
+  const selectGroup = useCallback(
+    (groupId: string, additive = false) => {
+      const group = editor.role.groups?.find((item) => item.id === groupId);
+      if (!group) return;
+      const ids = orderedLayerIds(editor.role, group.itemIds);
+      setSelectedLayerIds((current) => toggleLayerSelection(current, ids, additive));
+      editor.selectGroup(groupId, additive);
+    },
+    [editor]
+  );
+
+  const groupSelected = useCallback(() => {
+    const nextRole = createGroupFromSelection(editor.role, selectedLayerIds);
+    if (!nextRole) return;
+    editor.importRole(nextRole);
+  }, [editor, selectedLayerIds]);
 
   const reorderDecorations = useCallback(
     (activeRowId: string, overRowId: string) => {
-      const nextRole = reorderIncludingHead(editor.role, activeRowId, overRowId, editor.selectedDecorationIds);
+      const nextRole = reorderIncludingHead(editor.role, activeRowId, overRowId, selectedLayerIds);
       if (nextRole) {
         editor.importRole(nextRole);
         return;
       }
       editor.reorderDecorations(activeRowId, overRowId);
     },
-    [editor]
+    [editor, selectedLayerIds]
   );
 
   const toggleDecorationVisibility = useCallback(
@@ -159,9 +300,44 @@ export function useRoleEditor() {
     [editor]
   );
 
+  const toggleGroupVisibility = useCallback(
+    (groupId: string) => {
+      const group = editor.role.groups?.find((item) => item.id === groupId);
+      if (!group) return;
+      if (group.itemIds.includes(HEAD_LAYER_ID)) {
+        editor.importRole(setGroupVisibilityIncludingHead(editor.role, groupId, group.visible === false));
+        return;
+      }
+      editor.toggleGroupVisibility(groupId);
+    },
+    [editor]
+  );
+
+  const ungroup = useCallback(
+    (groupId: string) => {
+      const group = editor.role.groups?.find((item) => item.id === groupId);
+      if (group?.itemIds.includes(HEAD_LAYER_ID)) {
+        editor.importRole(ungroupIncludingHead(editor.role, groupId));
+        return;
+      }
+      editor.ungroup(groupId);
+    },
+    [editor]
+  );
+
   return {
     ...editor,
+    selectedDecorationIds: selectedLayerIds,
+    selectedDecorations,
+    canGroupSelected,
+    selectDecoration,
+    clearSelection,
+    selectGroup,
+    groupSelected,
+    toggleGroupVisibility,
+    ungroup,
     reorderDecorations,
-    toggleDecorationVisibility
+    toggleDecorationVisibility,
+    selectedDecorationIdsOnly
   };
 }
