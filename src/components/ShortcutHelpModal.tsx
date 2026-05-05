@@ -10,7 +10,7 @@ export const SHORTCUT_ITEMS: ShortcutItem[] = [
   { keys: ['Ctrl', 'Y'], description: '重做' },
   { keys: ['Ctrl', 'C'], description: '複製選取物件' },
   { keys: ['Ctrl', 'V'], description: '貼上已複製物件' },
-  { keys: ['Ctrl', 'A'], description: '全選物件（不含頭部）' },
+  { keys: ['Ctrl', 'A'], description: '全選物件（含頭部）' },
   { keys: ['Ctrl', 'G'], description: '將選取物件建立群組' },
   { keys: ['Ctrl', 'Shift', ']'], description: '將選取物件移到最上層' },
   { keys: ['Ctrl', 'Shift', '['], description: '將選取物件移到最下層' },
