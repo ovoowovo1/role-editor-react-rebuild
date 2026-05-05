@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HEAD_LAYER_ID } from '../components/LayerList';
 import { createId } from '../lib/math';
 import { useRoleEditor as useHeadLayerEditor, type InsertDraftSettings } from './useRoleEditorWithHeadLayerDrag';
-import type { DecorationLayer, PartOption, RoleDocument, TransformValues } from '../types/role';
+import type { DecorationGroup, DecorationLayer, PartOption, RoleDocument, TransformValues } from '../types/role';
 
 export type { InsertDraftSettings };
 
@@ -73,6 +73,10 @@ function copyDecoration(item: DecorationLayer, patch: Partial<DecorationLayer> =
     id: createId('deco'),
     ...patch
   };
+}
+
+function nextGroupId(): string {
+  return `group-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function removeSelectedDecos(role: RoleDocument, selectedIds: string[]): RoleDocument | null {
@@ -420,6 +424,45 @@ export function useRoleEditor() {
     restoreSelection(copied.map((item) => item.id));
   }, [commitRole, editor.insertDraftSettings, restoreSelection, stableSelectedDecorations]);
 
+  const mergeImportedRole = useCallback(
+    (incoming: RoleDocument) => {
+      const idMap = new Map<string, string>();
+      const copied = incoming.decorations.map((item) => {
+        const next = copyDecoration(item);
+        idMap.set(item.id, next.id);
+        return next;
+      });
+      if (!copied.length) return;
+
+      const settings = settingsForScope(editor.insertDraftSettings, editor.insertDraftSettings.scopes.mergeBatch);
+      const baseRole = insertDecorations(roleRef.current, copied, settings);
+      const importedGroups = (incoming.groups ?? [])
+        .map((group): DecorationGroup | null => {
+          const itemIds = group.itemIds
+            .map((id) => idMap.get(id))
+            .filter((id): id is string => Boolean(id));
+          if (itemIds.length < 2) return null;
+          return {
+            id: nextGroupId(),
+            name: group.name,
+            visible: group.visible !== false,
+            collapsed: group.collapsed === true,
+            itemIds
+          };
+        })
+        .filter((group): group is DecorationGroup => group !== null);
+
+      const nextRole: RoleDocument = {
+        ...baseRole,
+        groups: [...(baseRole.groups ?? []), ...importedGroups],
+        updatedAt: new Date().toISOString()
+      };
+      commitRole(nextRole);
+      restoreSelection(copied.map((item) => item.id));
+    },
+    [commitRole, editor.insertDraftSettings, restoreSelection]
+  );
+
   const clearSelection = useCallback(() => {
     selectedIdsRef.current = [];
     transientSelectionBeforeRef.current = [];
@@ -454,6 +497,7 @@ export function useRoleEditor() {
     pasteClipboard,
     mirrorCopyHorizontalSelected,
     mirrorCopyVerticalSelected,
+    mergeImportedRole,
     rotateSelectedBy: (degrees: number) => withImmediateHistory(() => editor.rotateSelectedBy(degrees)),
     scaleSelectedBy: (amount: number) => withImmediateHistory(() => editor.scaleSelectedBy(amount)),
     ratioSelectedBy: (amount: number) => withImmediateHistory(() => editor.ratioSelectedBy(amount)),
