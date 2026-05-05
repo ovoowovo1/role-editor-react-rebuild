@@ -22,6 +22,7 @@ import { AssetPreview } from './AssetPreview';
 const GROUP_ROW_PREFIX = 'group:';
 const ITEM_ROW_PREFIX = 'item:';
 const HEAD_ROW_ID = 'head:singleton';
+export const HEAD_LAYER_ID = '__head_layer__';
 
 function groupRowId(groupId: string): string {
   return `${GROUP_ROW_PREFIX}${groupId}`;
@@ -71,6 +72,7 @@ interface HeadLayerRowProps {
   headLayer: HeadLayerTransform;
   headOptionId: string;
   index: number;
+  onToggleVisibility(id: string): void;
 }
 
 interface SortableGroupHeaderProps {
@@ -151,7 +153,7 @@ function SortableLayer({ deco, index, selected, grouped = false, onSelect, onTog
   );
 }
 
-function HeadLayerRow({ headLayer, headOptionId, index }: HeadLayerRowProps) {
+function HeadLayerRow({ headLayer, headOptionId, index, onToggleVisibility }: HeadLayerRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: HEAD_ROW_ID });
   const option = optionById[headOptionId];
   const style = {
@@ -178,7 +180,15 @@ function HeadLayerRow({ headLayer, headOptionId, index }: HeadLayerRowProps) {
         <strong>Head</strong>
         <span>head · singleton</span>
       </div>
-      <button className="layer-icon-button" type="button" disabled title={headLayer.visible === false ? 'Head layer hidden' : 'Head layer visible'}>
+      <button
+        className="layer-icon-button"
+        type="button"
+        title={headLayer.visible === false ? 'Show Head layer' : 'Hide Head layer'}
+        onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
+          event.stopPropagation();
+          onToggleVisibility(HEAD_LAYER_ID);
+        }}
+      >
         {headLayer.visible === false ? '○' : '◉'}
       </button>
       <button className="layer-delete" type="button" disabled title="Head cannot be deleted or duplicated">
@@ -409,7 +419,12 @@ export function LayerList({
                 return (
                   <div key={row.key} className="layer-list-virtual-row" style={{ top, height: ROW_HEIGHT }}>
                     {row.type === 'head' ? (
-                      <HeadLayerRow headLayer={headLayer} headOptionId={headOptionId} index={row.index ?? rowIndex} />
+                      <HeadLayerRow
+                        headLayer={headLayer}
+                        headOptionId={headOptionId}
+                        index={row.index ?? rowIndex}
+                        onToggleVisibility={onToggleVisibility}
+                      />
                     ) : row.type === 'group' && row.group ? (
                       <SortableGroupHeader
                         group={row.group}
