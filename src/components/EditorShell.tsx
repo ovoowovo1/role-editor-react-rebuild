@@ -9,7 +9,8 @@ import { ShortcutHelpModal } from './ShortcutHelpModal';
 import { optionById, tabLabels } from '../mock/options';
 import { downloadBlob } from '../lib/math';
 import { createRoleJsonBlob, createTwroleBlob } from '../lib/legacyTwroleExport';
-import { parseRoleFile, parseRoleFileInWorker, roleToEnvelope } from '../lib/roleSerialization';
+import { parseRoleFileWithLegacyGroups, parseRoleFileInWorkerWithLegacyGroups } from '../lib/legacyGroupImport';
+import { roleToEnvelope } from '../lib/roleSerialization';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useRoleEditor } from '../hooks/useRoleEditorWithHeadLayerDrag';
 
@@ -57,7 +58,7 @@ export function EditorShell() {
   const handleImport = async (file: File) => {
     setStatus(`Importing ${file.name}...`);
     try {
-      const result = await parseRoleFileInWorker(file).catch(() => parseRoleFile(file));
+      const result = await parseRoleFileInWorkerWithLegacyGroups(file).catch(() => parseRoleFileWithLegacyGroups(file));
       editor.importRole(result.role);
       setStatus(result.warnings.length ? result.warnings.join(' ') : `Imported ${file.name}`);
     } catch (error) {
