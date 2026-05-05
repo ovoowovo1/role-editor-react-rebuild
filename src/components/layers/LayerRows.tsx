@@ -1,4 +1,4 @@
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { HEAD_LAYER_ID } from '../../constants/layers';
@@ -140,16 +140,57 @@ export function GroupHeaderRow({
   onSelectGroup,
   onToggleGroupCollapsed,
   onToggleGroupVisibility,
+  onRenameGroup,
   onUngroup
 }: {
   row: LayerRowModel;
   onSelectGroup(groupId: string, additive: boolean): void;
   onToggleGroupCollapsed(groupId: string): void;
   onToggleGroupVisibility(groupId: string): void;
+  onRenameGroup(groupId: string, name: string): void;
   onUngroup(groupId: string): void;
 }) {
   const group = row.group!;
   const drag = useDragStyle(row.rowId);
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState(group.name);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!editing) setDraftName(group.name);
+  }, [editing, group.name]);
+
+  useEffect(() => {
+    if (editing) {
+      window.setTimeout(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }, 0);
+    }
+  }, [editing]);
+
+  const startEditing = () => {
+    setDraftName(group.name);
+    setEditing(true);
+  };
+
+  const commitEditing = () => {
+    const trimmed = draftName.trim();
+    setEditing(false);
+    if (trimmed && trimmed !== group.name) onRenameGroup(group.id, trimmed);
+    else setDraftName(group.name);
+  };
+
+  const cancelEditing = () => {
+    setDraftName(group.name);
+    setEditing(false);
+  };
+
+  const handleEditKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+    if (event.key === 'Enter') commitEditing();
+    if (event.key === 'Escape') cancelEditing();
+  };
 
   return (
     <div
@@ -174,9 +215,39 @@ export function GroupHeaderRow({
         {group.collapsed ? '▸' : '▾'}
       </button>
       <div className="group-meta">
-        <strong>{group.name}</strong>
+        {editing ? (
+          <input
+            ref={inputRef}
+            className="group-name-input"
+            value={draftName}
+            onChange={(event) => setDraftName(event.target.value)}
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={handleEditKeyDown}
+            onBlur={commitEditing}
+            aria-label="Group name"
+          />
+        ) : (
+          <strong onDoubleClick={(event) => {
+            event.stopPropagation();
+            startEditing();
+          }}>
+            {group.name}
+          </strong>
+        )}
         <span>{row.itemCount ?? 0} layer{(row.itemCount ?? 0) === 1 ? '' : 's'}</span>
       </div>
+      <button
+        className="group-edit"
+        type="button"
+        title="Rename group"
+        onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
+          event.stopPropagation();
+          startEditing();
+        }}
+      >
+        Edit
+      </button>
       <button
         className="layer-icon-button"
         type="button"
@@ -202,4 +273,3 @@ export function GroupHeaderRow({
     </div>
   );
 }
-

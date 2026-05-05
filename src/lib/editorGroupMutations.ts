@@ -39,6 +39,14 @@ export function toggleGroupCollapsedInRole(current: RoleDocument, groupId: strin
   );
 }
 
+export function renameGroupInRole(current: RoleDocument, groupId: string, name: string): void {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  current.groups = (current.groups ?? []).map((group) =>
+    group.id === groupId ? { ...group, name: trimmed } : group
+  );
+}
+
 export function setGroupVisibleInRole(current: RoleDocument, groupId: string, visible: boolean): void {
   const group = current.groups?.find((item) => item.id === groupId);
   if (!group) return;
@@ -53,4 +61,3 @@ export function ungroupInRole(current: RoleDocument, groupId: string): void {
   current.groups = (current.groups ?? []).filter((item) => item.id !== groupId);
   current.decorations = current.decorations.map((item) => (itemIds.has(item.id) ? { ...item, visible: true } : item));
 }
-

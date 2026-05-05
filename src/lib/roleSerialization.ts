@@ -12,6 +12,7 @@ import type {
   RolePartFrames,
   RolePartScales
 } from '../types/role';
+import { HEAD_LAYER_ID } from '../constants/layers';
 import { createId, normalizeDegrees, safeNumber } from './math';
 import {
   BODY_PART_TABS,
@@ -39,6 +40,7 @@ interface LegacyTwrolePayload {
   };
   hash: string;
   thumb: null | { dataUrl: string; pivot: { x: number; y: number } };
+  decoGroups: LegacyDecoGroup[];
 }
 
 interface LegacyCompactDecoEntry {
@@ -56,6 +58,14 @@ interface LegacyCompactRoleConfig {
   hand: { f: number; s: number };
   foot: { f: number; s: number };
   deco: LegacyCompactDecoEntry[];
+}
+
+interface LegacyDecoGroup {
+  id: string;
+  name: string;
+  visible: boolean;
+  collapsed: boolean;
+  itemIndexes: number[];
 }
 
 interface PartSelection {
@@ -131,7 +141,8 @@ function buildLegacyCompactPayload(role: RoleDocument): LegacyTwrolePayload {
       cr: legacyConfig
     },
     hash: '',
-    thumb: null
+    thumb: null,
+    decoGroups: exportLegacyDecoGroups(role, normalized)
   };
 }
 
@@ -669,6 +680,32 @@ function exportOldEditorDecolist(role: RoleDocument): LegacyCompactDecoEntry[] {
       r: (layer.rotation * Math.PI) / 180
     };
   });
+}
+
+function exportLegacyDecoGroups(sourceRole: RoleDocument, normalized: RoleDocument): LegacyDecoGroup[] {
+  const bottomToTopLayerIds = normalized.decorations.map((layer) => layer.id);
+  bottomToTopLayerIds.splice(normalized.headLayerIndex, 0, HEAD_LAYER_ID);
+  bottomToTopLayerIds.reverse();
+
+  const indexByLayerId = new Map<string, number>();
+  bottomToTopLayerIds.forEach((id, index) => indexByLayerId.set(id, index));
+
+  return (sourceRole.groups ?? [])
+    .map((group): LegacyDecoGroup | null => {
+      const itemIndexes = group.itemIds
+        .map((id) => indexByLayerId.get(id))
+        .filter((index): index is number => typeof index === 'number')
+        .sort((a, b) => a - b);
+      if (itemIndexes.length < 2) return null;
+      return {
+        id: group.id,
+        name: group.name,
+        visible: group.visible !== false,
+        collapsed: group.collapsed === true,
+        itemIndexes
+      };
+    })
+    .filter((group): group is LegacyDecoGroup => group !== null);
 }
 
 export function exportOriginalLikeRoleConfig(role: RoleDocument): LegacyCompactRoleConfig {

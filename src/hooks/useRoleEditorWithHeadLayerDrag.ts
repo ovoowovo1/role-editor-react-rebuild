@@ -209,6 +209,13 @@ export function useRoleEditor() {
     [commitRole, editor]
   );
 
+  const renameGroup = useCallback(
+    (groupId: string, name: string) => {
+      editor.renameGroup(groupId, name);
+    },
+    [editor]
+  );
+
   const ungroup = useCallback(
     (groupId: string) => {
       const group = editor.role.groups?.find((item) => item.id === groupId);
@@ -317,6 +324,7 @@ export function useRoleEditor() {
     clearSelection,
     selectGroup,
     groupSelected,
+    renameGroup,
     toggleGroupVisibility,
     ungroup,
     reorderDecorations,

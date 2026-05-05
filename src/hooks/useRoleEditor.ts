@@ -23,6 +23,7 @@ import {
 import {
   createGroupFromSelection,
   makeGroupMap,
+  renameGroupInRole,
   setGroupVisibleInRole,
   toggleGroupCollapsedInRole,
   ungroupedSelectedIds,
@@ -275,6 +276,13 @@ export function useRoleEditor() {
     });
   }, [updateRole]);
 
+  const renameGroup = useCallback((groupId: string, name: string) => {
+    updateRole((current) => {
+      renameGroupInRole(current, groupId, name);
+      return current;
+    });
+  }, [updateRole]);
+
   const setGroupVisible = useCallback((groupId: string, visible: boolean) => {
     updateRole((current) => {
       setGroupVisibleInRole(current, groupId, visible);
@@ -375,6 +383,7 @@ export function useRoleEditor() {
     selectGroup,
     groupSelected,
     toggleGroupCollapsed,
+    renameGroup,
     toggleGroupVisibility,
     ungroup,
     deleteDecoration,

@@ -318,6 +318,10 @@ export function EditorShell() {
             }}
             onToggleGroupCollapsed={editor.toggleGroupCollapsed}
             onToggleGroupVisibility={editor.toggleGroupVisibility}
+            onRenameGroup={(groupId, name) => {
+              editor.renameGroup(groupId, name);
+              setStatus(`Renamed group to ${name.trim()}`);
+            }}
             onUngroup={(groupId) => {
               editor.ungroup(groupId);
               setStatus('Ungrouped layer group');

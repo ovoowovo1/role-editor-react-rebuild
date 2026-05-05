@@ -65,6 +65,7 @@ interface LayerListProps {
   onGroupSelected(): void;
   onToggleGroupCollapsed(groupId: string): void;
   onToggleGroupVisibility(groupId: string): void;
+  onRenameGroup(groupId: string, name: string): void;
   onUngroup(groupId: string): void;
   onReorder(activeId: string, overId: string): void;
   onToggleVisibility(id: string): void;
@@ -85,6 +86,7 @@ export function LayerList({
   onGroupSelected,
   onToggleGroupCollapsed,
   onToggleGroupVisibility,
+  onRenameGroup,
   onUngroup,
   onReorder,
   onToggleVisibility,
@@ -191,6 +193,7 @@ export function LayerList({
                   onSelectGroup={onSelectGroup}
                   onToggleGroupCollapsed={onToggleGroupCollapsed}
                   onToggleGroupVisibility={onToggleGroupVisibility}
+                  onRenameGroup={onRenameGroup}
                   onUngroup={onUngroup}
                 />
               ) : row.type === 'head' ? (
@@ -291,4 +294,3 @@ export function LayerList({
     </aside>
   );
 }
-
