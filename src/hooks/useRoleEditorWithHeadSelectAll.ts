@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HEAD_LAYER_ID } from '../components/LayerList';
+import { createId } from '../lib/math';
 import { useRoleEditor as useHeadLayerEditor, type InsertDraftSettings } from './useRoleEditorWithHeadLayerDrag';
-import type { DecorationLayer, RoleDocument, TransformValues } from '../types/role';
+import type { DecorationLayer, PartOption, RoleDocument, TransformValues } from '../types/role';
 
 export type { InsertDraftSettings };
 
@@ -13,6 +14,10 @@ function cloneRole(role: RoleDocument): RoleDocument {
 
 function sameRole(a: RoleDocument, b: RoleDocument): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function getHeadLayerIndex(role: RoleDocument): number {
@@ -43,6 +48,30 @@ function transformValuesFromSingleDeco(deco: DecorationLayer): TransformValues {
     ratio: roundValue(Math.abs(deco.scaleY / (deco.scaleX || 1)), 3),
     posX: roundValue(deco.x, 2),
     posY: roundValue(deco.y, 2)
+  };
+}
+
+function makeCenteredDecoration(option: PartOption): DecorationLayer {
+  return {
+    id: createId('deco'),
+    code: option.code,
+    assetId: option.id,
+    name: option.label,
+    x: 0,
+    y: 0,
+    scaleX: 0.5,
+    scaleY: 0.5,
+    rotation: 0,
+    visible: true,
+    opacity: 1
+  };
+}
+
+function copyDecoration(item: DecorationLayer, patch: Partial<DecorationLayer> = {}): DecorationLayer {
+  return {
+    ...item,
+    id: createId('deco'),
+    ...patch
   };
 }
 
@@ -85,6 +114,47 @@ function validSelectionIds(role: RoleDocument, ids: string[]): string[] {
 function nextSelection(current: string[], id: string, additive: boolean): string[] {
   if (!additive) return [id];
   return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
+}
+
+function settingsForScope(settings: InsertDraftSettings, enabled: boolean): InsertDraftSettings {
+  return enabled ? settings : { ...settings, placement: 'bottom' };
+}
+
+function getInsertVirtualIndex(role: RoleDocument, settings: InsertDraftSettings): number {
+  const layerCount = role.decorations.length + 1;
+  if (settings.placement === 'top') return 0;
+  if (settings.placement === 'bottom') return layerCount;
+  const numeric = Number(settings.index);
+  if (!Number.isInteger(numeric) || numeric < 1) return layerCount;
+  return clamp(numeric, 0, layerCount);
+}
+
+function insertDecorations(role: RoleDocument, decorationsToInsert: DecorationLayer[], settings: InsertDraftSettings): RoleDocument {
+  if (!decorationsToInsert.length) return role;
+
+  const atoms = getAllLayerIdsIncludingHead(role);
+  const insertIndex = getInsertVirtualIndex(role, settings);
+  const nextAtoms = [
+    ...atoms.slice(0, insertIndex),
+    ...decorationsToInsert.map((item) => item.id),
+    ...atoms.slice(insertIndex)
+  ];
+
+  const decorationById = new Map(role.decorations.map((item) => [item.id, item]));
+  decorationsToInsert.forEach((item) => decorationById.set(item.id, item));
+  const decorations = nextAtoms
+    .filter((id) => id !== HEAD_LAYER_ID)
+    .map((id) => decorationById.get(id))
+    .filter(Boolean) as DecorationLayer[];
+  const headAtomIndex = nextAtoms.indexOf(HEAD_LAYER_ID);
+  const headLayerIndex = nextAtoms.slice(0, headAtomIndex < 0 ? nextAtoms.length : headAtomIndex).filter((id) => id !== HEAD_LAYER_ID).length;
+
+  return {
+    ...role,
+    decorations,
+    headLayerIndex: clamp(headLayerIndex, 0, decorations.length),
+    updatedAt: new Date().toISOString()
+  };
 }
 
 export function useRoleEditor() {
@@ -134,7 +204,7 @@ export function useRoleEditor() {
 
   const restoreSelection = useCallback(
     (ids: string[]) => {
-      const nextIds = validSelectionIds(roleRef.current, ids);
+      const nextIds = ids.filter((id, index) => Boolean(id) && ids.indexOf(id) === index);
       if (!nextIds.length) return;
 
       window.setTimeout(() => {
@@ -291,6 +361,50 @@ export function useRoleEditor() {
     [editor, stableSelectedDecorationIds, withImmediateHistory]
   );
 
+  const choosePart = useCallback(
+    (tab: Parameters<typeof editor.choosePart>[0], option: PartOption) => {
+      if (tab !== 'deco') {
+        editor.choosePart(tab, option);
+        return;
+      }
+
+      const deco = makeCenteredDecoration(option);
+      const settings = settingsForScope(editor.insertDraftSettings, editor.insertDraftSettings.scopes.palette);
+      const nextRole = insertDecorations(roleRef.current, [deco], settings);
+      commitRole(nextRole);
+      restoreSelection([deco.id]);
+    },
+    [commitRole, editor, restoreSelection]
+  );
+
+  const mirrorCopyHorizontalSelected = useCallback(() => {
+    if (!stableSelectedDecorations.length) return;
+    const settings = settingsForScope(editor.insertDraftSettings, editor.insertDraftSettings.scopes.copy);
+    const copied = stableSelectedDecorations.map((item) =>
+      copyDecoration(item, {
+        x: roundPosition(-item.x),
+        scaleX: -item.scaleX
+      })
+    );
+    const nextRole = insertDecorations(roleRef.current, copied, settings);
+    commitRole(nextRole);
+    restoreSelection(copied.map((item) => item.id));
+  }, [commitRole, editor.insertDraftSettings, restoreSelection, stableSelectedDecorations]);
+
+  const mirrorCopyVerticalSelected = useCallback(() => {
+    if (!stableSelectedDecorations.length) return;
+    const settings = settingsForScope(editor.insertDraftSettings, editor.insertDraftSettings.scopes.copy);
+    const copied = stableSelectedDecorations.map((item) =>
+      copyDecoration(item, {
+        y: roundPosition(-item.y),
+        scaleY: -item.scaleY
+      })
+    );
+    const nextRole = insertDecorations(roleRef.current, copied, settings);
+    commitRole(nextRole);
+    restoreSelection(copied.map((item) => item.id));
+  }, [commitRole, editor.insertDraftSettings, restoreSelection, stableSelectedDecorations]);
+
   const clearSelection = useCallback(() => {
     selectedIdsRef.current = [];
     transientSelectionBeforeRef.current = [];
@@ -320,6 +434,9 @@ export function useRoleEditor() {
     commitTransient,
     updateDecoration,
     updateSelectedTransform,
+    choosePart,
+    mirrorCopyHorizontalSelected,
+    mirrorCopyVerticalSelected,
     rotateSelectedBy: (degrees: number) => withImmediateHistory(() => editor.rotateSelectedBy(degrees)),
     scaleSelectedBy: (amount: number) => withImmediateHistory(() => editor.scaleSelectedBy(amount)),
     ratioSelectedBy: (amount: number) => withImmediateHistory(() => editor.ratioSelectedBy(amount)),
