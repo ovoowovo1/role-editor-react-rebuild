@@ -18,7 +18,8 @@ import { CSS } from '@dnd-kit/utilities';
 import type { DecorationGroup, DecorationLayer, HeadLayerTransform } from '../types/role';
 import { optionById } from '../mock/options';
 import { AssetPreview } from './AssetPreview';
-import { HEAD_LAYER_ID } from './LayerList';
+
+export const HEAD_LAYER_ID = '__head_layer__';
 
 const GROUP_ROW_PREFIX = 'group:';
 const ITEM_ROW_PREFIX = 'item:';
