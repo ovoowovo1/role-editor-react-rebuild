@@ -10,7 +10,7 @@ import { optionById, tabLabels } from '../mock/options';
 import { downloadBlob } from '../lib/math';
 import { createRoleJsonBlob, createTwroleBlob, parseRoleFile, parseRoleFileInWorker, roleToEnvelope } from '../lib/roleSerialization';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
-import { useRoleEditor } from '../hooks/useRoleEditor';
+import { useRoleEditor } from '../hooks/useRoleEditorWithHeadLayerDrag';
 
 const CharacterStage = lazy(async () => import('./CharacterStage').then((module) => ({ default: module.CharacterStage })));
 
