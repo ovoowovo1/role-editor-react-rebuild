@@ -254,12 +254,26 @@ function syncDecorationSelection(record: DecoDisplayRecord, selected: boolean): 
   record.selected = selected;
 }
 
+function getClampedHeadLayerIndex(role: RoleDocument): number {
+  const raw = role.headLayerIndex;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  const index = Number.isFinite(n) ? Math.round(n) : role.decorations.length;
+  return Math.max(0, Math.min(role.decorations.length, index));
+}
+
 function syncDisguiseChildOrder(scene: StageSceneState, role: RoleDocument): void {
-  const orderedChildren: Container[] = [scene.headLayerClip];
-  for (let i = role.decorations.length - 1; i >= 0; i -= 1) {
-    const record = scene.decoDisplays.get(role.decorations[i].id);
-    if (record) orderedChildren.push(record.container);
+  const topFirstChildren: Container[] = [];
+
+  for (const deco of role.decorations) {
+    const record = scene.decoDisplays.get(deco.id);
+    if (record) topFirstChildren.push(record.container);
   }
+
+  const headIndex = getClampedHeadLayerIndex(role);
+  topFirstChildren.splice(headIndex, 0, scene.headLayerClip);
+
+  // PIXI renders lower childIndex first, so convert top-first state to bottom-to-top display order.
+  const orderedChildren = topFirstChildren.slice().reverse();
 
   orderedChildren.forEach((child, index) => {
     if (child.parent !== scene.disguiseRoot) {
