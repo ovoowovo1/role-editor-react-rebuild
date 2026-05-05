@@ -72,6 +72,9 @@ interface HeadLayerRowProps {
   headLayer: HeadLayerTransform;
   headOptionId: string;
   index: number;
+  selected: boolean;
+  grouped?: boolean;
+  onSelect(id: string, additive: boolean): void;
   onToggleVisibility(id: string): void;
 }
 
@@ -83,6 +86,13 @@ interface SortableGroupHeaderProps {
   onToggleGroupCollapsed(groupId: string): void;
   onToggleGroupVisibility(groupId: string): void;
   onUngroup(groupId: string): void;
+}
+
+interface VirtualLayerModel {
+  id: string;
+  rowId: string;
+  type: 'item' | 'head';
+  deco?: DecorationLayer;
 }
 
 interface LayerRowModel {
@@ -153,7 +163,7 @@ function SortableLayer({ deco, index, selected, grouped = false, onSelect, onTog
   );
 }
 
-function HeadLayerRow({ headLayer, headOptionId, index, onToggleVisibility }: HeadLayerRowProps) {
+function HeadLayerRow({ headLayer, headOptionId, index, selected, grouped = false, onSelect, onToggleVisibility }: HeadLayerRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: HEAD_ROW_ID });
   const option = optionById[headOptionId];
   const style = {
@@ -165,11 +175,12 @@ function HeadLayerRow({ headLayer, headOptionId, index, onToggleVisibility }: He
     <div
       ref={setNodeRef}
       style={style}
-      className={`layer-row head-layer ${isDragging ? 'dragging' : ''} ${headLayer.visible === false ? 'muted' : ''}`}
+      className={`layer-row head-layer ${grouped ? 'group-child' : ''} ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${headLayer.visible === false ? 'muted' : ''}`}
       data-layer-id="head"
       title="Head is a singleton virtual layer from the original RoleDeco HEAD_CODE entry"
+      onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelect(HEAD_LAYER_ID, event.ctrlKey || event.metaKey)}
     >
-      <button className="drag-handle" type="button" {...attributes} {...listeners} title="Drag Head layer to change its order">
+      <button className="drag-handle" type="button" {...attributes} {...listeners} title="Drag Head layer to change its order or move it into groups">
         ⋮⋮
       </button>
       <div className="layer-badge">{index + 1}</div>
@@ -310,82 +321,98 @@ export function LayerList({
   }, []);
 
   const rowModels = useMemo(() => {
-    const indexById = new Map<string, number>();
-    decorations.forEach((deco, index) => indexById.set(deco.id, index));
+    const normalizedHeadIndex = clampHeadLayerIndex(headLayerIndex, decorations.length);
+    const virtualLayers: VirtualLayerModel[] = [];
+
+    decorations.forEach((deco, decorationIndex) => {
+      if (decorationIndex === normalizedHeadIndex) {
+        virtualLayers.push({ id: HEAD_LAYER_ID, rowId: HEAD_ROW_ID, type: 'head' });
+      }
+      virtualLayers.push({ id: deco.id, rowId: itemRowId(deco.id), type: 'item', deco });
+    });
+
+    if (!virtualLayers.some((layer) => layer.id === HEAD_LAYER_ID)) {
+      virtualLayers.push({ id: HEAD_LAYER_ID, rowId: HEAD_ROW_ID, type: 'head' });
+    }
 
     const groupById = new Map(groups.map((group) => [group.id, group]));
-    const groupByItemId = new Map<string, DecorationGroup>();
-    groups.forEach((group) => group.itemIds.forEach((id) => groupByItemId.set(id, group)));
+    const groupByLayerId = new Map<string, DecorationGroup>();
+    groups.forEach((group) => group.itemIds.forEach((id) => groupByLayerId.set(id, group)));
 
-    const itemsByGroupId = new Map<string, DecorationLayer[]>();
-    groups.forEach((group) => itemsByGroupId.set(group.id, []));
-    decorations.forEach((deco) => {
-      const group = groupByItemId.get(deco.id);
-      if (group) itemsByGroupId.get(group.id)?.push(deco);
+    const layersByGroupId = new Map<string, VirtualLayerModel[]>();
+    groups.forEach((group) => layersByGroupId.set(group.id, []));
+    virtualLayers.forEach((layer) => {
+      const group = groupByLayerId.get(layer.id);
+      if (group) layersByGroupId.get(group.id)?.push(layer);
     });
 
     const renderedGroupIds = new Set<string>();
     const models: LayerRowModel[] = [];
-    const normalizedHeadIndex = clampHeadLayerIndex(headLayerIndex, decorations.length);
-    let headInserted = false;
-    const pushHeadLayer = () => {
-      if (headInserted) return;
-      headInserted = true;
-      models.push({
-        key: HEAD_ROW_ID,
-        rowId: HEAD_ROW_ID,
-        type: 'head',
-        index: models.length,
-        selected: false
-      });
-    };
 
-    decorations.forEach((deco, decorationIndex) => {
-      if (decorationIndex === normalizedHeadIndex) pushHeadLayer();
-
-      const group = groupByItemId.get(deco.id);
+    virtualLayers.forEach((layer) => {
+      const group = groupByLayerId.get(layer.id);
       if (!group) {
-        models.push({
-          key: deco.id,
-          rowId: itemRowId(deco.id),
-          type: 'item',
-          deco,
-          index: models.length,
-          selected: selectedSet.has(deco.id)
-        });
+        if (layer.type === 'head') {
+          models.push({
+            key: HEAD_ROW_ID,
+            rowId: HEAD_ROW_ID,
+            type: 'head',
+            index: models.length,
+            selected: selectedSet.has(HEAD_LAYER_ID)
+          });
+        } else if (layer.deco) {
+          models.push({
+            key: layer.deco.id,
+            rowId: itemRowId(layer.deco.id),
+            type: 'item',
+            deco: layer.deco,
+            index: models.length,
+            selected: selectedSet.has(layer.deco.id)
+          });
+        }
         return;
       }
 
       if (renderedGroupIds.has(group.id)) return;
       renderedGroupIds.add(group.id);
       const stableGroup = groupById.get(group.id) ?? group;
-      const groupItems = itemsByGroupId.get(group.id) ?? [];
-      const selected = groupItems.length > 0 && groupItems.every((item) => selectedSet.has(item.id));
+      const groupLayers = layersByGroupId.get(group.id) ?? [];
+      const selected = groupLayers.length > 0 && groupLayers.every((item) => selectedSet.has(item.id));
       models.push({
         key: stableGroup.id,
         rowId: groupRowId(stableGroup.id),
         type: 'group',
         group: stableGroup,
         selected,
-        itemCount: groupItems.length
+        itemCount: groupLayers.length
       });
 
       if (!stableGroup.collapsed) {
-        for (const item of groupItems) {
-          models.push({
-            key: item.id,
-            rowId: itemRowId(item.id),
-            type: 'item',
-            deco: item,
-            index: models.length,
-            grouped: true,
-            selected: selectedSet.has(item.id)
-          });
+        for (const item of groupLayers) {
+          if (item.type === 'head') {
+            models.push({
+              key: HEAD_ROW_ID,
+              rowId: HEAD_ROW_ID,
+              type: 'head',
+              index: models.length,
+              grouped: true,
+              selected: selectedSet.has(HEAD_LAYER_ID)
+            });
+          } else if (item.deco) {
+            models.push({
+              key: item.deco.id,
+              rowId: itemRowId(item.deco.id),
+              type: 'item',
+              deco: item.deco,
+              index: models.length,
+              grouped: true,
+              selected: selectedSet.has(item.deco.id)
+            });
+          }
         }
       }
     });
 
-    if (!headInserted) pushHeadLayer();
     return models;
   }, [decorations, groups, headLayerIndex, selectedSet]);
 
@@ -423,6 +450,9 @@ export function LayerList({
                         headLayer={headLayer}
                         headOptionId={headOptionId}
                         index={row.index ?? rowIndex}
+                        selected={row.selected}
+                        grouped={row.grouped}
+                        onSelect={onSelect}
                         onToggleVisibility={onToggleVisibility}
                       />
                     ) : row.type === 'group' && row.group ? (
