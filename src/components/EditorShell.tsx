@@ -7,7 +7,7 @@ import { TabBar, type TopBarMode } from './TabBar';
 import { TitleBar } from './TitleBar';
 import { TopMenu } from './TopMenu';
 import { ShortcutHelpModal } from './ShortcutHelpModal';
-import { optionById, tabLabels } from '../mock/options';
+import {  tabLabels } from '../mock/options';
 import { colorBlockToRole, getVisibleColorBlocks } from '../mock/colorBlocks';
 import { downloadBlob } from '../lib/math';
 import { createRoleJsonBlob, createTwroleBlob } from '../lib/legacyTwroleExport';
@@ -344,7 +344,6 @@ export function EditorShell() {
               https://twrolecgeditor.gamelet.online/
             </a>
           </span>
-          <span>Selected option: {selectedOptionId ? optionById[selectedOptionId]?.label ?? selectedOptionId : 'none'}</span>
         </footer>
       </div>
     </div>

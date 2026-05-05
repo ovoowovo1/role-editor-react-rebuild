@@ -25,7 +25,6 @@ export function TopMenu({
   gender,
   canUndo,
   canRedo,
-  status,
   onImport,
   onMerge,
   onDownloadTwrole,
@@ -118,9 +117,7 @@ export function TopMenu({
         </select>
       </label>
 
-      <div className="status-pill" title={status || 'Ready'}>
-        {status || 'Ready'}
-      </div>
+
     </div>
   );
 }
