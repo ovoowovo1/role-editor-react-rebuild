@@ -7,8 +7,10 @@ interface TopMenuProps {
   gender: GenderCode;
   canUndo: boolean;
   canRedo: boolean;
+  canMerge: boolean;
   status: string;
   onImport(file: File): void;
+  onMerge(file: File): void;
   onDownloadTwrole(): void;
   onExportJson(): void;
   onSaveMock(): void;
@@ -18,6 +20,8 @@ interface TopMenuProps {
   onCampChange(camp: string): void;
   onGenderChange(gender: GenderCode): void;
   onOpenShortcuts(): void;
+  onOpenInsertSettings(): void;
+  onMergeSelected(): void;
 }
 
 export function TopMenu({
@@ -25,8 +29,10 @@ export function TopMenu({
   gender,
   canUndo,
   canRedo,
+  canMerge,
   status,
   onImport,
+  onMerge,
   onDownloadTwrole,
   onExportJson,
   onSaveMock,
@@ -35,20 +41,34 @@ export function TopMenu({
   onRedo,
   onCampChange,
   onGenderChange,
-  onOpenShortcuts
+  onOpenShortcuts,
+  onOpenInsertSettings,
+  onMergeSelected
 }: TopMenuProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const mergeInputRef = useRef<HTMLInputElement | null>(null);
 
   return (
     <div className="menu-bar">
       <input
         ref={inputRef}
         type="file"
-        accept=".twrole"
+        accept=".twrole,.json,application/json"
         hidden
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (file) onImport(file);
+          event.currentTarget.value = '';
+        }}
+      />
+      <input
+        ref={mergeInputRef}
+        type="file"
+        accept=".twrole,.json,application/json"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) onMerge(file);
           event.currentTarget.value = '';
         }}
       />
@@ -61,6 +81,15 @@ export function TopMenu({
         </button>
         <button className="primary-button subtle" type="button" onClick={onExportJson}>
           Export JSON
+        </button>
+        <button className="primary-button subtle" type="button" onClick={onOpenInsertSettings}>
+          Insert Settings
+        </button>
+        <button className="primary-button subtle" type="button" onClick={() => mergeInputRef.current?.click()}>
+          Merge File
+        </button>
+        <button className="primary-button subtle" type="button" disabled={!canMerge} onClick={onMergeSelected}>
+          Merge Selected
         </button>
         <button className="primary-button" type="button" onClick={onNewDesign}>
           New Design
