@@ -1,5 +1,5 @@
 import { gzip } from 'pako';
-import type { DecorationGroup, DecorationLayer, HeadLayerTransform, RoleDocument } from '../types/role';
+import type { DecorationLayer, HeadLayerTransform, RoleDocument } from '../types/role';
 
 interface LegacyCompactDecoEntry {
   c: string;
@@ -18,6 +18,14 @@ interface LegacyCompactRoleConfig {
   deco: LegacyCompactDecoEntry[];
 }
 
+interface LegacyDecoGroup {
+  id: string;
+  name: string;
+  visible: boolean;
+  collapsed: boolean;
+  itemIndexes: number[];
+}
+
 interface LegacyTwrolePayload {
   data: {
     dr: number;
@@ -25,14 +33,15 @@ interface LegacyTwrolePayload {
   };
   hash: string;
   thumb: null;
-  decoGroups: DecorationGroup[];
+  decoGroups: LegacyDecoGroup[];
 }
 
 type VirtualLayer =
-  | { kind: 'head'; layer: HeadLayerTransform }
-  | { kind: 'deco'; layer: DecorationLayer };
+  | { kind: 'head'; layer: HeadLayerTransform; id: typeof HEAD_LAYER_ID }
+  | { kind: 'deco'; layer: DecorationLayer; id: string };
 
 const TWROLE_HEADER = [0, 1] as const;
+const HEAD_LAYER_ID = '__head_layer__';
 
 function asFiniteNumber(value: unknown, fallback: number): number {
   const numeric = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
@@ -63,9 +72,13 @@ function clampHeadLayerIndex(role: RoleDocument): number {
 }
 
 function getTopFirstVirtualLayers(role: RoleDocument): VirtualLayer[] {
-  const layers: VirtualLayer[] = role.decorations.map((layer) => ({ kind: 'deco', layer }));
-  layers.splice(clampHeadLayerIndex(role), 0, { kind: 'head', layer: role.headLayer });
+  const layers: VirtualLayer[] = role.decorations.map((layer) => ({ kind: 'deco', layer, id: layer.id }));
+  layers.splice(clampHeadLayerIndex(role), 0, { kind: 'head', layer: role.headLayer, id: HEAD_LAYER_ID });
   return layers;
+}
+
+function getBottomToTopVirtualLayers(role: RoleDocument): VirtualLayer[] {
+  return getTopFirstVirtualLayers(role).slice().reverse();
 }
 
 function exportDeco(layer: DecorationLayer): LegacyCompactDecoEntry | null {
@@ -93,18 +106,31 @@ function exportHead(layer: HeadLayerTransform): LegacyCompactDecoEntry | null {
 }
 
 function exportLegacyDecos(role: RoleDocument): LegacyCompactDecoEntry[] {
-  // UI/runtime stores layers top-first. Original RoleDecosConfig stores deco
-  // bottom-to-top. Group metadata is preserved separately in top-level
-  // `decoGroups`, matching the old editor payload shape.
-  return getTopFirstVirtualLayers(role)
-    .slice()
-    .reverse()
+  return getBottomToTopVirtualLayers(role)
     .map((item) => (item.kind === 'head' ? exportHead(item.layer) : exportDeco(item.layer)))
     .filter((item): item is LegacyCompactDecoEntry => item !== null);
 }
 
-function cloneDecoGroups(role: RoleDocument): DecorationGroup[] {
-  return JSON.parse(JSON.stringify(role.groups ?? [])) as DecorationGroup[];
+function exportLegacyDecoGroups(role: RoleDocument): LegacyDecoGroup[] {
+  const indexByLayerId = new Map<string, number>();
+  getBottomToTopVirtualLayers(role).forEach((item, index) => indexByLayerId.set(item.id, index));
+
+  return (role.groups ?? [])
+    .map((group): LegacyDecoGroup | null => {
+      const itemIndexes = group.itemIds
+        .map((id) => indexByLayerId.get(id))
+        .filter((index): index is number => typeof index === 'number')
+        .sort((a, b) => a - b);
+      if (itemIndexes.length < 2) return null;
+      return {
+        id: group.id,
+        name: group.name,
+        visible: group.visible !== false,
+        collapsed: group.collapsed === true,
+        itemIndexes
+      };
+    })
+    .filter((group): group is LegacyDecoGroup => group !== null);
 }
 
 export function buildLegacyCompactPayload(role: RoleDocument): LegacyTwrolePayload {
@@ -121,7 +147,7 @@ export function buildLegacyCompactPayload(role: RoleDocument): LegacyTwrolePaylo
     },
     hash: '',
     thumb: null,
-    decoGroups: cloneDecoGroups(role)
+    decoGroups: exportLegacyDecoGroups(role)
   };
 }
 
