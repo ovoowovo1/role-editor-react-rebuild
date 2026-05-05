@@ -1,5 +1,5 @@
 import { createId } from '../lib/math';
-import type { DecorationLayer, RoleDocument } from '../types/role';
+import type { DecorationGroup, DecorationLayer, RoleDocument } from '../types/role';
 import { findOptionByCode } from './options';
 
 export interface ColorBlockDecoTemplate {
@@ -68,7 +68,9 @@ export function getVisibleColorBlocks(camp: string): ColorBlockPreset[] {
 }
 
 export function colorBlockToRole(preset: ColorBlockPreset, baseRole: RoleDocument): RoleDocument {
-  const decorations: DecorationLayer[] = preset.deco.map((item, index) => {
+  // The source preset is stored in legacy bottom-to-top order. The rebuild UI/runtime
+  // uses top-first decoration order, so reverse the block before creating layers.
+  const decorations: DecorationLayer[] = preset.deco.slice().reverse().map((item) => {
     const option = findOptionByCode('deco', item.c);
     return {
       id: createId('deco'),
@@ -85,12 +87,24 @@ export function colorBlockToRole(preset: ColorBlockPreset, baseRole: RoleDocumen
     } satisfies DecorationLayer;
   });
 
+  const groups: DecorationGroup[] = decorations.length >= 2
+    ? [
+        {
+          id: createId('group'),
+          name: preset.label,
+          visible: true,
+          collapsed: false,
+          itemIds: decorations.map((item) => item.id)
+        }
+      ]
+    : [];
+
   return {
     ...baseRole,
     name: preset.name,
     camp: preset.camp,
     decorations,
-    groups: [],
+    groups,
     updatedAt: new Date().toISOString()
   };
 }
