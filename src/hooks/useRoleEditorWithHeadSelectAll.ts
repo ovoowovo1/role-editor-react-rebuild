@@ -165,6 +165,7 @@ export function useRoleEditor() {
   const transientSelectionBeforeRef = useRef<string[]>([]);
   const [localPast, setLocalPast] = useState<RoleDocument[]>([]);
   const [localFuture, setLocalFuture] = useState<RoleDocument[]>([]);
+  const [localClipboard, setLocalClipboard] = useState<DecorationLayer[]>([]);
 
   useEffect(() => {
     roleRef.current = editor.role;
@@ -377,6 +378,20 @@ export function useRoleEditor() {
     [commitRole, editor, restoreSelection]
   );
 
+  const copySelected = useCallback(() => {
+    if (!stableSelectedDecorations.length) return;
+    setLocalClipboard(stableSelectedDecorations.map((item) => cloneRole({ ...roleRef.current, decorations: [item] }).decorations[0]));
+  }, [stableSelectedDecorations]);
+
+  const pasteClipboard = useCallback(() => {
+    if (!localClipboard.length) return;
+    const settings = settingsForScope(editor.insertDraftSettings, editor.insertDraftSettings.scopes.copy);
+    const copied = localClipboard.map((item) => copyDecoration(item));
+    const nextRole = insertDecorations(roleRef.current, copied, settings);
+    commitRole(nextRole);
+    restoreSelection(copied.map((item) => item.id));
+  }, [commitRole, editor.insertDraftSettings, localClipboard, restoreSelection]);
+
   const mirrorCopyHorizontalSelected = useCallback(() => {
     if (!stableSelectedDecorations.length) return;
     const settings = settingsForScope(editor.insertDraftSettings, editor.insertDraftSettings.scopes.copy);
@@ -435,6 +450,8 @@ export function useRoleEditor() {
     updateDecoration,
     updateSelectedTransform,
     choosePart,
+    copySelected,
+    pasteClipboard,
     mirrorCopyHorizontalSelected,
     mirrorCopyVerticalSelected,
     rotateSelectedBy: (degrees: number) => withImmediateHistory(() => editor.rotateSelectedBy(degrees)),
