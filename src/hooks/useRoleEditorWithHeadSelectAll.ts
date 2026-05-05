@@ -62,16 +62,42 @@ function removeSelectedDecos(role: RoleDocument, selectedIds: string[]): RoleDoc
   };
 }
 
+function validSelectionIds(role: RoleDocument, ids: string[]): string[] {
+  const valid = new Set([...role.decorations.map((deco) => deco.id), HEAD_LAYER_ID]);
+  return ids.filter((id, index) => valid.has(id) && ids.indexOf(id) === index);
+}
+
 export function useRoleEditor() {
   const editor = useHeadLayerEditor();
   const roleRef = useRef(editor.role);
+  const selectedIdsRef = useRef(editor.selectedDecorationIds);
   const transientBeforeRef = useRef<RoleDocument | null>(null);
+  const transientSelectionBeforeRef = useRef<string[]>([]);
   const [localPast, setLocalPast] = useState<RoleDocument[]>([]);
   const [localFuture, setLocalFuture] = useState<RoleDocument[]>([]);
 
   useEffect(() => {
     roleRef.current = editor.role;
   }, [editor.role]);
+
+  useEffect(() => {
+    selectedIdsRef.current = editor.selectedDecorationIds;
+  }, [editor.selectedDecorationIds]);
+
+  const restoreSelection = useCallback(
+    (ids: string[]) => {
+      const nextIds = validSelectionIds(roleRef.current, ids);
+      if (!nextIds.length) return;
+
+      window.setTimeout(() => {
+        const stillValid = validSelectionIds(roleRef.current, nextIds);
+        if (!stillValid.length) return;
+        editor.clearSelection();
+        stillValid.forEach((id, index) => editor.selectDecoration(id, index > 0));
+      }, 0);
+    },
+    [editor]
+  );
 
   const pushHistorySnapshot = useCallback((snapshot: RoleDocument) => {
     setLocalPast((items) => [...items, cloneRole(snapshot)].slice(-HISTORY_LIMIT));
@@ -88,12 +114,13 @@ export function useRoleEditor() {
   );
 
   const withImmediateHistory = useCallback(
-    (action: () => void) => {
+    (action: () => void, restoreIds = selectedIdsRef.current) => {
       const before = cloneRole(roleRef.current);
       pushHistorySnapshot(before);
       action();
+      restoreSelection(restoreIds);
     },
-    [pushHistorySnapshot]
+    [pushHistorySnapshot, restoreSelection]
   );
 
   const undo = useCallback(() => {
@@ -137,22 +164,27 @@ export function useRoleEditor() {
 
   const beginTransient = useCallback(() => {
     transientBeforeRef.current = cloneRole(roleRef.current);
+    transientSelectionBeforeRef.current = [...selectedIdsRef.current];
     editor.beginTransient();
   }, [editor]);
 
   const commitTransient = useCallback(() => {
     const before = transientBeforeRef.current;
+    const selectionBefore = transientSelectionBeforeRef.current;
     transientBeforeRef.current = null;
+    transientSelectionBeforeRef.current = [];
     editor.commitTransient();
     if (before && !sameRole(before, roleRef.current)) {
       pushHistorySnapshot(before);
     }
-  }, [editor, pushHistorySnapshot]);
+    restoreSelection(selectionBefore.length ? selectionBefore : selectedIdsRef.current);
+  }, [editor, pushHistorySnapshot, restoreSelection]);
 
   const updateDecoration = useCallback(
     (id: string, patch: Partial<DecorationLayer>, commit?: boolean) => {
+      const selectionBefore = [...selectedIdsRef.current];
       const runUpdate = () => {
-        const selectedDecoIds = editor.selectedDecorationIds.filter((itemId) => itemId !== HEAD_LAYER_ID);
+        const selectedDecoIds = selectedIdsRef.current.filter((itemId) => itemId !== HEAD_LAYER_ID);
         const shouldMoveSelection =
           selectedDecoIds.length > 1 &&
           selectedDecoIds.includes(id) &&
@@ -163,7 +195,7 @@ export function useRoleEditor() {
           return;
         }
 
-        const dragged = editor.role.decorations.find((deco) => deco.id === id);
+        const dragged = roleRef.current.decorations.find((deco) => deco.id === id);
         if (!dragged) {
           editor.updateDecoration(id, patch, commit);
           return;
@@ -175,7 +207,7 @@ export function useRoleEditor() {
         const hasDy = Math.abs(dy) > Number.EPSILON;
 
         for (const selectedId of selectedDecoIds) {
-          const deco = editor.role.decorations.find((item) => item.id === selectedId);
+          const deco = roleRef.current.decorations.find((item) => item.id === selectedId);
           if (!deco) continue;
           if (selectedId === id) {
             editor.updateDecoration(selectedId, patch, commit);
@@ -191,7 +223,7 @@ export function useRoleEditor() {
         }
       };
 
-      if (commit) withImmediateHistory(runUpdate);
+      if (commit) withImmediateHistory(runUpdate, selectionBefore);
       else runUpdate();
     },
     [editor, withImmediateHistory]
@@ -199,14 +231,15 @@ export function useRoleEditor() {
 
   const updateSelectedTransform = useCallback(
     (patch: Parameters<typeof editor.updateSelectedTransform>[0], commit?: boolean) => {
-      if (commit) withImmediateHistory(() => editor.updateSelectedTransform(patch, commit));
+      const selectionBefore = [...selectedIdsRef.current];
+      if (commit) withImmediateHistory(() => editor.updateSelectedTransform(patch, commit), selectionBefore);
       else editor.updateSelectedTransform(patch, commit);
     },
     [editor, withImmediateHistory]
   );
 
   const deleteSelected = useCallback(() => {
-    const nextRole = removeSelectedDecos(roleRef.current, editor.selectedDecorationIds);
+    const nextRole = removeSelectedDecos(roleRef.current, selectedIdsRef.current);
     if (!nextRole) return;
     commitRole(nextRole);
     editor.clearSelection();
