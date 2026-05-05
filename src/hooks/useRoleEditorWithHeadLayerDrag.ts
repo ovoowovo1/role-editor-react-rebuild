@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import type { DecorationGroup, RoleDocument } from '../types/role';
+import { HEAD_LAYER_ID } from '../components/LayerList';
 import { useRoleEditor as useBaseRoleEditor } from './useRoleEditor';
 
 const HEAD_ROW_ID = 'head:singleton';
@@ -14,10 +15,6 @@ type LayerDragTarget =
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-function cloneRole(role: RoleDocument): RoleDocument {
-  return JSON.parse(JSON.stringify(role)) as RoleDocument;
 }
 
 function parseLayerDragTarget(rawId: string): LayerDragTarget {
@@ -125,6 +122,17 @@ function reorderIncludingHead(role: RoleDocument, activeRowId: string, overRowId
   return nextRole;
 }
 
+function toggleHeadVisibility(role: RoleDocument): RoleDocument {
+  return {
+    ...role,
+    headLayer: {
+      ...role.headLayer,
+      visible: role.headLayer.visible === false
+    },
+    updatedAt: new Date().toISOString()
+  };
+}
+
 export function useRoleEditor() {
   const editor = useBaseRoleEditor();
 
@@ -140,8 +148,20 @@ export function useRoleEditor() {
     [editor]
   );
 
+  const toggleDecorationVisibility = useCallback(
+    (id: string) => {
+      if (id === HEAD_LAYER_ID) {
+        editor.importRole(toggleHeadVisibility(editor.role));
+        return;
+      }
+      editor.toggleDecorationVisibility(id);
+    },
+    [editor]
+  );
+
   return {
     ...editor,
-    reorderDecorations
+    reorderDecorations,
+    toggleDecorationVisibility
   };
 }
