@@ -33,7 +33,7 @@ export interface ActorPreviewSlot {
 export const actorClipHierarchy = {
   root: ['footContainer', 'capeClip.container', 'bodyAttachmentContainer'],
   footContainer: ['rightFoot.clip', 'leftFoot.clip'],
-  bodyAnimation: ['capeClip.container', 'rightHand.clip', 'leftHand.clip', 'headClip.container']
+  bodyAnimation: ['rightHand.clip', 'leftHand.clip', 'headClip.container']
 } as const;
 
 /**
@@ -53,16 +53,18 @@ export const actorPreviewSlots = {
     matrix: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 },
     fallbackSize: 40
   },
+
+  // Composite matrices from actor01_body IDLE_KONGFU_TYPE -> bodyAnimation placeholders in twactor.gaf.
   rightHand: {
-    matrix: { a: 0.7856361269950867, b: -0.6143983602523804, c: 0.5733987092971802, d: 0.7332095503807068, tx: 11.75, ty: -15.899999618530273 },
+    matrix: { a: 0.7641164134256542, b: 0.6445249184034765, c: 0.6445249184034765, d: -0.7641164134256542, tx: -5.501858520437963, ty: 19.300045013427734 },
     fallbackSize: 32
   },
   leftHand: {
-    matrix: { a: 0.2947200536727905, b: -0.9527800679206848, c: -0.8891997337341309, d: -0.2750529944896698, tx: 24.549999237060547, ty: -2.799999952316284 },
+    matrix: { a: 0.8701622416265309, b: -0.4920315444469452, c: 0.4920315444469452, d: 0.8701622416265309, tx: 9.70130443572998, ty: -15.248562622087775 },
     fallbackSize: 32
   },
   head: {
-    matrix: { a: 1, b: 0, c: 0, d: 1, tx: 2.75, ty: 0.5 },
+    matrix: { a: 0.9913136325776577, b: -0.1216133451089263, c: 0.1216133451089263, d: 0.9913136325776577, tx: -6.049986267834356, ty: -1.1500045835972514 },
     fallbackSize: 32
   },
 
