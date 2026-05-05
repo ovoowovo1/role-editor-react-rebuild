@@ -167,7 +167,7 @@ type FootContainer = Container & {
  *         rightFoot.clip
  *       leftFootSlot           (slot: leftFoot matrix)
  *         leftFoot.clip
- *     capeClip.container       (position synced from headClip.container)
+ *     capeClip.container       (slot: cape matrix)
  *       capeClip.clip
  *     bodyAttachmentContainer
  *       rightHandSlot          (slot: rightHand matrix)
