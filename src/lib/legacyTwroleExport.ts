@@ -65,7 +65,8 @@ function asFiniteNumber(value: unknown, fallback: number): number {
 }
 
 function getLegacyDr(role: RoleDocument): number {
-  return LEGACY_DR_BY_CAMP[String(role.camp ?? '').trim()] ?? DEFAULT_LEGACY_DR;
+  const baseDr = LEGACY_DR_BY_CAMP[String(role.camp ?? '').trim()] ?? DEFAULT_LEGACY_DR;
+  return baseDr + (role.gender === 'female' ? 1 : 0);
 }
 
 function normalizeDegrees(value: unknown): number {
