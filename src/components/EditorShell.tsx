@@ -8,7 +8,8 @@ import { TopMenu } from './TopMenu';
 import { ShortcutHelpModal } from './ShortcutHelpModal';
 import { optionById, tabLabels } from '../mock/options';
 import { downloadBlob } from '../lib/math';
-import { createRoleJsonBlob, createTwroleBlob, parseRoleFile, parseRoleFileInWorker, roleToEnvelope } from '../lib/roleSerialization';
+import { createRoleJsonBlob, createTwroleBlob } from '../lib/legacyTwroleExport';
+import { parseRoleFile, parseRoleFileInWorker, roleToEnvelope } from '../lib/roleSerialization';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useRoleEditor } from '../hooks/useRoleEditorWithHeadLayerDrag';
 
