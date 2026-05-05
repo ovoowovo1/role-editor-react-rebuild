@@ -160,6 +160,9 @@ export function EditorShell() {
 
           <LayerList
             decorations={editor.role.decorations}
+            headLayer={editor.role.headLayer}
+            headLayerIndex={editor.role.headLayerIndex}
+            headOptionId={editor.role.parts.head}
             groups={editor.groups}
             selectedIds={editor.selectedDecorationIds}
             canGroupSelected={editor.canGroupSelected}
