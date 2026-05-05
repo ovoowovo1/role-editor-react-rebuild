@@ -1,25 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HEAD_LAYER_ID } from '../constants/layers';
-import { atomsForRole, clamp, deriveRoleFromAtoms, getHeadLayerIndex, layerIdsForRole } from '../lib/layerOrdering';
+import { getHeadLayerIndex, layerIdsForRole } from '../lib/layerOrdering';
 import { createId } from '../lib/math';
+import { insertDecorations, settingsForScope } from '../lib/editorInsertSettings';
+import { pushLocalFuture, pushLocalPast, sameRole } from '../lib/editorLocalHistory';
+import { cloneRole } from '../lib/editorRoleUtils';
+import { nextGroupId } from '../lib/headLayerMutations';
 import { useRoleEditor as useHeadLayerEditor, type InsertDraftSettings } from './useRoleEditorWithHeadLayerDrag';
 import type { DecorationGroup, DecorationLayer, PartOption, RoleDocument, TransformValues } from '../types/role';
 
 export type { InsertDraftSettings };
-
-const HISTORY_LIMIT = 200;
-
-function cloneRole(role: RoleDocument): RoleDocument {
-  return JSON.parse(JSON.stringify(role)) as RoleDocument;
-}
-
-function sameRole(a: RoleDocument, b: RoleDocument): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
-function getAllLayerIdsIncludingHead(role: RoleDocument): string[] {
-  return layerIdsForRole(role);
-}
 
 function roundPosition(value: number): number {
   return Math.round(value * 100) / 100;
@@ -64,10 +54,6 @@ function copyDecoration(item: DecorationLayer, patch: Partial<DecorationLayer> =
   };
 }
 
-function nextGroupId(): string {
-  return `group-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 function removeSelectedDecos(role: RoleDocument, selectedIds: string[]): RoleDocument | null {
   const selected = new Set(selectedIds.filter((id) => id !== HEAD_LAYER_ID));
   if (!selected.size) return null;
@@ -107,34 +93,6 @@ function validSelectionIds(role: RoleDocument, ids: string[]): string[] {
 function nextSelection(current: string[], id: string, additive: boolean): string[] {
   if (!additive) return [id];
   return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
-}
-
-function settingsForScope(settings: InsertDraftSettings, enabled: boolean): InsertDraftSettings {
-  return enabled ? settings : { ...settings, placement: 'bottom' };
-}
-
-function getInsertVirtualIndex(role: RoleDocument, settings: InsertDraftSettings): number {
-  const layerCount = role.decorations.length + 1;
-  if (settings.placement === 'top') return 0;
-  if (settings.placement === 'bottom') return layerCount;
-  const numeric = Number(settings.index);
-  if (!Number.isInteger(numeric) || numeric < 1) return layerCount;
-  return clamp(numeric, 0, layerCount);
-}
-
-function insertDecorations(role: RoleDocument, decorationsToInsert: DecorationLayer[], settings: InsertDraftSettings): RoleDocument {
-  if (!decorationsToInsert.length) return role;
-
-  const atoms = atomsForRole(role);
-  const insertIndex = getInsertVirtualIndex(role, settings);
-  const nextAtoms = [
-    ...atoms.slice(0, insertIndex),
-    ...decorationsToInsert.map((item) => item.id),
-    ...atoms.slice(insertIndex)
-  ];
-
-  const extras = new Map(decorationsToInsert.map((item) => [item.id, item]));
-  return deriveRoleFromAtoms(role, nextAtoms, extras);
 }
 
 export function useRoleEditor() {
@@ -200,7 +158,7 @@ export function useRoleEditor() {
   );
 
   const pushHistorySnapshot = useCallback((snapshot: RoleDocument) => {
-    setLocalPast((items) => [...items, cloneRole(snapshot)].slice(-HISTORY_LIMIT));
+    setLocalPast((items) => pushLocalPast(items, snapshot));
     setLocalFuture([]);
   }, []);
 
@@ -227,7 +185,7 @@ export function useRoleEditor() {
     if (localPast.length) {
       const previous = localPast[localPast.length - 1];
       setLocalPast((items) => items.slice(0, -1));
-      setLocalFuture((items) => [cloneRole(roleRef.current), ...items].slice(0, HISTORY_LIMIT));
+      setLocalFuture((items) => pushLocalFuture(items, roleRef.current));
       selectedIdsRef.current = [];
       editor.importRole(previous);
       editor.clearSelection();
@@ -240,7 +198,7 @@ export function useRoleEditor() {
     if (localFuture.length) {
       const next = localFuture[0];
       setLocalFuture((items) => items.slice(1));
-      setLocalPast((items) => [...items, cloneRole(roleRef.current)].slice(-HISTORY_LIMIT));
+      setLocalPast((items) => pushLocalPast(items, roleRef.current));
       selectedIdsRef.current = [];
       editor.importRole(next);
       editor.clearSelection();
@@ -260,7 +218,7 @@ export function useRoleEditor() {
   );
 
   const selectAllDecorations = useCallback(() => {
-    const ids = getAllLayerIdsIncludingHead(editor.role);
+    const ids = layerIdsForRole(editor.role);
     selectedIdsRef.current = ids;
     editor.clearSelection();
     ids.forEach((id, index) => editor.selectDecoration(id, index > 0));

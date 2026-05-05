@@ -27,6 +27,15 @@ export function makeDecoration(option: PartOption, index: number): DecorationLay
   };
 }
 
+export function copyDecorationForInsert(item: DecorationLayer | EditorClipboardItem, offset = 0): DecorationLayer {
+  return {
+    ...item,
+    id: createId('deco'),
+    x: round(item.x + offset, 2),
+    y: round(item.y + offset, 2)
+  };
+}
+
 export function setSelectedVisibleInRole(current: RoleDocument, selectedIds: string[], visible: boolean): void {
   const selected = new Set(selectedIds);
   current.decorations = current.decorations.map((item) => (selected.has(item.id) ? { ...item, visible } : item));
@@ -90,4 +99,3 @@ export function moveSelectedToBoundaryInRole(current: RoleDocument, selectedIds:
   const remaining = current.decorations.filter((item) => !selectedSet.has(item.id));
   current.decorations = boundary === 'top' ? [...moving, ...remaining] : [...remaining, ...moving];
 }
-
