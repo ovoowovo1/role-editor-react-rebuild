@@ -10,7 +10,6 @@ import { optionById, tabLabels } from '../mock/options';
 import { downloadBlob } from '../lib/math';
 import { createRoleJsonBlob, createTwroleBlob } from '../lib/legacyTwroleExport';
 import { parseRoleFileWithLegacyGroups, parseRoleFileInWorkerWithLegacyGroups } from '../lib/legacyGroupImport';
-import { roleToEnvelope } from '../lib/roleSerialization';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useRoleEditor, type InsertDraftSettings } from '../hooks/useRoleEditorWithHeadLayerDrag';
 
@@ -75,28 +74,13 @@ function InsertSettingsDialog({ open, settings, onChange, onClose }: InsertSetti
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 320 }}>
           <strong>Insert target</strong>
           <label>
-            <input
-              type="radio"
-              checked={settings.placement === 'top'}
-              onChange={() => updateSettings({ placement: 'top' })}
-            />{' '}
-            List Top
+            <input type="radio" checked={settings.placement === 'top'} onChange={() => updateSettings({ placement: 'top' })} /> List Top
           </label>
           <label>
-            <input
-              type="radio"
-              checked={settings.placement === 'bottom'}
-              onChange={() => updateSettings({ placement: 'bottom' })}
-            />{' '}
-            List Bottom
+            <input type="radio" checked={settings.placement === 'bottom'} onChange={() => updateSettings({ placement: 'bottom' })} /> List Bottom
           </label>
           <label>
-            <input
-              type="radio"
-              checked={settings.placement === 'after_index'}
-              onChange={() => updateSettings({ placement: 'after_index' })}
-            />{' '}
-            Below Index
+            <input type="radio" checked={settings.placement === 'after_index'} onChange={() => updateSettings({ placement: 'after_index' })} /> Below Index
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
             <span>Visible row number (1-based)</span>
@@ -132,37 +116,18 @@ function InsertSettingsDialog({ open, settings, onChange, onClose }: InsertSetti
 
           <strong>Affect create sources</strong>
           <label>
-            <input
-              type="checkbox"
-              checked={settings.scopes.palette}
-              onChange={() => updateScopes({ palette: !settings.scopes.palette })}
-            />{' '}
-            左側素材點擊新增
+            <input type="checkbox" checked={settings.scopes.palette} onChange={() => updateScopes({ palette: !settings.scopes.palette })} /> 左側素材點擊新增
           </label>
           <label>
-            <input
-              type="checkbox"
-              checked={settings.scopes.copy}
-              onChange={() => updateScopes({ copy: !settings.scopes.copy })}
-            />{' '}
-            複製/貼上與鏡像複製
+            <input type="checkbox" checked={settings.scopes.copy} onChange={() => updateScopes({ copy: !settings.scopes.copy })} /> 複製/貼上與鏡像複製
           </label>
           <label>
-            <input
-              type="checkbox"
-              checked={settings.scopes.mergeBatch}
-              onChange={() => updateScopes({ mergeBatch: !settings.scopes.mergeBatch })}
-            />{' '}
-            Merge / Batch Add
+            <input type="checkbox" checked={settings.scopes.mergeBatch} onChange={() => updateScopes({ mergeBatch: !settings.scopes.mergeBatch })} /> Merge / Batch Add
           </label>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-          <button type="button" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="button" disabled={!validIndex} onClick={onClose}>
-            Save
-          </button>
+          <button type="button" onClick={onClose}>Cancel</button>
+          <button type="button" disabled={!validIndex} onClick={onClose}>Save</button>
         </div>
       </div>
     </div>
@@ -243,12 +208,6 @@ export function EditorShell() {
     setStatus('Exported legacy-compatible compact role JSON');
   };
 
-  const handleSaveMock = () => {
-    const envelope = roleToEnvelope(editor.role);
-    window.dispatchEvent(new CustomEvent('mockRoleEditor:saveRole', { detail: envelope }));
-    setStatus('Save emitted mockRoleEditor:saveRole event');
-  };
-
   return (
     <div className="role-editor-page">
       <div className="editor-window">
@@ -264,11 +223,6 @@ export function EditorShell() {
           onMerge={handleMerge}
           onDownloadTwrole={handleDownloadTwrole}
           onExportJson={handleExportJson}
-          onSaveMock={handleSaveMock}
-          onNewDesign={() => {
-            editor.newDesign();
-            setStatus('Started a new mock role design');
-          }}
           onUndo={editor.undo}
           onRedo={editor.redo}
           onCampChange={editor.changeCamp}
@@ -289,11 +243,7 @@ export function EditorShell() {
             selectedOptionId={selectedOptionId}
             onPick={(option) => {
               editor.choosePart(editor.selectedTab, option);
-              setStatus(
-                editor.selectedTab === 'deco'
-                  ? `Added ${option.label}`
-                  : `Changed ${tabLabels[editor.selectedTab]} to ${option.label}`
-              );
+              setStatus(editor.selectedTab === 'deco' ? `Added ${option.label}` : `Changed ${tabLabels[editor.selectedTab]} to ${option.label}`);
             }}
           />
 
@@ -371,12 +321,7 @@ export function EditorShell() {
         <footer className="editor-footer">
           <span>
             Official editor go to{' '}
-            <a
-              href="https://twrolecgeditor.gamelet.online/"
-              target="_blank"
-              rel="noreferrer"
-              style={{ color: "white", textDecoration: "none" }}
-            >
+            <a href="https://twrolecgeditor.gamelet.online/" target="_blank" rel="noreferrer" style={{ color: 'white', textDecoration: 'none' }}>
               https://twrolecgeditor.gamelet.online/
             </a>
           </span>
