@@ -217,7 +217,6 @@ export function EditorShell() {
           gender={editor.role.gender}
           canUndo={editor.canUndo}
           canRedo={editor.canRedo}
-          canMerge={editor.canMergeSelected}
           status={status}
           onImport={handleImport}
           onMerge={handleMerge}
@@ -229,10 +228,6 @@ export function EditorShell() {
           onGenderChange={editor.changeGender}
           onOpenShortcuts={() => setShortcutsOpen(true)}
           onOpenInsertSettings={() => setInsertSettingsOpen(true)}
-          onMergeSelected={() => {
-            editor.mergeSelectedAsBatch();
-            setStatus('Merged selected layers as a new batch');
-          }}
         />
         <TabBar value={editor.selectedTab} onChange={editor.setSelectedTab} />
 
