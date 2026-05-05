@@ -237,5 +237,10 @@ export class ActorClip extends Container {
     this.bodyAttachmentContainer.addChild(this.headClip.container);
 
     this.addChild(this.bodyAttachmentContainer);
+    this.syncCapeToHead();
+  }
+
+  private syncCapeToHead(): void {
+    this.toLocal({ x: 0, y: 0 }, this.headClip.container, this.capeClip.container.position);
   }
 }
