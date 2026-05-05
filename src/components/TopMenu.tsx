@@ -13,8 +13,6 @@ interface TopMenuProps {
   onMerge(file: File): void;
   onDownloadTwrole(): void;
   onExportJson(): void;
-  onSaveMock(): void;
-  onNewDesign(): void;
   onUndo(): void;
   onRedo(): void;
   onCampChange(camp: string): void;
@@ -35,8 +33,6 @@ export function TopMenu({
   onMerge,
   onDownloadTwrole,
   onExportJson,
-  onSaveMock,
-  onNewDesign,
   onUndo,
   onRedo,
   onCampChange,
@@ -90,12 +86,6 @@ export function TopMenu({
         </button>
         <button className="primary-button subtle" type="button" disabled={!canMerge} onClick={onMergeSelected}>
           Merge Selected
-        </button>
-        <button className="primary-button" type="button" onClick={onNewDesign}>
-          New Design
-        </button>
-        <button className="primary-button save" type="button" onClick={onSaveMock}>
-          Save
         </button>
       </div>
 
