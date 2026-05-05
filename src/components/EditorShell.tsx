@@ -188,7 +188,17 @@ export function EditorShell() {
         <ShortcutHelpModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
         <footer className="editor-footer">
-          <span>Mock runtime active: CgLibs/Base/TwilightWarsLib/GLT resources are replaced by local adapters.</span>
+          <span>
+            Official editor go to{' '}
+            <a
+              href="https://twrolecgeditor.gamelet.online/"
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "white", textDecoration: "none" }}
+            >
+              https://twrolecgeditor.gamelet.online/
+            </a>
+          </span>
           <span>Selected option: {selectedOptionId ? optionById[selectedOptionId]?.label ?? selectedOptionId : 'none'}</span>
         </footer>
       </div>
