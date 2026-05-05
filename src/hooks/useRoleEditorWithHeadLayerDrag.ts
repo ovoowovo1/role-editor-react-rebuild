@@ -22,6 +22,7 @@ const HEAD_ROW_ID = 'head:singleton';
 const HEAD_ATOM = '__HEAD_LAYER__';
 const GROUP_ROW_PREFIX = 'group:';
 const ITEM_ROW_PREFIX = 'item:';
+const HISTORY_LIMIT = 200;
 
 const DEFAULT_INSERT_SETTINGS: InsertDraftSettings = {
   placement: 'top',
@@ -37,6 +38,14 @@ type LayerDragTarget =
   | { kind: 'head' }
   | { kind: 'group'; id: string }
   | { kind: 'item'; id: string };
+
+function cloneRole(role: RoleDocument): RoleDocument {
+  return JSON.parse(JSON.stringify(role)) as RoleDocument;
+}
+
+function sameRole(a: RoleDocument, b: RoleDocument): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -321,7 +330,7 @@ function insertDecorations(role: RoleDocument, decorations: DecorationLayer[], s
   return deriveRoleFromAtoms(role, nextAtoms, extras);
 }
 
-function mergeImportedRoleIntoCurrent(role: RoleDocument, incoming: RoleDocument, settings: InsertDraftSettings): RoleDocument {
+function mergeImportedRoleIntoCurrent(role: RoleDocument, incoming: RoleDocument, settings: InsertDraftSettings): { role: RoleDocument; insertedIds: string[] } {
   const idMap = new Map<string, string>();
   const copied = incoming.decorations.map((item, index) => {
     const next = copyDecorationForInsert(item, index * 2);
@@ -345,9 +354,12 @@ function mergeImportedRoleIntoCurrent(role: RoleDocument, incoming: RoleDocument
     })
     .filter((group): group is DecorationGroup => group !== null);
   return {
-    ...nextRole,
-    groups: [...(nextRole.groups ?? []), ...importedGroups],
-    updatedAt: new Date().toISOString()
+    role: {
+      ...nextRole,
+      groups: [...(nextRole.groups ?? []), ...importedGroups],
+      updatedAt: new Date().toISOString()
+    },
+    insertedIds: copied.map((item) => item.id)
   };
 }
 
@@ -357,6 +369,44 @@ export function useRoleEditor() {
   const [insertDraftSettings, setInsertDraftSettingsState] = useState<InsertDraftSettings>(DEFAULT_INSERT_SETTINGS);
   const [localClipboard, setLocalClipboard] = useState<EditorClipboardItem[]>([]);
   const [localPasteCount, setLocalPasteCount] = useState(0);
+  const [localPast, setLocalPast] = useState<RoleDocument[]>([]);
+  const [localFuture, setLocalFuture] = useState<RoleDocument[]>([]);
+
+  const commitRole = useCallback(
+    (nextRole: RoleDocument, nextSelectionIds?: string[]) => {
+      if (sameRole(editor.role, nextRole)) return;
+      const previous = cloneRole(editor.role);
+      setLocalPast((items) => [...items, previous].slice(-HISTORY_LIMIT));
+      setLocalFuture([]);
+      editor.importRole(nextRole);
+      if (nextSelectionIds) setSelectedLayerIds(nextSelectionIds);
+    },
+    [editor]
+  );
+
+  const undo = useCallback(() => {
+    if (localPast.length) {
+      const previous = localPast[localPast.length - 1];
+      setLocalPast((items) => items.slice(0, -1));
+      setLocalFuture((items) => [cloneRole(editor.role), ...items].slice(0, HISTORY_LIMIT));
+      editor.importRole(previous);
+      setSelectedLayerIds([]);
+      return;
+    }
+    editor.undo();
+  }, [editor, localPast]);
+
+  const redo = useCallback(() => {
+    if (localFuture.length) {
+      const next = localFuture[0];
+      setLocalFuture((items) => items.slice(1));
+      setLocalPast((items) => [...items, cloneRole(editor.role)].slice(-HISTORY_LIMIT));
+      editor.importRole(next);
+      setSelectedLayerIds([]);
+      return;
+    }
+    editor.redo();
+  }, [editor, localFuture]);
 
   const setInsertDraftSettings = useCallback((settings: InsertDraftSettings) => {
     setInsertDraftSettingsState({
@@ -426,30 +476,30 @@ export function useRoleEditor() {
   const groupSelected = useCallback(() => {
     const nextRole = createGroupFromSelection(editor.role, selectedLayerIds);
     if (!nextRole) return;
-    editor.importRole(nextRole);
-  }, [editor, selectedLayerIds]);
+    commitRole(nextRole);
+  }, [commitRole, editor.role, selectedLayerIds]);
 
   const reorderDecorations = useCallback(
     (activeRowId: string, overRowId: string) => {
       const nextRole = reorderIncludingHead(editor.role, activeRowId, overRowId, selectedLayerIds);
       if (nextRole) {
-        editor.importRole(nextRole);
+        commitRole(nextRole);
         return;
       }
       editor.reorderDecorations(activeRowId, overRowId);
     },
-    [editor, selectedLayerIds]
+    [commitRole, editor, selectedLayerIds]
   );
 
   const toggleDecorationVisibility = useCallback(
     (id: string) => {
       if (id === HEAD_LAYER_ID) {
-        editor.importRole(toggleHeadVisibility(editor.role));
+        commitRole(toggleHeadVisibility(editor.role));
         return;
       }
       editor.toggleDecorationVisibility(id);
     },
-    [editor]
+    [commitRole, editor]
   );
 
   const toggleGroupVisibility = useCallback(
@@ -457,24 +507,24 @@ export function useRoleEditor() {
       const group = editor.role.groups?.find((item) => item.id === groupId);
       if (!group) return;
       if (group.itemIds.includes(HEAD_LAYER_ID)) {
-        editor.importRole(setGroupVisibilityIncludingHead(editor.role, groupId, group.visible === false));
+        commitRole(setGroupVisibilityIncludingHead(editor.role, groupId, group.visible === false));
         return;
       }
       editor.toggleGroupVisibility(groupId);
     },
-    [editor]
+    [commitRole, editor]
   );
 
   const ungroup = useCallback(
     (groupId: string) => {
       const group = editor.role.groups?.find((item) => item.id === groupId);
       if (group?.itemIds.includes(HEAD_LAYER_ID)) {
-        editor.importRole(ungroupIncludingHead(editor.role, groupId));
+        commitRole(ungroupIncludingHead(editor.role, groupId));
         return;
       }
       editor.ungroup(groupId);
     },
-    [editor]
+    [commitRole, editor]
   );
 
   const choosePart = useCallback(
@@ -482,13 +532,12 @@ export function useRoleEditor() {
       if (tab === 'deco' && insertDraftSettings.scopes.palette) {
         const deco = makeDecoration(option, editor.role.decorations.length);
         const nextRole = insertDecorations(editor.role, [deco], insertDraftSettings);
-        editor.importRole(nextRole);
-        setSelectedLayerIds([deco.id]);
+        commitRole(nextRole, [deco.id]);
         return;
       }
       editor.choosePart(tab, option);
     },
-    [editor, insertDraftSettings]
+    [commitRole, editor, insertDraftSettings]
   );
 
   const copySelected = useCallback(() => {
@@ -505,10 +554,9 @@ export function useRoleEditor() {
     const offset = 8 + localPasteCount * 4;
     const pasted = localClipboard.map((item) => copyDecorationForInsert(item, offset));
     const nextRole = insertDecorations(editor.role, pasted, insertDraftSettings);
-    editor.importRole(nextRole);
-    setSelectedLayerIds(pasted.map((item) => item.id));
+    commitRole(nextRole, pasted.map((item) => item.id));
     setLocalPasteCount((count) => count + 1);
-  }, [editor, insertDraftSettings, localClipboard, localPasteCount]);
+  }, [commitRole, editor, insertDraftSettings, localClipboard, localPasteCount]);
 
   const mirrorCopyHorizontalSelected = useCallback(() => {
     if (!insertDraftSettings.scopes.copy || !selectedDecorations.length) {
@@ -517,9 +565,8 @@ export function useRoleEditor() {
     }
     const copied = selectedDecorations.map((item) => ({ ...copyDecorationForInsert(item), x: round(-item.x, 2) }));
     const nextRole = insertDecorations(editor.role, copied, insertDraftSettings);
-    editor.importRole(nextRole);
-    setSelectedLayerIds(copied.map((item) => item.id));
-  }, [editor, insertDraftSettings, selectedDecorations]);
+    commitRole(nextRole, copied.map((item) => item.id));
+  }, [commitRole, editor, insertDraftSettings, selectedDecorations]);
 
   const mirrorCopyVerticalSelected = useCallback(() => {
     if (!insertDraftSettings.scopes.copy || !selectedDecorations.length) {
@@ -528,33 +575,44 @@ export function useRoleEditor() {
     }
     const copied = selectedDecorations.map((item) => ({ ...copyDecorationForInsert(item), y: round(-item.y, 2) }));
     const nextRole = insertDecorations(editor.role, copied, insertDraftSettings);
-    editor.importRole(nextRole);
-    setSelectedLayerIds(copied.map((item) => item.id));
-  }, [editor, insertDraftSettings, selectedDecorations]);
+    commitRole(nextRole, copied.map((item) => item.id));
+  }, [commitRole, editor, insertDraftSettings, selectedDecorations]);
 
   const mergeSelectedAsBatch = useCallback(() => {
     if (!selectedDecorations.length) return;
     const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
     const copied = selectedDecorations.map((item, index) => copyDecorationForInsert(item, index * 2));
     const nextRole = insertDecorations(editor.role, copied, settings);
-    editor.importRole(nextRole);
-    setSelectedLayerIds(copied.map((item) => item.id));
-  }, [editor, insertDraftSettings, selectedDecorations]);
+    commitRole(nextRole, copied.map((item) => item.id));
+  }, [commitRole, editor.role, insertDraftSettings, selectedDecorations]);
 
   const mergeImportedRole = useCallback(
     (incoming: RoleDocument) => {
       const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
-      const nextRole = mergeImportedRoleIntoCurrent(editor.role, incoming, settings);
-      editor.importRole(nextRole);
-      const incomingCount = incoming.decorations.length;
-      const nextIds = nextRole.decorations.slice(Math.max(0, nextRole.decorations.length - incomingCount)).map((item) => item.id);
-      setSelectedLayerIds(nextIds);
+      const result = mergeImportedRoleIntoCurrent(editor.role, incoming, settings);
+      commitRole(result.role, result.insertedIds);
     },
-    [editor, insertDraftSettings]
+    [commitRole, editor.role, insertDraftSettings]
+  );
+
+  const importRole = useCallback(
+    (role: RoleDocument) => {
+      setLocalPast([]);
+      setLocalFuture([]);
+      setSelectedLayerIds([]);
+      editor.importRole(role);
+    },
+    [editor]
   );
 
   return {
     ...editor,
+    role: editor.role,
+    canUndo: localPast.length > 0 || editor.canUndo,
+    canRedo: localFuture.length > 0 || editor.canRedo,
+    undo,
+    redo,
+    importRole,
     selectedDecorationIds: selectedLayerIds,
     selectedDecorations,
     canGroupSelected,
