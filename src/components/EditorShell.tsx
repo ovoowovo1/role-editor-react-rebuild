@@ -11,7 +11,7 @@ import { downloadBlob } from '../lib/math';
 import { createRoleJsonBlob, createTwroleBlob } from '../lib/legacyTwroleExport';
 import { parseRoleFileWithLegacyGroups, parseRoleFileInWorkerWithLegacyGroups } from '../lib/legacyGroupImport';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
-import { useRoleEditor, type InsertDraftSettings } from '../hooks/useRoleEditorWithHeadLayerDrag';
+import { useRoleEditor, type InsertDraftSettings } from '../hooks/useRoleEditorWithHeadSelectAll';
 
 const CharacterStage = lazy(async () => import('./CharacterStage').then((module) => ({ default: module.CharacterStage })));
 
