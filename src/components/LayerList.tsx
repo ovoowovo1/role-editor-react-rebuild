@@ -15,12 +15,13 @@ import {
   verticalListSortingStrategy
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { DecorationGroup, DecorationLayer } from '../types/role';
+import type { DecorationGroup, DecorationLayer, HeadLayerTransform } from '../types/role';
 import { optionById } from '../mock/options';
 import { AssetPreview } from './AssetPreview';
 
 const GROUP_ROW_PREFIX = 'group:';
 const ITEM_ROW_PREFIX = 'item:';
+const HEAD_ROW_ID = 'head:singleton';
 
 function groupRowId(groupId: string): string {
   return `${GROUP_ROW_PREFIX}${groupId}`;
@@ -30,8 +31,17 @@ function itemRowId(itemId: string): string {
   return `${ITEM_ROW_PREFIX}${itemId}`;
 }
 
+function clampHeadLayerIndex(headLayerIndex: number | undefined, decorationCount: number): number {
+  const n = typeof headLayerIndex === 'number' ? headLayerIndex : decorationCount;
+  if (!Number.isFinite(n)) return decorationCount;
+  return Math.max(0, Math.min(decorationCount, Math.round(n)));
+}
+
 interface LayerListProps {
   decorations: DecorationLayer[];
+  headLayer: HeadLayerTransform;
+  headLayerIndex: number;
+  headOptionId: string;
   groups: DecorationGroup[];
   selectedIds: string[];
   canGroupSelected: boolean;
@@ -57,6 +67,12 @@ interface SortableLayerProps {
   onDelete(id: string): void;
 }
 
+interface HeadLayerRowProps {
+  headLayer: HeadLayerTransform;
+  headOptionId: string;
+  index: number;
+}
+
 interface SortableGroupHeaderProps {
   group: DecorationGroup;
   itemCount: number;
@@ -70,7 +86,7 @@ interface SortableGroupHeaderProps {
 interface LayerRowModel {
   key: string;
   rowId: string;
-  type: 'item' | 'group';
+  type: 'item' | 'group' | 'head';
   deco?: DecorationLayer;
   group?: DecorationGroup;
   index?: number;
@@ -129,6 +145,36 @@ function SortableLayer({ deco, index, selected, grouped = false, onSelect, onTog
           onDelete(deco.id);
         }}
       >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function HeadLayerRow({ headLayer, headOptionId, index }: HeadLayerRowProps) {
+  const option = optionById[headOptionId];
+
+  return (
+    <div
+      className={`layer-row head-layer ${headLayer.visible === false ? 'muted' : ''}`}
+      data-layer-id="head"
+      title="Head is a singleton virtual layer from the original RoleDeco HEAD_CODE entry"
+    >
+      <button className="drag-handle" type="button" disabled title="Head is a singleton layer">
+        Head
+      </button>
+      <div className="layer-badge">{index + 1}</div>
+      <div className="layer-thumb">
+        <AssetPreview option={option} size={50} />
+      </div>
+      <div className="layer-meta">
+        <strong>Head</strong>
+        <span>head · singleton</span>
+      </div>
+      <button className="layer-icon-button" type="button" disabled title={headLayer.visible === false ? 'Head layer hidden' : 'Head layer visible'}>
+        {headLayer.visible === false ? '○' : '◉'}
+      </button>
+      <button className="layer-delete" type="button" disabled title="Head cannot be deleted or duplicated">
         ×
       </button>
     </div>
@@ -204,6 +250,9 @@ function SortableGroupHeader({
 
 export function LayerList({
   decorations,
+  headLayer,
+  headLayerIndex,
+  headOptionId,
   groups,
   selectedIds,
   canGroupSelected,
@@ -260,7 +309,23 @@ export function LayerList({
 
     const renderedGroupIds = new Set<string>();
     const models: LayerRowModel[] = [];
-    decorations.forEach((deco) => {
+    const normalizedHeadIndex = clampHeadLayerIndex(headLayerIndex, decorations.length);
+    let headInserted = false;
+    const pushHeadLayer = () => {
+      if (headInserted) return;
+      headInserted = true;
+      models.push({
+        key: HEAD_ROW_ID,
+        rowId: HEAD_ROW_ID,
+        type: 'head',
+        index: models.length,
+        selected: false
+      });
+    };
+
+    decorations.forEach((deco, decorationIndex) => {
+      if (decorationIndex === normalizedHeadIndex) pushHeadLayer();
+
       const group = groupByItemId.get(deco.id);
       if (!group) {
         models.push({
@@ -268,7 +333,7 @@ export function LayerList({
           rowId: itemRowId(deco.id),
           type: 'item',
           deco,
-          index: indexById.get(deco.id) ?? 0,
+          index: models.length,
           selected: selectedSet.has(deco.id)
         });
         return;
@@ -295,34 +360,37 @@ export function LayerList({
             rowId: itemRowId(item.id),
             type: 'item',
             deco: item,
-            index: indexById.get(item.id) ?? 0,
+            index: models.length,
             grouped: true,
             selected: selectedSet.has(item.id)
           });
         }
       }
     });
+
+    if (!headInserted) pushHeadLayer();
     return models;
-  }, [decorations, groups, selectedSet]);
+  }, [decorations, groups, headLayerIndex, selectedSet]);
 
   const totalRows = rowModels.length + 1;
   const totalHeight = totalRows * ROW_HEIGHT;
   const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS);
   const endRow = Math.min(totalRows, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN_ROWS);
   const visibleRows = rowModels.slice(startRow, Math.min(endRow, rowModels.length));
-  const visibleRowIds = visibleRows.map((row) => row.rowId);
+  const visibleRowIds = visibleRows.filter((row) => row.type !== 'head').map((row) => row.rowId);
+  const layerCount = decorations.length + 1;
 
   return (
     <aside className="edit-list" aria-label="Layer list">
       <div className="layer-list-title">
         <strong>Layers</strong>
-        <span>{decorations.length}</span>
+        <span>{layerCount}</span>
       </div>
       <div className="layer-tools">
         <button type="button" disabled={!canGroupSelected} onClick={onGroupSelected} title="Create group from selected ungrouped layers">
           Group
         </button>
-        <small>{groups.length ? `${groups.length} group${groups.length === 1 ? '' : 's'} · drag header to move group` : 'Ctrl / Cmd click for multi-select'}</small>
+        <small>{groups.length ? `${groups.length} group${groups.length === 1 ? '' : 's'} · drag header to move group` : 'Head is a singleton layer · Ctrl / Cmd click for multi-select'}</small>
       </div>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={visibleRowIds} strategy={verticalListSortingStrategy}>
@@ -333,7 +401,9 @@ export function LayerList({
                 const top = rowIndex * ROW_HEIGHT;
                 return (
                   <div key={row.key} className="layer-list-virtual-row" style={{ top, height: ROW_HEIGHT }}>
-                    {row.type === 'group' && row.group ? (
+                    {row.type === 'head' ? (
+                      <HeadLayerRow headLayer={headLayer} headOptionId={headOptionId} index={row.index ?? rowIndex} />
+                    ) : row.type === 'group' && row.group ? (
                       <SortableGroupHeader
                         group={row.group}
                         itemCount={row.itemCount ?? 0}
@@ -360,7 +430,7 @@ export function LayerList({
               {endRow > rowModels.length ? (
                 <div className="layer-list-virtual-row" style={{ top: rowModels.length * ROW_HEIGHT, height: ROW_HEIGHT }}>
                   <button className="layer-spacer" type="button" onClick={onClearSelection}>
-                    {decorations.length ? 'Click empty area to clear selection' : 'Add a Deco to create layers'}
+                    {decorations.length ? 'Click empty area to clear selection' : 'Add a Deco to create more layers'}
                   </button>
                 </div>
               ) : null}
