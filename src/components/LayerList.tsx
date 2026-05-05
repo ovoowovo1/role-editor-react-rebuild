@@ -152,16 +152,23 @@ function SortableLayer({ deco, index, selected, grouped = false, onSelect, onTog
 }
 
 function HeadLayerRow({ headLayer, headOptionId, index }: HeadLayerRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: HEAD_ROW_ID });
   const option = optionById[headOptionId];
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition
+  };
 
   return (
     <div
-      className={`layer-row head-layer ${headLayer.visible === false ? 'muted' : ''}`}
+      ref={setNodeRef}
+      style={style}
+      className={`layer-row head-layer ${isDragging ? 'dragging' : ''} ${headLayer.visible === false ? 'muted' : ''}`}
       data-layer-id="head"
       title="Head is a singleton virtual layer from the original RoleDeco HEAD_CODE entry"
     >
-      <button className="drag-handle" type="button" disabled title="Head is a singleton layer">
-        Head
+      <button className="drag-handle" type="button" {...attributes} {...listeners} title="Drag Head layer to change its order">
+        ⋮⋮
       </button>
       <div className="layer-badge">{index + 1}</div>
       <div className="layer-thumb">
@@ -377,7 +384,7 @@ export function LayerList({
   const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS);
   const endRow = Math.min(totalRows, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN_ROWS);
   const visibleRows = rowModels.slice(startRow, Math.min(endRow, rowModels.length));
-  const visibleRowIds = visibleRows.filter((row) => row.type !== 'head').map((row) => row.rowId);
+  const visibleRowIds = visibleRows.map((row) => row.rowId);
   const layerCount = decorations.length + 1;
 
   return (
