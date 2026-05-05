@@ -1,5 +1,5 @@
 import { gzip } from 'pako';
-import type { DecorationLayer, HeadLayerTransform, RoleDocument } from '../types/role';
+import type { DecorationGroup, DecorationLayer, HeadLayerTransform, RoleDocument } from '../types/role';
 
 interface LegacyCompactDecoEntry {
   c: string;
@@ -25,6 +25,7 @@ interface LegacyTwrolePayload {
   };
   hash: string;
   thumb: null;
+  decoGroups: DecorationGroup[];
 }
 
 type VirtualLayer =
@@ -93,13 +94,17 @@ function exportHead(layer: HeadLayerTransform): LegacyCompactDecoEntry | null {
 
 function exportLegacyDecos(role: RoleDocument): LegacyCompactDecoEntry[] {
   // UI/runtime stores layers top-first. Original RoleDecosConfig stores deco
-  // bottom-to-top, with no rebuild-only group metadata. Groups are therefore
-  // flattened at export time; they are an editor-only convenience.
+  // bottom-to-top. Group metadata is preserved separately in top-level
+  // `decoGroups`, matching the old editor payload shape.
   return getTopFirstVirtualLayers(role)
     .slice()
     .reverse()
     .map((item) => (item.kind === 'head' ? exportHead(item.layer) : exportDeco(item.layer)))
     .filter((item): item is LegacyCompactDecoEntry => item !== null);
+}
+
+function cloneDecoGroups(role: RoleDocument): DecorationGroup[] {
+  return JSON.parse(JSON.stringify(role.groups ?? [])) as DecorationGroup[];
 }
 
 export function buildLegacyCompactPayload(role: RoleDocument): LegacyTwrolePayload {
@@ -115,7 +120,8 @@ export function buildLegacyCompactPayload(role: RoleDocument): LegacyTwrolePaylo
       }
     },
     hash: '',
-    thumb: null
+    thumb: null,
+    decoGroups: cloneDecoGroups(role)
   };
 }
 
