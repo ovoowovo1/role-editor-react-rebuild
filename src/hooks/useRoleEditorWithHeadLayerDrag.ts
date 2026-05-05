@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DecorationGroup, DecorationLayer, EditorClipboardItem, PartOption, RoleDocument } from '../types/role';
+import { GROUP_ROW_PREFIX, HEAD_ATOM, HEAD_LAYER_ID, HEAD_ROW_ID, ITEM_ROW_PREFIX } from '../constants/layers';
+import { atomToLayerId, atomsForRole, clamp, deriveRoleFromAtoms, layerIdToAtom, orderedLayerIds } from '../lib/layerOrdering';
 import { createId, round } from '../lib/math';
-import { HEAD_LAYER_ID } from '../components/LayerList';
 import { useRoleEditor as useBaseRoleEditor } from './useRoleEditor';
 
 export type InsertDraftPlacement = 'top' | 'bottom' | 'after_index';
@@ -18,10 +19,6 @@ export interface InsertDraftSettings {
   scopes: InsertDraftScopes;
 }
 
-const HEAD_ROW_ID = 'head:singleton';
-const HEAD_ATOM = '__HEAD_LAYER__';
-const GROUP_ROW_PREFIX = 'group:';
-const ITEM_ROW_PREFIX = 'item:';
 const HISTORY_LIMIT = 200;
 
 const DEFAULT_INSERT_SETTINGS: InsertDraftSettings = {
@@ -47,10 +44,6 @@ function sameRole(a: RoleDocument, b: RoleDocument): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
 function parseLayerDragTarget(rawId: string): LayerDragTarget {
   if (rawId === HEAD_ROW_ID) return { kind: 'head' };
   if (rawId.startsWith(GROUP_ROW_PREFIX)) return { kind: 'group', id: rawId.slice(GROUP_ROW_PREFIX.length) };
@@ -58,33 +51,9 @@ function parseLayerDragTarget(rawId: string): LayerDragTarget {
   return { kind: 'item', id: rawId };
 }
 
-function getHeadLayerIndex(role: RoleDocument): number {
-  return clamp(Math.round(role.headLayerIndex ?? role.decorations.length), 0, role.decorations.length);
-}
-
-function atomToLayerId(atom: string): string {
-  return atom === HEAD_ATOM ? HEAD_LAYER_ID : atom;
-}
-
-function layerIdToAtom(id: string): string {
-  return id === HEAD_LAYER_ID ? HEAD_ATOM : id;
-}
-
 function decorationIdsFromLayerIds(role: RoleDocument, layerIds: string[]): string[] {
   const existing = new Set(role.decorations.map((item) => item.id));
   return layerIds.filter((id) => existing.has(id));
-}
-
-function atomsForRole(role: RoleDocument): string[] {
-  const headIndex = getHeadLayerIndex(role);
-  const atoms = role.decorations.map((item) => item.id);
-  atoms.splice(headIndex, 0, HEAD_ATOM);
-  return atoms;
-}
-
-function orderedLayerIds(role: RoleDocument, ids: string[]): string[] {
-  const wanted = new Set(ids.map(layerIdToAtom));
-  return atomsForRole(role).filter((atom) => wanted.has(atom)).map(atomToLayerId);
 }
 
 function groupForItem(groups: DecorationGroup[], itemId: string): DecorationGroup | undefined {
@@ -119,23 +88,6 @@ function groupIdForTarget(role: RoleDocument, target: LayerDragTarget): string |
   if (target.kind === 'group') return target.id;
   if (target.kind === 'head') return role.groups?.find((group) => group.itemIds.includes(HEAD_LAYER_ID))?.id ?? null;
   return role.groups?.find((group) => group.itemIds.includes(target.id))?.id ?? null;
-}
-
-function deriveRoleFromAtoms(role: RoleDocument, atoms: string[], extraDecorations: Map<string, DecorationLayer> = new Map()): RoleDocument {
-  const decorationById = new Map(role.decorations.map((item) => [item.id, item]));
-  extraDecorations.forEach((item, id) => decorationById.set(id, item));
-  const decorations = atoms
-    .filter((id) => id !== HEAD_ATOM)
-    .map((id) => decorationById.get(id))
-    .filter(Boolean) as RoleDocument['decorations'];
-  const headAtomIndex = atoms.indexOf(HEAD_ATOM);
-  const headLayerIndex = atoms.slice(0, headAtomIndex < 0 ? atoms.length : headAtomIndex).filter((id) => id !== HEAD_ATOM).length;
-  return {
-    ...role,
-    decorations,
-    headLayerIndex: clamp(headLayerIndex, 0, decorations.length),
-    updatedAt: new Date().toISOString()
-  };
 }
 
 function syncGroupsForMovedAtoms(role: RoleDocument, active: LayerDragTarget, over: LayerDragTarget, movingAtoms: string[]): void {

@@ -1,5 +1,7 @@
 import { gzip } from 'pako';
+import { HEAD_LAYER_ID } from '../constants/layers';
 import type { DecorationLayer, HeadLayerTransform, RoleDocument } from '../types/role';
+import { getHeadLayerIndex } from './layerOrdering';
 
 interface LegacyCompactDecoEntry {
   c: string;
@@ -41,7 +43,6 @@ type VirtualLayer =
   | { kind: 'deco'; layer: DecorationLayer; id: string };
 
 const TWROLE_HEADER = [0, 1] as const;
-const HEAD_LAYER_ID = '__head_layer__';
 const DEFAULT_LEGACY_DR = 8;
 
 const LEGACY_DR_BY_CAMP: Record<string, number> = {
@@ -86,15 +87,9 @@ function getPartScale(role: RoleDocument, part: 'head' | 'cape' | 'hand' | 'foot
   return asFiniteNumber(role.partScales?.[part], 1);
 }
 
-function clampHeadLayerIndex(role: RoleDocument): number {
-  const count = role.decorations.length;
-  const raw = asFiniteNumber(role.headLayerIndex, count);
-  return Math.max(0, Math.min(count, Math.round(raw)));
-}
-
 function getTopFirstVirtualLayers(role: RoleDocument): VirtualLayer[] {
   const layers: VirtualLayer[] = role.decorations.map((layer) => ({ kind: 'deco', layer, id: layer.id }));
-  layers.splice(clampHeadLayerIndex(role), 0, { kind: 'head', layer: role.headLayer, id: HEAD_LAYER_ID });
+  layers.splice(getHeadLayerIndex(role), 0, { kind: 'head', layer: role.headLayer, id: HEAD_LAYER_ID });
   return layers;
 }
 

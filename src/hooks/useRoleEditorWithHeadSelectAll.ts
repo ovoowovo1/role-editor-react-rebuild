@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { HEAD_LAYER_ID } from '../components/LayerList';
+import { HEAD_LAYER_ID } from '../constants/layers';
+import { atomsForRole, clamp, deriveRoleFromAtoms, getHeadLayerIndex, layerIdsForRole } from '../lib/layerOrdering';
 import { createId } from '../lib/math';
 import { useRoleEditor as useHeadLayerEditor, type InsertDraftSettings } from './useRoleEditorWithHeadLayerDrag';
 import type { DecorationGroup, DecorationLayer, PartOption, RoleDocument, TransformValues } from '../types/role';
@@ -16,20 +17,8 @@ function sameRole(a: RoleDocument, b: RoleDocument): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-function getHeadLayerIndex(role: RoleDocument): number {
-  const raw = Number(role.headLayerIndex);
-  const count = role.decorations.length;
-  return Math.max(0, Math.min(count, Number.isFinite(raw) ? Math.round(raw) : count));
-}
-
 function getAllLayerIdsIncludingHead(role: RoleDocument): string[] {
-  const ids = role.decorations.map((item) => item.id);
-  ids.splice(getHeadLayerIndex(role), 0, HEAD_LAYER_ID);
-  return ids;
+  return layerIdsForRole(role);
 }
 
 function roundPosition(value: number): number {
@@ -136,7 +125,7 @@ function getInsertVirtualIndex(role: RoleDocument, settings: InsertDraftSettings
 function insertDecorations(role: RoleDocument, decorationsToInsert: DecorationLayer[], settings: InsertDraftSettings): RoleDocument {
   if (!decorationsToInsert.length) return role;
 
-  const atoms = getAllLayerIdsIncludingHead(role);
+  const atoms = atomsForRole(role);
   const insertIndex = getInsertVirtualIndex(role, settings);
   const nextAtoms = [
     ...atoms.slice(0, insertIndex),
@@ -144,21 +133,8 @@ function insertDecorations(role: RoleDocument, decorationsToInsert: DecorationLa
     ...atoms.slice(insertIndex)
   ];
 
-  const decorationById = new Map(role.decorations.map((item) => [item.id, item]));
-  decorationsToInsert.forEach((item) => decorationById.set(item.id, item));
-  const decorations = nextAtoms
-    .filter((id) => id !== HEAD_LAYER_ID)
-    .map((id) => decorationById.get(id))
-    .filter(Boolean) as DecorationLayer[];
-  const headAtomIndex = nextAtoms.indexOf(HEAD_LAYER_ID);
-  const headLayerIndex = nextAtoms.slice(0, headAtomIndex < 0 ? nextAtoms.length : headAtomIndex).filter((id) => id !== HEAD_LAYER_ID).length;
-
-  return {
-    ...role,
-    decorations,
-    headLayerIndex: clamp(headLayerIndex, 0, decorations.length),
-    updatedAt: new Date().toISOString()
-  };
+  const extras = new Map(decorationsToInsert.map((item) => [item.id, item]));
+  return deriveRoleFromAtoms(role, nextAtoms, extras);
 }
 
 export function useRoleEditor() {

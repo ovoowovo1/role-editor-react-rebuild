@@ -1,8 +1,8 @@
 import { ungzip } from 'pako';
+import { HEAD_LAYER_ID } from '../constants/layers';
 import type { DecorationGroup, GenderCode, ImportResult, RoleDocument } from '../types/role';
+import { getHeadLayerIndex } from './layerOrdering';
 import { parseRoleFile, parseRoleFileInWorker } from './roleSerialization';
-
-const HEAD_LAYER_ID = '__head_layer__';
 
 interface LegacyDecoGroupInput {
   id?: unknown;
@@ -52,15 +52,9 @@ function getLegacyCampGender(payload: any | null): LegacyCampGender | null {
   return CAMP_GENDER_BY_LEGACY_DR[dr] ?? null;
 }
 
-function clampHeadLayerIndex(role: RoleDocument): number {
-  const raw = Number(role.headLayerIndex);
-  const count = role.decorations.length;
-  return Math.max(0, Math.min(count, Number.isFinite(raw) ? Math.round(raw) : count));
-}
-
 function bottomToTopLayerIds(role: RoleDocument): string[] {
   const topFirst = role.decorations.map((item) => item.id);
-  topFirst.splice(clampHeadLayerIndex(role), 0, HEAD_LAYER_ID);
+  topFirst.splice(getHeadLayerIndex(role), 0, HEAD_LAYER_ID);
   return topFirst.reverse();
 }
 

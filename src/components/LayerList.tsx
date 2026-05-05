@@ -1,1 +1,2 @@
-export { LayerList, HEAD_LAYER_ID } from './LayerListFixed';
+export { HEAD_LAYER_ID } from '../constants/layers';
+export { LayerList } from './LayerListFixed';
