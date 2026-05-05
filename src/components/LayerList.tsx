@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -36,6 +36,42 @@ function clampHeadLayerIndex(headLayerIndex: number | undefined, decorationCount
   const n = typeof headLayerIndex === 'number' ? headLayerIndex : decorationCount;
   if (!Number.isFinite(n)) return decorationCount;
   return Math.max(0, Math.min(decorationCount, Math.round(n)));
+}
+
+function parseLayerNumberInput(value: string): number[] {
+  const seen = new Set<number>();
+  const result: number[] = [];
+  const parts = value.split(',').map((item) => item.trim()).filter(Boolean);
+  if (!parts.length) return [];
+
+  for (const part of parts) {
+    const rangeMatch = part.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (rangeMatch) {
+      const start = Number(rangeMatch[1]);
+      const end = Number(rangeMatch[2]);
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < 1) {
+        throw new Error(`Invalid range: ${part}`);
+      }
+      const step = start <= end ? 1 : -1;
+      for (let current = start; current !== end + step; current += step) {
+        if (!seen.has(current)) {
+          seen.add(current);
+          result.push(current);
+        }
+      }
+      continue;
+    }
+
+    if (!/^\d+$/.test(part)) throw new Error(`Invalid item number: ${part}`);
+    const number = Number(part);
+    if (!Number.isInteger(number) || number < 1) throw new Error(`Invalid item number: ${part}`);
+    if (!seen.has(number)) {
+      seen.add(number);
+      result.push(number);
+    }
+  }
+
+  return result;
 }
 
 interface LayerListProps {
@@ -105,6 +141,11 @@ interface LayerRowModel {
   grouped?: boolean;
   selected: boolean;
   itemCount?: number;
+}
+
+interface SelectableLayerNumber {
+  number: number;
+  id: string;
 }
 
 const ROW_HEIGHT = 78;
@@ -298,6 +339,10 @@ export function LayerList({
   const parentRef = useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(520);
+  const [selectItemsOpen, setSelectItemsOpen] = useState(false);
+  const [selectInputValue, setSelectInputValue] = useState('');
+  const [selectInputError, setSelectInputError] = useState('');
+  const selectInputRef = useRef<HTMLInputElement | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -319,6 +364,12 @@ export function LayerList({
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
+
+  useLayoutEffect(() => {
+    if (!selectItemsOpen) return;
+    selectInputRef.current?.focus();
+    selectInputRef.current?.select();
+  }, [selectItemsOpen]);
 
   const rowModels = useMemo(() => {
     const normalizedHeadIndex = clampHeadLayerIndex(headLayerIndex, decorations.length);
@@ -416,6 +467,49 @@ export function LayerList({
     return models;
   }, [decorations, groups, headLayerIndex, selectedSet]);
 
+  const selectableLayerNumbers = useMemo<SelectableLayerNumber[]>(() => {
+    return rowModels
+      .filter((row) => row.type === 'head' || row.type === 'item')
+      .map((row) => ({
+        number: (row.index ?? 0) + 1,
+        id: row.type === 'head' ? HEAD_LAYER_ID : row.deco?.id ?? ''
+      }))
+      .filter((row) => row.id);
+  }, [rowModels]);
+
+  const handleSelectItemsConfirm = () => {
+    let numbers: number[];
+    try {
+      numbers = parseLayerNumberInput(selectInputValue);
+    } catch (error) {
+      setSelectInputError(error instanceof Error ? error.message : String(error));
+      return;
+    }
+
+    const idByNumber = new Map(selectableLayerNumbers.map((item) => [item.number, item.id]));
+    const missing = numbers.filter((number) => !idByNumber.has(number));
+    if (!numbers.length) {
+      setSelectInputError('Please enter at least one item number.');
+      return;
+    }
+    if (missing.length) {
+      setSelectInputError(`Layer number not found: ${missing.join(', ')}`);
+      return;
+    }
+
+    const ids = numbers.map((number) => idByNumber.get(number)).filter((id): id is string => Boolean(id));
+    onClearSelection();
+    ids.forEach((id, index) => onSelect(id, index > 0));
+    setSelectInputError('');
+    setSelectItemsOpen(false);
+  };
+
+  const handleSelectInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+    if (event.key === 'Enter') handleSelectItemsConfirm();
+    if (event.key === 'Escape') setSelectItemsOpen(false);
+  };
+
   const totalRows = rowModels.length + 1;
   const totalHeight = totalRows * ROW_HEIGHT;
   const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS);
@@ -433,6 +527,16 @@ export function LayerList({
       <div className="layer-tools">
         <button type="button" disabled={!canGroupSelected} onClick={onGroupSelected} title="Create group from selected ungrouped layers">
           Group
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setSelectInputError('');
+            setSelectItemsOpen(true);
+          }}
+          title="Select layers by item number, for example 1,2,3 or 1-5"
+        >
+          Select
         </button>
         <small>{groups.length ? `${groups.length} group${groups.length === 1 ? '' : 's'} · drag header to move group` : 'Head is a singleton layer · Ctrl / Cmd click for multi-select'}</small>
       </div>
@@ -490,6 +594,76 @@ export function LayerList({
           </div>
         </SortableContext>
       </DndContext>
+
+      {selectItemsOpen ? (
+        <div
+          role="presentation"
+          onClick={() => setSelectItemsOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0, 0, 0, 0.45)'
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="select-items-title"
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: 'min(420px, calc(100vw - 32px))',
+              borderRadius: 12,
+              border: '1px solid rgba(174, 244, 255, 0.45)',
+              background: 'linear-gradient(#08384a, #02141d)',
+              boxShadow: '0 18px 60px rgba(0, 0, 0, 0.45)',
+              color: 'white',
+              padding: 18
+            }}
+          >
+            <h3 id="select-items-title" style={{ margin: '0 0 14px', fontSize: 18 }}>
+              Select Items
+            </h3>
+            <label style={{ display: 'grid', gap: 8, fontSize: 13 }}>
+              <span>Item Numbers (e.g. 1,2,3 or 1-5)</span>
+              <input
+                ref={selectInputRef}
+                value={selectInputValue}
+                onChange={(event) => {
+                  setSelectInputValue(event.target.value);
+                  setSelectInputError('');
+                }}
+                onKeyDown={handleSelectInputKeyDown}
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  borderRadius: 8,
+                  border: '1px solid rgba(174, 244, 255, 0.45)',
+                  background: 'rgba(0, 0, 0, 0.32)',
+                  color: 'white',
+                  outline: 'none',
+                  padding: '10px 12px'
+                }}
+              />
+            </label>
+            <p style={{ marginTop: 10, fontSize: '0.8em', color: 'rgba(232, 252, 255, 0.8)' }}>
+              輸入以逗號分隔的圖層編號或範圍（例如 1-5,8,9）。
+            </p>
+            {selectInputError ? <p style={{ color: '#ffb4b4', fontSize: 12, marginTop: 8 }}>{selectInputError}</p> : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <button type="button" onClick={() => setSelectItemsOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" onClick={handleSelectItemsConfirm}>
+                Select
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </aside>
   );
 }
