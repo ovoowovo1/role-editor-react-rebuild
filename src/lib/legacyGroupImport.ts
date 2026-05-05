@@ -1,5 +1,5 @@
 import { ungzip } from 'pako';
-import type { DecorationGroup, ImportResult, RoleDocument } from '../types/role';
+import type { DecorationGroup, GenderCode, ImportResult, RoleDocument } from '../types/role';
 import { parseRoleFile, parseRoleFileInWorker } from './roleSerialization';
 
 const HEAD_LAYER_ID = '__head_layer__';
@@ -12,6 +12,22 @@ interface LegacyDecoGroupInput {
   itemIndexes?: unknown;
   itemIds?: unknown;
 }
+
+interface LegacyCampGender {
+  camp: string;
+  gender: GenderCode;
+}
+
+const CAMP_GENDER_BY_LEGACY_DR: Record<number, LegacyCampGender> = {
+  0: { camp: 'skydow', gender: 'male' },
+  1: { camp: 'skydow', gender: 'female' },
+  4: { camp: 'royal', gender: 'male' },
+  5: { camp: 'royal', gender: 'female' },
+  8: { camp: 'third', gender: 'male' },
+  9: { camp: 'third', gender: 'female' },
+  13: { camp: 'civil', gender: 'male' },
+  14: { camp: 'civil', gender: 'female' }
+};
 
 function isTwroleBytes(bytes: Uint8Array): boolean {
   return bytes.length >= 2 && bytes[0] === 0 && bytes[1] === 1;
@@ -27,6 +43,13 @@ async function readLegacyPayload(file: File): Promise<any | null> {
   } catch {
     return null;
   }
+}
+
+function getLegacyCampGender(payload: any | null): LegacyCampGender | null {
+  const rawDr = payload?.data?.dr ?? payload?.dr;
+  const dr = typeof rawDr === 'number' ? rawDr : typeof rawDr === 'string' ? Number(rawDr) : NaN;
+  if (!Number.isInteger(dr)) return null;
+  return CAMP_GENDER_BY_LEGACY_DR[dr] ?? null;
 }
 
 function clampHeadLayerIndex(role: RoleDocument): number {
@@ -80,25 +103,27 @@ function normalizeLegacyDecoGroups(rawGroups: unknown, role: RoleDocument): Deco
     .filter((group): group is DecorationGroup => group !== null);
 }
 
-function applyLegacyDecoGroups(result: ImportResult, payload: any | null): ImportResult {
+function applyLegacyPayloadMetadata(result: ImportResult, payload: any | null): ImportResult {
   const rawGroups = payload?.decoGroups ?? payload?.data?.decoGroups ?? payload?.data?.cr?.decoGroups;
   const groups = normalizeLegacyDecoGroups(rawGroups, result.role);
-  if (!groups.length) return result;
+  const campGender = getLegacyCampGender(payload);
+
   return {
     ...result,
     role: {
       ...result.role,
-      groups
+      ...(campGender ? { camp: campGender.camp, gender: campGender.gender } : {}),
+      ...(groups.length ? { groups } : {})
     }
   };
 }
 
 export async function parseRoleFileWithLegacyGroups(file: File): Promise<ImportResult> {
   const [result, payload] = await Promise.all([parseRoleFile(file), readLegacyPayload(file)]);
-  return applyLegacyDecoGroups(result, payload);
+  return applyLegacyPayloadMetadata(result, payload);
 }
 
 export async function parseRoleFileInWorkerWithLegacyGroups(file: File): Promise<ImportResult> {
   const [result, payload] = await Promise.all([parseRoleFileInWorker(file), readLegacyPayload(file)]);
-  return applyLegacyDecoGroups(result, payload);
+  return applyLegacyPayloadMetadata(result, payload);
 }
