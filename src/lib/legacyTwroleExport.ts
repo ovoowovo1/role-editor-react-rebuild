@@ -2,6 +2,7 @@ import { gzip } from 'pako';
 import { HEAD_LAYER_ID } from '../constants/layers';
 import type { DecorationLayer, HeadLayerTransform, RoleDocument } from '../types/role';
 import { getHeadLayerIndex } from './layerOrdering';
+import { exportLegacyDecoGroups, type LegacyDecoGroup } from './legacyDecoGroups';
 
 interface LegacyCompactDecoEntry {
   c: string;
@@ -18,14 +19,6 @@ interface LegacyCompactRoleConfig {
   hand: { f: number; s: number };
   foot: { f: number; s: number };
   deco: LegacyCompactDecoEntry[];
-}
-
-interface LegacyDecoGroup {
-  id: string;
-  name: string;
-  visible: boolean;
-  collapsed: boolean;
-  itemIndexes: number[];
 }
 
 interface LegacyTwrolePayload {
@@ -125,28 +118,6 @@ function exportLegacyDecos(role: RoleDocument): LegacyCompactDecoEntry[] {
   return getBottomToTopVirtualLayers(role)
     .map((item) => (item.kind === 'head' ? exportHead(item.layer) : exportDeco(item.layer)))
     .filter((item): item is LegacyCompactDecoEntry => item !== null);
-}
-
-function exportLegacyDecoGroups(role: RoleDocument): LegacyDecoGroup[] {
-  const indexByLayerId = new Map<string, number>();
-  getBottomToTopVirtualLayers(role).forEach((item, index) => indexByLayerId.set(item.id, index));
-
-  return (role.groups ?? [])
-    .map((group): LegacyDecoGroup | null => {
-      const itemIndexes = group.itemIds
-        .map((id) => indexByLayerId.get(id))
-        .filter((index): index is number => typeof index === 'number')
-        .sort((a, b) => a - b);
-      if (itemIndexes.length < 2) return null;
-      return {
-        id: group.id,
-        name: group.name,
-        visible: group.visible !== false,
-        collapsed: group.collapsed === true,
-        itemIndexes
-      };
-    })
-    .filter((group): group is LegacyDecoGroup => group !== null);
 }
 
 export function buildLegacyCompactPayload(role: RoleDocument): LegacyTwrolePayload {

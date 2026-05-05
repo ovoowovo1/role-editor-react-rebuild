@@ -12,8 +12,8 @@ import type {
   RolePartFrames,
   RolePartScales
 } from '../types/role';
-import { HEAD_LAYER_ID } from '../constants/layers';
 import { createId, normalizeDegrees, safeNumber } from './math';
+import { exportLegacyDecoGroups, normalizeLegacyDecoGroups, type LegacyDecoGroup } from './legacyDecoGroups';
 import {
   BODY_PART_TABS,
   defaultPartFrames,
@@ -58,14 +58,6 @@ interface LegacyCompactRoleConfig {
   hand: { f: number; s: number };
   foot: { f: number; s: number };
   deco: LegacyCompactDecoEntry[];
-}
-
-interface LegacyDecoGroup {
-  id: string;
-  name: string;
-  visible: boolean;
-  collapsed: boolean;
-  itemIndexes: number[];
 }
 
 interface PartSelection {
@@ -142,7 +134,7 @@ function buildLegacyCompactPayload(role: RoleDocument): LegacyTwrolePayload {
     },
     hash: '',
     thumb: null,
-    decoGroups: exportLegacyDecoGroups(role, normalized)
+    decoGroups: exportLegacyDecoGroups(role)
   };
 }
 
@@ -369,43 +361,6 @@ function normalizeLegacyDecorations(rawList: unknown, fallbackHeadScale = 1): De
   return { decorations, originalIndexToId, headLayerIndex, headLayer };
 }
 
-function normalizeGroups(input: unknown, decorations: DecorationLayer[], originalIndexToId?: Array<string | null>): DecorationGroup[] {
-  if (!Array.isArray(input)) return [];
-  const existingIds = new Set(decorations.map((item) => item.id));
-  const claimedIds = new Set<string>();
-
-  return input
-    .map((raw, index) => {
-      const group = raw as Partial<DecorationGroup> & { items?: unknown[]; itemIndexes?: unknown[] };
-      const mapIndexes = (indexes: unknown[]) => indexes.map((itemIndex) => {
-        const numericIndex = Number(itemIndex);
-        return originalIndexToId ? originalIndexToId[numericIndex] : decorations[numericIndex]?.id;
-      });
-      const rawIds = Array.isArray(group.itemIds)
-        ? group.itemIds
-        : Array.isArray(group.itemIndexes)
-          ? mapIndexes(group.itemIndexes)
-          : Array.isArray(group.items)
-            ? group.items.every((item) => typeof item === 'number' || /^\d+$/.test(String(item)))
-              ? mapIndexes(group.items)
-              : group.items
-            : [];
-      const itemIds = rawIds
-        .map((id) => String(id ?? ''))
-        .filter((id) => existingIds.has(id) && !claimedIds.has(id));
-      itemIds.forEach((id) => claimedIds.add(id));
-      if (itemIds.length < 2) return null;
-      return {
-        id: typeof group.id === 'string' ? group.id : createId('group'),
-        name: typeof group.name === 'string' && group.name.trim() ? group.name : `Group ${index + 1}`,
-        itemIds,
-        visible: group.visible !== false,
-        collapsed: !!group.collapsed
-      } satisfies DecorationGroup;
-    })
-    .filter(Boolean) as DecorationGroup[];
-}
-
 function normalizeGender(value: unknown, fallback: GenderCode = 'male'): GenderCode {
   if (value === true || value === 'female' || value === 'FEMALE' || value === 'f') return 'female';
   if (value === false || value === 'male' || value === 'MALE' || value === 'm') return 'male';
@@ -461,7 +416,7 @@ function normalizeRoleDocument(rawRole: Partial<RoleDocument> & any, envelope?: 
   const positionRange =
     Number.isFinite(prNum) && prNum > 0 ? Math.min(prNum, 10000) : base.positionRange ?? 60;
 
-  return {
+  const roleWithoutGroups: RoleDocument = {
     ...base,
     ...rawRole,
     schemaVersion: 1,
@@ -474,8 +429,13 @@ function normalizeRoleDocument(rawRole: Partial<RoleDocument> & any, envelope?: 
     headLayer,
     positionRange,
     decorations,
-    groups: normalizeGroups(rawRole.groups ?? envelope?.decoGroups, decorations),
+    groups: [],
     updatedAt: new Date().toISOString()
+  };
+
+  return {
+    ...roleWithoutGroups,
+    groups: normalizeLegacyDecoGroups(rawRole.groups ?? envelope?.decoGroups, roleWithoutGroups)
   };
 }
 
@@ -504,7 +464,7 @@ function convertLegacyRole(raw: any, envelope?: any): RoleDocument {
 
   const importedDecos = normalizeLegacyDecorations(getLegacyDecoList(config), partScales.head);
 
-  return {
+  const roleWithoutGroups: RoleDocument = {
     ...base,
     camp: String(camp ?? base.camp),
     gender,
@@ -519,9 +479,14 @@ function convertLegacyRole(raw: any, envelope?: any): RoleDocument {
     headLayerIndex: importedDecos.headLayerIndex,
     headLayer: importedDecos.headLayer,
     decorations: importedDecos.decorations,
-    groups: normalizeGroups(raw?.decoGroups ?? envelope?.decoGroups, importedDecos.decorations, importedDecos.originalIndexToId),
+    groups: [],
     positionRange: base.positionRange ?? 60,
     updatedAt: new Date().toISOString()
+  };
+
+  return {
+    ...roleWithoutGroups,
+    groups: normalizeLegacyDecoGroups(raw?.decoGroups ?? envelope?.decoGroups, roleWithoutGroups)
   };
 }
 
@@ -680,32 +645,6 @@ function exportOldEditorDecolist(role: RoleDocument): LegacyCompactDecoEntry[] {
       r: (layer.rotation * Math.PI) / 180
     };
   });
-}
-
-function exportLegacyDecoGroups(sourceRole: RoleDocument, normalized: RoleDocument): LegacyDecoGroup[] {
-  const bottomToTopLayerIds = normalized.decorations.map((layer) => layer.id);
-  bottomToTopLayerIds.splice(normalized.headLayerIndex, 0, HEAD_LAYER_ID);
-  bottomToTopLayerIds.reverse();
-
-  const indexByLayerId = new Map<string, number>();
-  bottomToTopLayerIds.forEach((id, index) => indexByLayerId.set(id, index));
-
-  return (sourceRole.groups ?? [])
-    .map((group): LegacyDecoGroup | null => {
-      const itemIndexes = group.itemIds
-        .map((id) => indexByLayerId.get(id))
-        .filter((index): index is number => typeof index === 'number')
-        .sort((a, b) => a - b);
-      if (itemIndexes.length < 2) return null;
-      return {
-        id: group.id,
-        name: group.name,
-        visible: group.visible !== false,
-        collapsed: group.collapsed === true,
-        itemIndexes
-      };
-    })
-    .filter((group): group is LegacyDecoGroup => group !== null);
 }
 
 export function exportOriginalLikeRoleConfig(role: RoleDocument): LegacyCompactRoleConfig {

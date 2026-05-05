@@ -1,17 +1,7 @@
 import { ungzip } from 'pako';
-import { HEAD_LAYER_ID } from '../constants/layers';
-import type { DecorationGroup, GenderCode, ImportResult, RoleDocument } from '../types/role';
-import { getHeadLayerIndex } from './layerOrdering';
+import type { GenderCode, ImportResult } from '../types/role';
+import { normalizeLegacyDecoGroups } from './legacyDecoGroups';
 import { parseRoleFile, parseRoleFileInWorker } from './roleSerialization';
-
-interface LegacyDecoGroupInput {
-  id?: unknown;
-  name?: unknown;
-  visible?: unknown;
-  collapsed?: unknown;
-  itemIndexes?: unknown;
-  itemIds?: unknown;
-}
 
 interface LegacyCampGender {
   camp: string;
@@ -50,51 +40,6 @@ function getLegacyCampGender(payload: any | null): LegacyCampGender | null {
   const dr = typeof rawDr === 'number' ? rawDr : typeof rawDr === 'string' ? Number(rawDr) : NaN;
   if (!Number.isInteger(dr)) return null;
   return CAMP_GENDER_BY_LEGACY_DR[dr] ?? null;
-}
-
-function bottomToTopLayerIds(role: RoleDocument): string[] {
-  const topFirst = role.decorations.map((item) => item.id);
-  topFirst.splice(getHeadLayerIndex(role), 0, HEAD_LAYER_ID);
-  return topFirst.reverse();
-}
-
-function normalizeItemIdsFromLegacyGroup(group: LegacyDecoGroupInput, role: RoleDocument): string[] {
-  if (Array.isArray(group.itemIndexes)) {
-    const byLegacyIndex = bottomToTopLayerIds(role);
-    return group.itemIndexes
-      .map((value) => Number(value))
-      .filter((value) => Number.isInteger(value) && value >= 0 && value < byLegacyIndex.length)
-      .map((index) => byLegacyIndex[index])
-      .filter((id, index, ids) => Boolean(id) && ids.indexOf(id) === index);
-  }
-
-  if (Array.isArray(group.itemIds)) {
-    const valid = new Set([...role.decorations.map((item) => item.id), HEAD_LAYER_ID]);
-    return group.itemIds
-      .map((value) => String(value))
-      .filter((id, index, ids) => valid.has(id) && ids.indexOf(id) === index);
-  }
-
-  return [];
-}
-
-function normalizeLegacyDecoGroups(rawGroups: unknown, role: RoleDocument): DecorationGroup[] {
-  if (!Array.isArray(rawGroups)) return [];
-  return rawGroups
-    .map((raw, index): DecorationGroup | null => {
-      if (!raw || typeof raw !== 'object') return null;
-      const group = raw as LegacyDecoGroupInput;
-      const itemIds = normalizeItemIdsFromLegacyGroup(group, role);
-      if (itemIds.length < 2) return null;
-      return {
-        id: typeof group.id === 'string' && group.id ? group.id : `group_${Date.now()}_${index}`,
-        name: typeof group.name === 'string' && group.name ? group.name : `Group ${index + 1}`,
-        visible: group.visible !== false,
-        collapsed: group.collapsed === true,
-        itemIds
-      };
-    })
-    .filter((group): group is DecorationGroup => group !== null);
 }
 
 function applyLegacyPayloadMetadata(result: ImportResult, payload: any | null): ImportResult {
