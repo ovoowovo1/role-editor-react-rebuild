@@ -1,4 +1,5 @@
 import type { DecorationGroup, DecorationLayer, RoleDocument } from '../types/role';
+import { HEAD_LAYER_ID } from '../constants/layers';
 import { clamp } from './math';
 import { getHeadLayerIndex } from './layerOrdering';
 
@@ -60,7 +61,7 @@ export function shiftHeadLayerForDeletedIndexes(role: RoleDocument, oldHeadIndex
 }
 
 export function syncGroups(role: RoleDocument): RoleDocument {
-  const existingIds = new Set(role.decorations.map((item) => item.id));
+  const existingIds = new Set([...role.decorations.map((item) => item.id), HEAD_LAYER_ID]);
   const claimedIds = new Set<string>();
   const groups = (role.groups ?? [])
     .map((group) => {
