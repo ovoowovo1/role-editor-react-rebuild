@@ -7,11 +7,13 @@ import { TabBar, type TopBarMode } from './TabBar';
 import { TitleBar } from './TitleBar';
 import { TopMenu } from './TopMenu';
 import { ShortcutHelpModal } from './ShortcutHelpModal';
-import {  tabLabels } from '../mock/options';
+import { WeaponAnimationModal } from './WeaponAnimationModal';
+import { tabLabels } from '../mock/options';
 import { colorBlockToRole, getVisibleColorBlocks } from '../mock/colorBlocks';
 import { downloadBlob } from '../lib/math';
 import { createRoleJsonBlob, createTwroleBlob } from '../lib/legacyTwroleExport';
 import { parseRoleFileWithLegacyGroups, parseRoleFileInWorkerWithLegacyGroups } from '../lib/legacyGroupImport';
+import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../lib/actorBodyAnimation';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useRoleEditor, type InsertDraftSettings } from '../hooks/useRoleEditorWithMergeSelection';
 import type { PartTab } from '../types/role';
@@ -142,6 +144,8 @@ export function EditorShell() {
   const [status, setStatus] = useState('Ready');
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [insertSettingsOpen, setInsertSettingsOpen] = useState(false);
+  const [weaponAnimationOpen, setWeaponAnimationOpen] = useState(false);
+  const [bodyAnimationLabel, setBodyAnimationLabel] = useState(DEFAULT_ACTOR_BODY_ANIMATION_LABEL);
   const [facingQuarterTurns, setFacingQuarterTurns] = useState(0);
   const [topBarMode, setTopBarMode] = useState<TopBarMode>(editor.selectedTab);
 
@@ -271,6 +275,7 @@ export function EditorShell() {
               <CharacterStage
                 role={editor.role}
                 selectedIds={editor.selectedDecorationIds}
+                bodyAnimationLabel={bodyAnimationLabel}
                 stageScale={editor.stageScale}
                 facingQuarterTurns={facingQuarterTurns}
                 onSelectDecoration={editor.selectDecoration}
@@ -284,6 +289,7 @@ export function EditorShell() {
               disabled={!editor.selectedDecorationIds.length}
               faceAlwaysEnabled
               selectedCount={editor.selectedDecorationIds.length}
+              bodyAnimationLabel={bodyAnimationLabel}
               editValues={editor.editValues}
               stageScale={editor.stageScale}
               positionRange={editor.role.positionRange ?? 60}
@@ -298,6 +304,7 @@ export function EditorShell() {
               onMirrorCopyHorizontal={editor.mirrorCopyHorizontalSelected}
               onMirrorCopyVertical={editor.mirrorCopyVerticalSelected}
               onFaceRotate={() => setFacingQuarterTurns((turns) => (turns + 1) % 4)}
+              onOpenWeaponAnimation={() => setWeaponAnimationOpen(true)}
               onStageScaleChange={editor.setStageScale}
             />
           </section>
@@ -334,6 +341,15 @@ export function EditorShell() {
         </main>
 
         <ShortcutHelpModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+        <WeaponAnimationModal
+          open={weaponAnimationOpen}
+          value={bodyAnimationLabel}
+          onChange={(label) => {
+            setBodyAnimationLabel(label);
+            setStatus(`Preview weapon animation: ${label}`);
+          }}
+          onClose={() => setWeaponAnimationOpen(false)}
+        />
         <InsertSettingsDialog
           open={insertSettingsOpen}
           settings={editor.insertDraftSettings}

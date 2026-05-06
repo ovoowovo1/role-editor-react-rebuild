@@ -5,6 +5,7 @@ interface EditControlsProps {
   faceAlwaysEnabled?: boolean;
   editValues: TransformValues;
   selectedCount: number;
+  bodyAnimationLabel: string;
   stageScale: number;
   positionRange: number;
   stageMinScale: number;
@@ -19,6 +20,7 @@ interface EditControlsProps {
   onMirrorCopyHorizontal(): void;
   onMirrorCopyVertical(): void;
   onFaceRotate(): void;
+  onOpenWeaponAnimation(): void;
   onStageScaleChange(scale: number): void;
 }
 
@@ -78,6 +80,7 @@ export function EditControls({
   faceAlwaysEnabled = false,
   editValues,
   selectedCount,
+  bodyAnimationLabel,
   stageScale,
   positionRange,
   stageMinScale,
@@ -91,6 +94,7 @@ export function EditControls({
   onMirrorCopyHorizontal,
   onMirrorCopyVertical,
   onFaceRotate,
+  onOpenWeaponAnimation,
   onStageScaleChange
 }: EditControlsProps) {
   const pr = Math.max(1, positionRange);
@@ -150,6 +154,17 @@ export function EditControls({
           >
             <span className="material-icons face-mat-icon" aria-hidden="true">
               face
+            </span>
+          </button>
+          <button
+            type="button"
+            className="tool-icon-btn"
+            onClick={onOpenWeaponAnimation}
+            aria-label={`Weapon Animation: ${bodyAnimationLabel}`}
+            title={`Weapon Animation: ${bodyAnimationLabel}`}
+          >
+            <span className="material-icons" aria-hidden="true">
+              sports_martial_arts
             </span>
           </button>
         </div>

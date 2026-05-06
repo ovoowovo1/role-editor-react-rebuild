@@ -577,6 +577,69 @@ input:disabled {
   filter: brightness(1.16);
 }
 
+.weapon-modal {
+  width: min(760px, 92vw);
+}
+
+.weapon-modal-actions {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.weapon-animation-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: calc(min(650px, 86vh) - 94px);
+  overflow: auto;
+  padding: 2px 6px 2px 0;
+}
+
+.weapon-animation-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #e8fbff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.weapon-animation-option:hover {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.weapon-animation-option.selected {
+  border-color: rgba(150, 238, 255, 0.92);
+  background: rgba(53, 208, 255, 0.2);
+}
+
+.weapon-animation-option span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weapon-animation-option small {
+  color: #9bddea;
+  font-size: 11px;
+}
+
+.weapon-animation-empty {
+  margin: 0;
+  color: #d7f7ff;
+}
+
 .shortcut-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -934,6 +997,10 @@ input[type='range']::-webkit-slider-thumb {
 
   .range-box {
     gap: 4px;
+  }
+
+  .weapon-animation-list {
+    grid-template-columns: 1fr;
   }
 
   .menu-spacer {

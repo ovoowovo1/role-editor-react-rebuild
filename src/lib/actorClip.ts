@@ -2,6 +2,7 @@ import { Container, Matrix } from 'pixi.js';
 import { actorAtlasFrames, actorRuntimeManifest, gafSources } from '../mock/gafManifest';
 import { actorPreviewSlots, type ActorPreviewSlot } from './actorClipAdapter';
 import { actorPartRuntime } from './twlibPartRuntime';
+import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from './actorBodyAnimation';
 import { createActorGafClip, type CreateGafClipOptions, type GafMovieClip } from './gafMovieClip';
 
 /**
@@ -63,19 +64,6 @@ function makeClip(
 }
 
 const ACTOR_BODY_LIBRARY = 'actor01_body';
-const ACTOR_BODY_IDLE_FRAME = 'IDLE_KONGFU_TYPE';
-const ACTOR_BODY_HIDDEN_EDITOR_PARTS = [
-  'weapon',
-  'weaponReload',
-  'blade',
-  'claw0',
-  'claw1',
-  'scope',
-  'weapon0',
-  'weapon1',
-  'weaponLeft',
-  'weaponRight'
-] as const;
 
 type NamedBodyAnimation = Container & {
   rightHand?: Container;
@@ -215,7 +203,7 @@ export class ActorClip extends Container {
   leftHand: ActorHand;
   headClip: ActorHead;
 
-  constructor(failedTextures: Set<string>) {
+  constructor(failedTextures: Set<string>, bodyAnimationLabel = DEFAULT_ACTOR_BODY_ANIMATION_LABEL) {
     super();
 
     this.rightFoot = new ActorFoot(failedTextures);
@@ -225,7 +213,6 @@ export class ActorClip extends Container {
     this.capeClip = new ActorCape(failedTextures);
     this.headClip = new ActorHead(failedTextures);
     this.body = makeClip(ACTOR_BODY_LIBRARY, failedTextures, {
-      hiddenNamedParts: ACTOR_BODY_HIDDEN_EDITOR_PARTS,
       dedupeNamedParts: true,
       nestedTimelineFrame: 'first'
     });
@@ -250,7 +237,7 @@ export class ActorClip extends Container {
     applySlotMatrix(this.capeClip.container, actorPreviewSlots.cape);
     this.addChild(this.capeClip.container);
 
-    this.resetBodyFrame();
+    this.setBodyFrame(bodyAnimationLabel);
     this.addChild(this.body);
     this.syncCapeToHead();
   }
@@ -266,7 +253,7 @@ export class ActorClip extends Container {
   }
 
   resetBodyFrame(): void {
-    this.setBodyFrame(ACTOR_BODY_IDLE_FRAME);
+    this.setBodyFrame(DEFAULT_ACTOR_BODY_ANIMATION_LABEL);
   }
 
   setBodyFrame(frame: number | string): void {

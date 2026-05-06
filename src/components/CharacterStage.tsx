@@ -22,6 +22,7 @@ import { isMissingDecoAssetId } from '../lib/roleSerialization';
 interface CharacterStageProps {
   role: RoleDocument;
   selectedIds: string[];
+  bodyAnimationLabel: string;
   stageScale: number;
   facingQuarterTurns: number;
   onSelectDecoration(id: string, additive: boolean): void;
@@ -58,13 +59,14 @@ interface StageSceneState {
 
 const ALPHA_MASK_DECO_CODES = new Set(['third_deco_34', 'third_deco_05', 'skydow_deco_302']);
 
-function actorSceneKey(role: RoleDocument): string {
+function actorSceneKey(role: RoleDocument, bodyAnimationLabel: string): string {
   return JSON.stringify({
     camp: role.camp,
     gender: role.gender,
     parts: role.parts,
     partFrames: role.partFrames,
-    partScales: role.partScales
+    partScales: role.partScales,
+    bodyAnimationLabel
   });
 }
 
@@ -326,8 +328,8 @@ function syncDecorationDisplays(
   syncDisguiseChildOrder(scene, role);
 }
 
-function buildActorClipForRole(role: RoleDocument, failedTextures: Set<string>): ActorClip {
-  const actorClip = new ActorClip(failedTextures);
+function buildActorClipForRole(role: RoleDocument, failedTextures: Set<string>, bodyAnimationLabel: string): ActorClip {
+  const actorClip = new ActorClip(failedTextures, bodyAnimationLabel);
 
   const headOption = getBodyPartOption('head', role.parts.head);
   const handOption = getBodyPartOption('hand', role.parts.hand);
@@ -368,6 +370,7 @@ function buildActorClipForRole(role: RoleDocument, failedTextures: Set<string>):
 export function CharacterStage({
   role,
   selectedIds,
+  bodyAnimationLabel,
   stageScale,
   facingQuarterTurns,
   onSelectDecoration,
@@ -392,7 +395,7 @@ export function CharacterStage({
   });
   const stageBuildGenerationRef = useRef(0);
   const stageTeardownRef = useRef<(() => void) | null>(null);
-  const sceneKey = actorSceneKey(role);
+  const sceneKey = actorSceneKey(role, bodyAnimationLabel);
 
   useEffect(() => {
     roleRef.current = role;
@@ -475,7 +478,7 @@ export function CharacterStage({
       actorClipRoot.scale.set(ACTOR_BODY_SCALE);
       actorStage.addChild(actorClipRoot);
 
-      const actorClip = buildActorClipForRole(buildRole, failedTextures);
+      const actorClip = buildActorClipForRole(buildRole, failedTextures, bodyAnimationLabel);
       actorClipRoot.addChild(actorClip);
 
       const headOption = getBodyPartOption('head', buildRole.parts.head);
