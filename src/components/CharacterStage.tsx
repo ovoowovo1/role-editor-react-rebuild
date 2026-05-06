@@ -681,8 +681,11 @@ export function CharacterStage({
             dragging.overlay.container.destroy({ children: false });
           }
 
-          callbacksRef.current.onApplyDragDelta(dx, dy);
-          callbacksRef.current.onCommitTransient();
+          // Defer React state update to next frame so pointerup returns immediately
+          requestAnimationFrame(() => {
+            callbacksRef.current.onApplyDragDelta(dx, dy);
+            callbacksRef.current.onCommitTransient();
+          });
 
           dragRef.current = null;
           return;
