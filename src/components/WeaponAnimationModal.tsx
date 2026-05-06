@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { t } from '../i18n';
 import {
   DEFAULT_ACTOR_BODY_ANIMATION_LABEL,
   getActorBodyAnimationOptions
@@ -45,7 +46,7 @@ export function WeaponAnimationModal({ open, value, onChange, onClose }: WeaponA
       >
         <div className="shortcut-header">
           <div>
-            <strong id="weapon-modal-title">Weapon Animation</strong>
+            <strong id="weapon-modal-title">{t('weapon.title')}</strong>
             <span>{value}</span>
           </div>
           <div className="weapon-modal-actions">
@@ -54,15 +55,15 @@ export function WeaponAnimationModal({ open, value, onChange, onClose }: WeaponA
               className="shortcut-close"
               onClick={() => selectValue(DEFAULT_ACTOR_BODY_ANIMATION_LABEL)}
             >
-              Default
+              {t('weapon.default')}
             </button>
             <button ref={closeButtonRef} type="button" className="shortcut-close" onClick={onClose}>
-              Close
+              {t('weapon.close')}
             </button>
           </div>
         </div>
 
-        <div className="weapon-animation-list" role="listbox" aria-label="Weapon animation sequences">
+        <div className="weapon-animation-list" role="listbox" aria-label={t('weapon.sequences')}>
           {options.map((option) => {
             const selected = option.label === value;
             return (
@@ -79,7 +80,7 @@ export function WeaponAnimationModal({ open, value, onChange, onClose }: WeaponA
               </button>
             );
           })}
-          {options.length === 0 ? <p className="weapon-animation-empty">No actor body sequences found.</p> : null}
+          {options.length === 0 ? <p className="weapon-animation-empty">{t('weapon.noSequences')}</p> : null}
         </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Application, Container, FederatedPointerEvent, Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
+import { t } from '../i18n';
 import type { BodyPartTab, DecorationLayer, PartOption, RoleDocument } from '../types/role';
 import { getBodyPartOption, optionById } from '../mock/options';
 import {
@@ -870,7 +871,7 @@ export function CharacterStage({
         <div className="piece piece-two" />
       </div>
       <div ref={hostRef} className="pixi-host" />
-      <div className="stage-help">Drag selected Deco on canvas</div>
+      <div className="stage-help">{t('stage.help')}</div>
     </section>
   );
 }

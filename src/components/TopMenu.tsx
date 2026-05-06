@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { t } from '../i18n';
 import { camps, genders } from '../mock/options';
 import type { GenderCode } from '../types/role';
 
@@ -65,38 +66,38 @@ export function TopMenu({
       />
       <div className="menu-actions">
         <button className="primary-button" type="button" onClick={() => inputRef.current?.click()}>
-          Import
+          {t('menu.import')}
         </button>
         <button className="primary-button" type="button" onClick={onDownloadTwrole}>
-          Download
+          {t('menu.download')}
         </button>
         <button className="primary-button subtle" type="button" onClick={onExportJson}>
-          Export JSON
+          {t('menu.exportJson')}
         </button>
         <button className="primary-button subtle" type="button" onClick={onOpenInsertSettings}>
-          Insert Settings
+          {t('menu.insertSettings')}
         </button>
         <button className="primary-button subtle" type="button" onClick={() => mergeInputRef.current?.click()}>
-          Merge File
+          {t('menu.mergeFile')}
         </button>
       </div>
 
-      <div className="icon-actions" aria-label="History controls">
-        <button type="button" title="Undo (Ctrl+Z)" disabled={!canUndo} onClick={onUndo}>
+      <div className="icon-actions" aria-label={t('menu.history')}>
+        <button type="button" title={t('menu.undo')} disabled={!canUndo} onClick={onUndo}>
           ↶
         </button>
-        <button type="button" title="Redo (Ctrl+Y)" disabled={!canRedo} onClick={onRedo}>
+        <button type="button" title={t('menu.redo')} disabled={!canRedo} onClick={onRedo}>
           ↷
         </button>
-        <button type="button" className="menu-shortcuts" title="角色編輯器常用快捷鍵" onClick={onOpenShortcuts}>
-          快捷鍵
+        <button type="button" className="menu-shortcuts" title={t('menu.shortcutsTitle')} onClick={onOpenShortcuts}>
+          {t('menu.shortcuts')}
         </button>
       </div>
 
       <div className="menu-spacer" />
 
       <label className="select-label">
-        Camp
+        {t('menu.camp')}
         <select value={camp} onChange={(event) => onCampChange(event.target.value)}>
           {camps.map((item) => (
             <option key={item.code} value={item.code}>
@@ -107,7 +108,7 @@ export function TopMenu({
       </label>
 
       <label className="select-label">
-        Gender
+        {t('menu.gender')}
         <select value={gender} onChange={(event) => onGenderChange(event.target.value as GenderCode)}>
           {genders.map((item) => (
             <option key={item.code} value={item.code}>

@@ -10,6 +10,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type UIEvent as ReactUIEvent
 } from 'react';
+import { t } from '../i18n';
 import { HEAD_LAYER_ID } from '../constants/layers';
 import type { DecorationGroup, DecorationLayer, HeadLayerTransform } from '../types/role';
 import { GroupHeaderRow, HeadRow, LayerItemRow } from './layers/LayerRows';
@@ -261,11 +262,11 @@ export function LayerList({
     const idByNumber = new Map(selectableLayerNumbers.map((item) => [item.number, item.id]));
     const missing = numbers.filter((number) => !idByNumber.has(number));
     if (!numbers.length) {
-      setSelectInputError('Please enter at least one item number.');
+      setSelectInputError(t('layers.enterOne'));
       return;
     }
     if (missing.length) {
-      setSelectInputError(`Layer number not found: ${missing.join(', ')}`);
+      setSelectInputError(t('layers.layerNotFound', { missing: missing.join(', ') }));
       return;
     }
 
@@ -569,14 +570,14 @@ export function LayerList({
   }, [totalHeight]);
 
   return (
-    <aside className="edit-list" aria-label="Layer list">
+    <aside className="edit-list" aria-label={t('layers.title')}>
       <div className="layer-list-title">
-        <strong>Layers</strong>
+        <strong>{t('layers.title')}</strong>
         <span>{layerCount}</span>
       </div>
       <div className="layer-tools">
-        <button type="button" disabled={!canGroupSelected} onClick={onGroupSelected} title="Create group from selected ungrouped layers">
-          Group
+        <button type="button" disabled={!canGroupSelected} onClick={onGroupSelected} title={t('layers.groupTitle')}>
+          {t('layers.group')}
         </button>
         <button
           type="button"
@@ -585,11 +586,11 @@ export function LayerList({
             setSelectItemsOpen(true);
             window.setTimeout(() => selectInputRef.current?.focus(), 0);
           }}
-          title="Select layers by item number, for example 1,2,3 or 1-5"
+          title={t('layers.selectTitle')}
         >
-          Select
+          {t('layers.select')}
         </button>
-        <small>{groups.length ? `${groups.length} group${groups.length === 1 ? '' : 's'} · drag header to move group` : 'Head is a singleton layer · Ctrl / Cmd click for multi-select'}</small>
+        <small>{groups.length ? t('layers.hintGroups', { count: groups.length, plural: groups.length === 1 ? '' : 's' }) : t('layers.hintNoGroups')}</small>
       </div>
 
       <div ref={scrollRef} className="layer-list-scroll" onScroll={handleScroll}>
@@ -641,7 +642,7 @@ export function LayerList({
                 />
               ) : (
                 <button className="layer-spacer" type="button" onClick={onClearSelection}>
-                  {decorations.length ? 'Click empty area to clear selection' : 'Add a Deco to create more layers'}
+                  {decorations.length ? t('layers.clearSelection') : t('layers.addDeco')}
                 </button>
               )}
             </div>
@@ -679,10 +680,10 @@ export function LayerList({
             }}
           >
             <h3 id="select-items-title" style={{ margin: '0 0 14px', fontSize: 18 }}>
-              Select Items
+              {t('layers.selectItems')}
             </h3>
             <label style={{ display: 'grid', gap: 8, fontSize: 13 }}>
-              <span>Item Numbers (e.g. 1,2,3 or 1-5)</span>
+              <span>{t('layers.itemNumbers')}</span>
               <input
                 ref={selectInputRef}
                 value={selectInputValue}
@@ -704,15 +705,15 @@ export function LayerList({
               />
             </label>
             <p style={{ marginTop: 10, fontSize: '0.8em', color: 'rgba(232, 252, 255, 0.8)' }}>
-              Enter item numbers separated by commas or ranges, for example 1-5,8,9.
+              {t('layers.selectHelp')}
             </p>
             {selectInputError ? <p style={{ color: '#ffb4b4', fontSize: 12, marginTop: 8 }}>{selectInputError}</p> : null}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
               <button type="button" onClick={() => setSelectItemsOpen(false)}>
-                Cancel
+                {t('layers.cancel')}
               </button>
               <button type="button" onClick={handleSelectItemsConfirm}>
-                Select
+                {t('layers.selectButton')}
               </button>
             </div>
           </div>

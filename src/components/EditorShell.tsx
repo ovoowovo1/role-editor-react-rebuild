@@ -1,4 +1,5 @@
 import { Suspense, lazy, useMemo, useState } from 'react';
+import { t } from '../i18n';
 import { ChoiceGrid } from './ChoiceGrid';
 import { ColorBlockGrid } from './ColorBlockGrid';
 import { EditControls } from './EditControls';
@@ -19,6 +20,11 @@ import { useRoleEditor, type InsertDraftSettings } from '../hooks/useRoleEditorW
 import type { PartTab } from '../types/role';
 
 const CharacterStage = lazy(async () => import('./CharacterStage').then((module) => ({ default: module.CharacterStage })));
+
+function tabI18nKeys(tab: PartTab): string {
+  const map: Record<PartTab, string> = { deco: 'tabs.deco', head: 'tabs.head', hand: 'tabs.hand', foot: 'tabs.foot', cape: 'tabs.cape' };
+  return map[tab];
+}
 
 function isValidAfterIndex(value: string): boolean {
   const number = Number(value);
@@ -74,21 +80,21 @@ function InsertSettingsDialog({ open, settings, onChange, onClose }: InsertSetti
         }}
       >
         <h3 id="insert-settings-title" style={{ margin: '0 0 14px', fontSize: 18 }}>
-          Insert Settings
+          {t('insert.title')}
         </h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 320 }}>
-          <strong>Insert target</strong>
+          <strong>{t('insert.target')}</strong>
           <label>
-            <input type="radio" checked={settings.placement === 'top'} onChange={() => updateSettings({ placement: 'top' })} /> List Top
+            <input type="radio" checked={settings.placement === 'top'} onChange={() => updateSettings({ placement: 'top' })} /> {t('insert.listTop')}
           </label>
           <label>
-            <input type="radio" checked={settings.placement === 'bottom'} onChange={() => updateSettings({ placement: 'bottom' })} /> List Bottom
+            <input type="radio" checked={settings.placement === 'bottom'} onChange={() => updateSettings({ placement: 'bottom' })} /> {t('insert.listBottom')}
           </label>
           <label>
-            <input type="radio" checked={settings.placement === 'after_index'} onChange={() => updateSettings({ placement: 'after_index' })} /> Below Index
+            <input type="radio" checked={settings.placement === 'after_index'} onChange={() => updateSettings({ placement: 'after_index' })} /> {t('insert.belowIndex')}
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
-            <span>Visible row number (1-based)</span>
+            <span>{t('insert.visibleRow')}</span>
             <input
               type="number"
               min={1}
@@ -113,26 +119,26 @@ function InsertSettingsDialog({ open, settings, onChange, onClose }: InsertSetti
             <small style={{ color: validIndex ? 'rgba(232, 252, 255, 0.75)' : '#ffb4b4' }}>
               {settings.placement === 'after_index'
                 ? validIndex
-                  ? 'New items will be inserted below this visible row.'
-                  : 'Please enter an integer >= 1.'
-                : 'Enable "Below Index" to edit this value.'}
+                  ? t('insert.newItemsBelow')
+                  : t('insert.enterInteger')
+                : t('insert.enableBelow')}
             </small>
           </label>
 
-          <strong>Affect create sources</strong>
+          <strong>{t('insert.affectSources')}</strong>
           <label>
-            <input type="checkbox" checked={settings.scopes.palette} onChange={() => updateScopes({ palette: !settings.scopes.palette })} /> 左側素材點擊新增
+            <input type="checkbox" checked={settings.scopes.palette} onChange={() => updateScopes({ palette: !settings.scopes.palette })} /> {t('insert.scopePalette')}
           </label>
           <label>
-            <input type="checkbox" checked={settings.scopes.copy} onChange={() => updateScopes({ copy: !settings.scopes.copy })} /> 複製/貼上與鏡像複製
+            <input type="checkbox" checked={settings.scopes.copy} onChange={() => updateScopes({ copy: !settings.scopes.copy })} /> {t('insert.scopeCopy')}
           </label>
           <label>
-            <input type="checkbox" checked={settings.scopes.mergeBatch} onChange={() => updateScopes({ mergeBatch: !settings.scopes.mergeBatch })} /> Merge / Batch Add
+            <input type="checkbox" checked={settings.scopes.mergeBatch} onChange={() => updateScopes({ mergeBatch: !settings.scopes.mergeBatch })} /> {t('insert.scopeMergeBatch')}
           </label>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-          <button type="button" onClick={onClose}>Cancel</button>
-          <button type="button" disabled={!validIndex} onClick={onClose}>Save</button>
+          <button type="button" onClick={onClose}>{t('insert.cancel')}</button>
+          <button type="button" disabled={!validIndex} onClick={onClose}>{t('insert.save')}</button>
         </div>
       </div>
     </div>
@@ -141,7 +147,7 @@ function InsertSettingsDialog({ open, settings, onChange, onClose }: InsertSetti
 
 export function EditorShell() {
   const editor = useRoleEditor();
-  const [status, setStatus] = useState('Ready');
+  const [status, setStatus] = useState(t('status.ready'));
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [insertSettingsOpen, setInsertSettingsOpen] = useState(false);
   const [weaponAnimationOpen, setWeaponAnimationOpen] = useState(false);
@@ -179,7 +185,7 @@ export function EditorShell() {
       groupSelected: () => {
         if (!editor.canGroupSelected) return;
         editor.groupSelected();
-        setStatus('Created group from selected layers');
+        setStatus(t('status.createdGroup'));
       },
       deleteSelected: editor.deleteSelected,
       clearSelection: editor.clearSelection,
@@ -195,37 +201,37 @@ export function EditorShell() {
   useKeyboardShortcuts(shortcutActions);
 
   const handleImport = async (file: File) => {
-    setStatus(`Importing ${file.name}...`);
+    setStatus(t('status.importing', { name: file.name }));
     try {
       const result = await parseRoleFileInWorkerWithLegacyGroups(file).catch(() => parseRoleFileWithLegacyGroups(file));
       editor.importRole(result.role);
-      setStatus(result.warnings.length ? result.warnings.join(' ') : `Imported ${file.name}`);
+      setStatus(result.warnings.length ? result.warnings.join(' ') : t('status.imported', { name: file.name }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setStatus(`Import failed: ${message}`);
+      setStatus(t('status.importFailed', { message }));
     }
   };
 
   const handleMerge = async (file: File) => {
-    setStatus(`Merging ${file.name}...`);
+    setStatus(t('status.merging', { name: file.name }));
     try {
       const result = await parseRoleFileInWorkerWithLegacyGroups(file).catch(() => parseRoleFileWithLegacyGroups(file));
       editor.mergeImportedRole(result.role);
-      setStatus(result.warnings.length ? `Merged ${file.name}. ${result.warnings.join(' ')}` : `Merged ${file.name}`);
+      setStatus(result.warnings.length ? `${t('status.merged', { name: file.name })}. ${result.warnings.join(' ')}` : t('status.merged', { name: file.name }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setStatus(`Merge failed: ${message}`);
+      setStatus(t('status.mergeFailed', { message }));
     }
   };
 
   const handleDownloadTwrole = () => {
     downloadBlob(createTwroleBlob(editor.role), 'role.twrole');
-    setStatus('Downloaded legacy-compatible .twrole file');
+    setStatus(t('status.downloadedTwrole'));
   };
 
   const handleExportJson = () => {
     downloadBlob(createRoleJsonBlob(editor.role), 'role.json');
-    setStatus('Exported legacy-compatible compact role JSON');
+    setStatus(t('status.exportedJson'));
   };
 
   return (
@@ -257,7 +263,7 @@ export function EditorShell() {
               presets={colorBlockPresets}
               onPick={(preset) => {
                 editor.mergeImportedRole(colorBlockToRole(preset, editor.role));
-                setStatus(`Added color block: ${preset.label}`);
+                setStatus(t('status.addedColorBlock', { label: preset.label }));
               }}
             />
           ) : (
@@ -267,7 +273,7 @@ export function EditorShell() {
               selectedOptionId={selectedOptionId}
               onPick={(option) => {
                 editor.choosePart(editor.selectedTab, option);
-                setStatus(editor.selectedTab === 'deco' ? `Added ${option.label}` : `Changed ${tabLabels[editor.selectedTab]} to ${option.label}`);
+                setStatus(editor.selectedTab === 'deco' ? t('status.addedDeco', { label: option.label }) : t('status.changedPart', { tab: t(tabI18nKeys(editor.selectedTab)), label: option.label }));
               }}
             />
           )}
@@ -333,17 +339,17 @@ export function EditorShell() {
             onSelectGroup={editor.selectGroup}
             onGroupSelected={() => {
               editor.groupSelected();
-              setStatus('Created group from selected layers');
+              setStatus(t('status.createdGroup'));
             }}
             onToggleGroupCollapsed={editor.toggleGroupCollapsed}
             onToggleGroupVisibility={editor.toggleGroupVisibility}
             onRenameGroup={(groupId, name) => {
               editor.renameGroup(groupId, name);
-              setStatus(`Renamed group to ${name.trim()}`);
+              setStatus(t('status.renamedGroup', { name: name.trim() }));
             }}
             onUngroup={(groupId) => {
               editor.ungroup(groupId);
-              setStatus('Ungrouped layer group');
+              setStatus(t('status.ungrouped'));
             }}
             onReorder={editor.reorderDecorations}
             onToggleVisibility={editor.toggleDecorationVisibility}
@@ -360,7 +366,7 @@ export function EditorShell() {
             setBodyAnimationLabel(label);
             setBodyAnimationRestartKey((key) => key + 1);
             setBodyAnimationPlaying(true);
-            setStatus(`Preview weapon animation: ${label}`);
+            setStatus(t('status.previewWeapon', { label }));
           }}
           onClose={() => setWeaponAnimationOpen(false)}
         />
@@ -373,7 +379,7 @@ export function EditorShell() {
 
         <footer className="editor-footer">
           <span>
-            Official editor go to{' '}
+            {t('footer.officialEditor')}{' '}
             <a href="https://twrolecgeditor.gamelet.online/" target="_blank" rel="noreferrer" style={{ color: 'white', textDecoration: 'none' }}>
               https://twrolecgeditor.gamelet.online/
             </a>

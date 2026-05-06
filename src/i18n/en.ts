@@ -1,0 +1,193 @@
+// English fallback translations
+export const en: Record<string, string> = {
+  // EditorShell status bar
+  'status.ready': 'Ready',
+  'status.importing': 'Importing {name}...',
+  'status.imported': 'Imported {name}',
+  'status.importFailed': 'Import failed: {message}',
+  'status.merging': 'Merging {name}...',
+  'status.merged': 'Merged {name}',
+  'status.mergeFailed': 'Merge failed: {message}',
+  'status.downloadedTwrole': 'Downloaded legacy-compatible .twrole file',
+  'status.exportedJson': 'Exported legacy-compatible compact role JSON',
+  'status.addedDeco': 'Added {label}',
+  'status.changedPart': 'Changed {tab} to {label}',
+  'status.createdGroup': 'Created group from selected layers',
+  'status.renamedGroup': 'Renamed group to {name}',
+  'status.ungrouped': 'Ungrouped layer group',
+  'status.previewWeapon': 'Preview weapon animation: {label}',
+  'status.addedColorBlock': 'Added color block: {label}',
+
+  // Insert Settings dialog
+  'insert.title': 'Insert Settings',
+  'insert.target': 'Insert target',
+  'insert.listTop': 'List Top',
+  'insert.listBottom': 'List Bottom',
+  'insert.belowIndex': 'Below Index',
+  'insert.visibleRow': 'Visible row number (1-based)',
+  'insert.newItemsBelow': 'New items will be inserted below this visible row.',
+  'insert.enterInteger': 'Please enter an integer >= 1.',
+  'insert.enableBelow': 'Enable "Below Index" to edit this value.',
+  'insert.affectSources': 'Affect create sources',
+  'insert.scopePalette': 'Left palette click to add',
+  'insert.scopeCopy': 'Copy/Paste and Mirror Copy',
+  'insert.scopeMergeBatch': 'Merge / Batch Add',
+  'insert.cancel': 'Cancel',
+  'insert.save': 'Save',
+
+  // Editor footer
+  'footer.officialEditor': 'Official editor go to',
+
+  // EditControls toolbar
+  'edit.cancelSelection': 'Deselect',
+  'edit.flipHorizontal': 'Flip Horizontal',
+  'edit.mirrorCopyH': 'Mirror Copy Horizontal',
+  'edit.mirrorCopyV': 'Mirror Copy Vertical',
+  'edit.face': 'Face',
+  'edit.weaponAnimation': 'Weapon Animation: {label}',
+  'edit.startAnimation': 'Start weapon animation',
+  'edit.stopAnimation': 'Stop weapon animation',
+  'edit.restartAnimation': 'Restart weapon animation',
+  'edit.weaponPlayback': 'Weapon animation playback',
+  'edit.iconToolbar': 'Icon toolbar',
+  'edit.controls': 'Edit controls',
+  'edit.start': 'Start',
+  'edit.stop': 'Stop',
+  'edit.restart': 'Restart',
+
+  // EditControls sliders
+  'edit.rotate': 'Rotate',
+  'edit.scale': 'Scale',
+  'edit.ratio': 'Ratio',
+  'edit.posX': 'Pos X',
+  'edit.posY': 'Pos Y',
+
+  // EditControls stage
+  'edit.selectedCount': '{count} selected',
+  'edit.noLayer': 'No layer selected',
+  'edit.stageMinus': '− Stage',
+  'edit.stagePlus': '+ Stage',
+
+  // TopMenu
+  'menu.import': 'Import',
+  'menu.download': 'Download',
+  'menu.exportJson': 'Export JSON',
+  'menu.insertSettings': 'Insert Settings',
+  'menu.mergeFile': 'Merge File',
+  'menu.undo': 'Undo (Ctrl+Z)',
+  'menu.redo': 'Redo (Ctrl+Y)',
+  'menu.shortcuts': 'Shortcuts',
+  'menu.shortcutsTitle': 'Role Editor Shortcuts',
+  'menu.history': 'History controls',
+  'menu.camp': 'Camp',
+  'menu.gender': 'Gender',
+
+  // TabBar
+  'tabs.rolePart': 'Role part tabs',
+  'tabs.deco': 'Deco',
+  'tabs.head': 'Head',
+  'tabs.hand': 'Hand',
+  'tabs.foot': 'Foot',
+  'tabs.cape': 'Cape',
+  'tabs.colorBlock': 'Color Block',
+
+  // ChoiceGrid
+  'choices.choices': '{tab} choices',
+  'choices.assetCountGaf': '{count} GAF symbols',
+  'choices.assetCountMock': '{count} mock assets',
+  'choices.gaf': 'GAF',
+
+  // ColorBlockGrid
+  'colorBlock.choices': 'Color Block choices',
+  'colorBlock.title': 'Color Block',
+  'colorBlock.count': '{count} blocks',
+  'colorBlock.decoCount': '{count} decos',
+
+  // LayerList
+  'layers.title': 'Layers',
+  'layers.group': 'Group',
+  'layers.groupTitle': 'Create group from selected ungrouped layers',
+  'layers.select': 'Select',
+  'layers.selectTitle': 'Select layers by item number, for example 1,2,3 or 1-5',
+  'layers.hintGroups': '{count} group{plural} · drag header to move group',
+  'layers.hintNoGroups': 'Head is a singleton layer · Ctrl / Cmd click for multi-select',
+  'layers.clearSelection': 'Click empty area to clear selection',
+  'layers.addDeco': 'Add a Deco to create more layers',
+
+  // LayerList Select dialog
+  'layers.selectItems': 'Select Items',
+  'layers.itemNumbers': 'Item Numbers (e.g. 1,2,3 or 1-5)',
+  'layers.selectHelp': 'Enter item numbers separated by commas or ranges, for example 1-5,8,9.',
+  'layers.cancel': 'Cancel',
+  'layers.selectButton': 'Select',
+  'layers.enterOne': 'Please enter at least one item number.',
+  'layers.layerNotFound': 'Layer number not found: {missing}',
+
+  // Layer rows
+  'layer.dragHandle': 'Drag layer to reorder or move between groups',
+  'layer.hide': 'Hide layer',
+  'layer.show': 'Show layer',
+  'layer.delete': 'Delete layer',
+  'layer.headTitle': 'Head is a singleton virtual layer from the original RoleDeco HEAD_CODE entry',
+  'layer.headDrag': 'Drag Head layer to change its order or move it into groups',
+  'layer.headShow': 'Show Head layer',
+  'layer.headHide': 'Hide Head layer',
+  'layer.headCantDelete': 'Head cannot be deleted or duplicated',
+  'layer.headName': 'Head',
+  'layer.headSubtitle': 'head · singleton',
+  'layer.groupDrag': 'Drag group as one block',
+  'layer.groupExpand': 'Expand group',
+  'layer.groupCollapse': 'Collapse group',
+  'layer.groupName': 'Group name',
+  'layer.groupLayers': '{count} layer{plural}',
+  'layer.rename': 'Rename group',
+  'layer.edit': 'Edit',
+  'layer.groupShow': 'Show group',
+  'layer.groupHide': 'Hide group',
+  'layer.ungroup': 'Ungroup',
+
+  // ShortcutHelp
+  'shortcuts.title': 'Role Editor Shortcuts',
+  'shortcuts.macHint': 'macOS can use Cmd instead of Ctrl',
+  'shortcuts.close': 'Close',
+  'shortcuts.undo': 'Undo',
+  'shortcuts.redo': 'Redo',
+  'shortcuts.copy': 'Copy selected',
+  'shortcuts.paste': 'Paste copied',
+  'shortcuts.selectAll': 'Select all (including head)',
+  'shortcuts.group': 'Group selected',
+  'shortcuts.moveTop': 'Move selected to top',
+  'shortcuts.moveBottom': 'Move selected to bottom',
+  'shortcuts.moveUp': 'Move selected up',
+  'shortcuts.moveDown': 'Move selected down',
+  'shortcuts.moveLeft': 'Move selected left',
+  'shortcuts.moveRight': 'Move selected right',
+  'shortcuts.rotateCW': 'Rotate selected clockwise',
+  'shortcuts.rotateCCW': 'Rotate selected counter-clockwise',
+  'shortcuts.scaleUp': 'Enlarge selected',
+  'shortcuts.scaleDown': 'Shrink selected',
+  'shortcuts.ratioUp': 'Increase aspect ratio',
+  'shortcuts.ratioDown': 'Decrease aspect ratio',
+  'shortcuts.deleteSelected': 'Delete selected',
+
+  // WeaponAnimation
+  'weapon.title': 'Weapon Animation',
+  'weapon.default': 'Default',
+  'weapon.close': 'Close',
+  'weapon.sequences': 'Weapon animation sequences',
+  'weapon.noSequences': 'No actor body sequences found.',
+
+  // CharacterStage
+  'stage.help': 'Drag selected Deco on canvas',
+
+  // AssetPreview
+  'asset.missingTexture': 'Atlas PNG missing or failed to load',
+  'asset.missingLabel': 'Missing texture',
+
+  // Gender
+  'gender.male': 'Male',
+  'gender.female': 'Female',
+
+  // GAF display
+  'gaf.source': 'from {texture}',
+};

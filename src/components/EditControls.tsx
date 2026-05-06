@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type { TransformValues } from '../types/role';
 
 interface EditControlsProps {
@@ -110,16 +111,16 @@ export function EditControls({
   const pr = Math.max(1, positionRange);
   const faceDisabled = faceAlwaysEnabled ? false : disabled;
   return (
-    <section className={`edit-function ${disabled ? 'disabled' : ''}`} aria-label="Edit controls">
-      <div className="tool-row" aria-label="Icon toolbar">
+    <section className={`edit-function ${disabled ? 'disabled' : ''}`} aria-label={t('edit.controls')}>
+      <div className="tool-row" aria-label={t('edit.iconToolbar')}>
         <div className="tool">
           <button
             type="button"
             className="tool-icon-btn"
             disabled={disabled}
             onClick={onCancelSelection}
-            aria-label="取消選取"
-            title="取消選取"
+            aria-label={t('edit.cancelSelection')}
+            title={t('edit.cancelSelection')}
           >
             <span className="material-icons" aria-hidden="true">
               touch_app
@@ -130,8 +131,8 @@ export function EditControls({
             className="tool-icon-btn"
             disabled={disabled}
             onClick={onFlip}
-            aria-label="水平翻轉"
-            title="水平翻轉"
+            aria-label={t('edit.flipHorizontal')}
+            title={t('edit.flipHorizontal')}
           >
             <span className="material-icons" aria-hidden="true">
               flip
@@ -142,8 +143,8 @@ export function EditControls({
             className="tool-icon-btn"
             disabled={disabled}
             onClick={onMirrorCopyHorizontal}
-            aria-label="Mirror Copy Horizontal (左右鏡像)"
-            title="Mirror Copy Horizontal (左右鏡像)"
+            aria-label={t('edit.mirrorCopyH')}
+            title={t('edit.mirrorCopyH')}
           >
             <span className="material-icons" aria-hidden="true">
               swap_horiz
@@ -154,8 +155,8 @@ export function EditControls({
             className="tool-icon-btn"
             disabled={disabled}
             onClick={onMirrorCopyVertical}
-            aria-label="Mirror Copy Vertical (上下鏡像)"
-            title="Mirror Copy Vertical (上下鏡像)"
+            aria-label={t('edit.mirrorCopyV')}
+            title={t('edit.mirrorCopyV')}
           >
             <span className="material-icons" aria-hidden="true">
               swap_vert
@@ -166,8 +167,8 @@ export function EditControls({
             className="tool-icon-btn tool-icon-face"
             disabled={faceDisabled}
             onClick={onFaceRotate}
-            aria-label="Face（對齊舊版占位）"
-            title="Face"
+            aria-label={t('edit.face')}
+            title={t('edit.face')}
           >
             <span className="material-icons face-mat-icon" aria-hidden="true">
               face
@@ -175,13 +176,13 @@ export function EditControls({
           </button>
 
         </div>
-        <div className="tool playback-tool" aria-label="Weapon animation playback">
+        <div className="tool playback-tool" aria-label={t('edit.weaponPlayback')}>
           <button
             type="button"
             className="tool-icon-btn"
             onClick={onOpenWeaponAnimation}
-            aria-label={`Weapon Animation: ${bodyAnimationLabel}`}
-            title={`Weapon Animation: ${bodyAnimationLabel}`}
+            aria-label={t('edit.weaponAnimation', { label: bodyAnimationLabel })}
+            title={t('edit.weaponAnimation', { label: bodyAnimationLabel })}
           >
             <span className="material-icons" aria-hidden="true">
               sports_martial_arts
@@ -192,8 +193,8 @@ export function EditControls({
             className="tool-icon-btn"
             disabled={bodyAnimationPlaying}
             onClick={onStartWeaponAnimation}
-            aria-label="Start weapon animation"
-            title="Start"
+            aria-label={t('edit.startAnimation')}
+            title={t('edit.start')}
           >
             <span className="material-icons" aria-hidden="true">
               play_arrow
@@ -204,8 +205,8 @@ export function EditControls({
             className="tool-icon-btn"
             disabled={!bodyAnimationPlaying}
             onClick={onStopWeaponAnimation}
-            aria-label="Stop weapon animation"
-            title="Stop"
+            aria-label={t('edit.stopAnimation')}
+            title={t('edit.stop')}
           >
             <span className="material-icons" aria-hidden="true">
               stop
@@ -215,8 +216,8 @@ export function EditControls({
             type="button"
             className="tool-icon-btn"
             onClick={onRestartWeaponAnimation}
-            aria-label="Restart weapon animation"
-            title="Restart"
+            aria-label={t('edit.restartAnimation')}
+            title={t('edit.restart')}
           >
             <span className="material-icons" aria-hidden="true">
               replay
@@ -227,7 +228,7 @@ export function EditControls({
 
       <div className="range-root">
         <RangeControl
-          label="Rotate"
+          label={t('edit.rotate')}
           value={editValues.rotate}
           min={-180}
           max={180}
@@ -239,7 +240,7 @@ export function EditControls({
           onChange={(rotate, commit) => onTransformChange({ rotate }, commit)}
         />
         <RangeControl
-          label="Scale"
+          label={t('edit.scale')}
           value={editValues.scale}
           min={selectionScaleMin}
           max={selectionScaleMax}
@@ -251,7 +252,7 @@ export function EditControls({
           onChange={(scale, commit) => onTransformChange({ scale }, commit)}
         />
         <RangeControl
-          label="Ratio"
+          label={t('edit.ratio')}
           value={editValues.ratio}
           min={0.001}
           max={2}
@@ -264,7 +265,7 @@ export function EditControls({
         />
         <div className="position-row">
           <RangeControl
-            label="Pos X"
+            label={t('edit.posX')}
             value={editValues.posX}
             min={-pr}
             max={pr}
@@ -275,7 +276,7 @@ export function EditControls({
             onChange={(posX, commit) => onTransformChange({ posX }, commit)}
           />
           <RangeControl
-            label="Pos Y"
+            label={t('edit.posY')}
             value={editValues.posY}
             min={-pr}
             max={pr}
@@ -289,13 +290,13 @@ export function EditControls({
       </div>
 
       <div className="stage-control-row">
-        <span>{selectedCount ? `${selectedCount} selected` : 'No layer selected'}</span>
+        <span>{selectedCount ? t('edit.selectedCount', { count: selectedCount }) : t('edit.noLayer')}</span>
         <button type="button" disabled={stageScale <= stageMinScale} onClick={() => onStageScaleChange(stageScale - 1)}>
-          − Stage
+          {t('edit.stageMinus')}
         </button>
         <strong>{stageScale}×</strong>
         <button type="button" disabled={stageScale >= stageMaxScale} onClick={() => onStageScaleChange(stageScale + 1)}>
-          + Stage
+          {t('edit.stagePlus')}
         </button>
       </div>
     </section>

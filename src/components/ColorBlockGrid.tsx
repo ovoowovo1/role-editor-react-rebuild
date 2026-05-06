@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { t } from '../i18n';
 import { findOptionByCode } from '../mock/options';
 import type { ColorBlockPreset } from '../mock/colorBlocks';
 import { AssetPreview } from './AssetPreview';
@@ -24,10 +25,10 @@ export function ColorBlockGrid({ presets, onPick }: ColorBlockGridProps) {
   );
 
   return (
-    <section className="choice-list" aria-label="Color Block choices">
+    <section className="choice-list" aria-label={t('colorBlock.choices')}>
       <div className="choice-list-header">
-        <strong>Color Block</strong>
-        <span>{presets.length} blocks</span>
+        <strong>{t('colorBlock.title')}</strong>
+        <span>{t('colorBlock.count', { count: presets.length })}</span>
       </div>
       <div className="choice-virtual-space" style={{ height: Math.max(520, presets.length * 118) }}>
         <div className="choice-row" style={{ transform: 'translateY(0)', height: Math.max(118, presets.length * 118), flexWrap: 'wrap' }}>
@@ -38,7 +39,7 @@ export function ColorBlockGrid({ presets, onPick }: ColorBlockGridProps) {
                 type="button"
                 key={preset.id}
                 className="choice-block color-block-choice"
-                title={`${preset.label} (${preset.deco.length} decos)`}
+                title={`${preset.label} (${t('colorBlock.decoCount', { count: preset.deco.length })})`}
                 onClick={() => onPick(preset)}
                 style={{ height: 108 }}
               >

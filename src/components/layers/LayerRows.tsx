@@ -6,6 +6,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react';
+import { t } from '../../i18n';
 import { HEAD_LAYER_ID } from '../../constants/layers';
 import { optionById } from '../../mock/options';
 import type { HeadLayerTransform } from '../../types/role';
@@ -41,7 +42,7 @@ export function LayerItemRow({
       onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelect(deco.id, event.ctrlKey || event.metaKey)}
       data-layer-id={deco.id}
     >
-      <button className="drag-handle" type="button" {...dragHandleProps} title="Drag layer to reorder or move between groups">
+      <button className="drag-handle" type="button" {...dragHandleProps} title={t('layer.dragHandle')}>
         ⋮⋮
       </button>
       <div className="layer-badge">{(row.index ?? 0) + 1}</div>
@@ -55,7 +56,7 @@ export function LayerItemRow({
       <button
         className="layer-icon-button"
         type="button"
-        title={deco.visible ? 'Hide layer' : 'Show layer'}
+        title={deco.visible ? t('layer.hide') : t('layer.show')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
           onToggleVisibility(deco.id);
@@ -66,7 +67,7 @@ export function LayerItemRow({
       <button
         className="layer-delete"
         type="button"
-        title="Delete layer"
+        title={t('layer.delete')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
           onDelete(deco.id);
@@ -101,10 +102,10 @@ export function HeadRow({
     <div
       className={`layer-row head-layer ${row.grouped ? 'group-child' : ''} ${row.selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${headLayer.visible === false ? 'muted' : ''}`}
       data-layer-id="head"
-      title="Head is a singleton virtual layer from the original RoleDeco HEAD_CODE entry"
+      title={t('layer.headTitle')}
       onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelect(HEAD_LAYER_ID, event.ctrlKey || event.metaKey)}
     >
-      <button className="drag-handle" type="button" {...dragHandleProps} title="Drag Head layer to change its order or move it into groups">
+      <button className="drag-handle" type="button" {...dragHandleProps} title={t('layer.headDrag')}>
         ⋮⋮
       </button>
       <div className="layer-badge">{(row.index ?? 0) + 1}</div>
@@ -112,13 +113,13 @@ export function HeadRow({
         <AssetPreview option={option} size={50} />
       </div>
       <div className="layer-meta">
-        <strong>Head</strong>
-        <span>head · singleton</span>
+        <strong>{t('layer.headName')}</strong>
+        <span>{t('layer.headSubtitle')}</span>
       </div>
       <button
         className="layer-icon-button"
         type="button"
-        title={headLayer.visible === false ? 'Show Head layer' : 'Hide Head layer'}
+        title={headLayer.visible === false ? t('layer.headShow') : t('layer.headHide')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
           onToggleVisibility(HEAD_LAYER_ID);
@@ -126,7 +127,7 @@ export function HeadRow({
       >
         {headLayer.visible === false ? '○' : '◉'}
       </button>
-      <button className="layer-delete" type="button" disabled title="Head cannot be deleted or duplicated">
+      <button className="layer-delete" type="button" disabled title={t('layer.headCantDelete')}>
         ×
       </button>
     </div>
@@ -199,13 +200,13 @@ export function GroupHeaderRow({
       onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelectGroup(group.id, event.ctrlKey || event.metaKey)}
       data-group-id={group.id}
     >
-      <button className="group-drag-handle" type="button" {...dragHandleProps} title="Drag group as one block">
+      <button className="group-drag-handle" type="button" {...dragHandleProps} title={t('layer.groupDrag')}>
         ⋮⋮
       </button>
       <button
         className="group-toggle"
         type="button"
-        title={group.collapsed ? 'Expand group' : 'Collapse group'}
+        title={group.collapsed ? t('layer.groupExpand') : t('layer.groupCollapse')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
           onToggleGroupCollapsed(group.id);
@@ -224,7 +225,7 @@ export function GroupHeaderRow({
             onPointerDown={(event) => event.stopPropagation()}
             onKeyDown={handleEditKeyDown}
             onBlur={commitEditing}
-            aria-label="Group name"
+            aria-label={t('layer.groupName')}
           />
         ) : (
           <strong onDoubleClick={(event) => {
@@ -234,23 +235,23 @@ export function GroupHeaderRow({
             {group.name}
           </strong>
         )}
-        <span>{row.itemCount ?? 0} layer{(row.itemCount ?? 0) === 1 ? '' : 's'}</span>
+        <span>{t('layer.groupLayers', { count: row.itemCount ?? 0, plural: (row.itemCount ?? 0) === 1 ? '' : 's' })}</span>
       </div>
       <button
         className="group-edit"
         type="button"
-        title="Rename group"
+        title={t('layer.rename')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
           startEditing();
         }}
       >
-        Edit
+        {t('layer.edit')}
       </button>
       <button
         className="layer-icon-button"
         type="button"
-        title={group.visible === false ? 'Show group' : 'Hide group'}
+        title={group.visible === false ? t('layer.groupShow') : t('layer.groupHide')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
           onToggleGroupVisibility(group.id);
@@ -261,13 +262,13 @@ export function GroupHeaderRow({
       <button
         className="group-ungroup"
         type="button"
-        title="Ungroup"
+        title={t('layer.ungroup')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
           onUngroup(group.id);
         }}
       >
-        Ungroup
+        {t('layer.ungroup')}
       </button>
     </div>
   );

@@ -1,7 +1,15 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PartOption, PartTab } from '../types/role';
-import { tabLabels } from '../mock/options';
+import { t } from '../i18n';
 import { AssetPreview } from './AssetPreview';
+
+const tabI18nKeys: Record<PartTab, string> = {
+  deco: 'tabs.deco',
+  head: 'tabs.head',
+  hand: 'tabs.hand',
+  foot: 'tabs.foot',
+  cape: 'tabs.cape'
+};
 
 interface ChoiceGridProps {
   tab: PartTab;
@@ -54,18 +62,18 @@ export function ChoiceGrid({ tab, options, selectedOptionId, onPick }: ChoiceGri
 
   const visibleSummary = useMemo(() => {
     const gafCount = options.filter((option) => option.source === 'gaf').length;
-    return gafCount ? `${options.length} GAF symbols` : `${options.length} mock assets`;
+    return gafCount ? t('choices.assetCountGaf', { count: options.length }) : t('choices.assetCountMock', { count: options.length });
   }, [options]);
 
   return (
     <section
       className="choice-list"
-      aria-label={`${tabLabels[tab]} choices`}
+      aria-label={t('choices.choices', { tab: t(tabI18nKeys[tab]) })}
       ref={parentRef}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
     >
       <div className="choice-list-header">
-        <strong>{tabLabels[tab]}</strong>
+        <strong>{t(tabI18nKeys[tab])}</strong>
         <span>{visibleSummary}</span>
       </div>
       <div className="choice-virtual-space" style={{ height: totalHeight }}>
