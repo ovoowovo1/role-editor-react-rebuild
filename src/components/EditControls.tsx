@@ -173,6 +173,9 @@ export function EditControls({
               face
             </span>
           </button>
+
+        </div>
+        <div className="tool playback-tool" aria-label="Weapon animation playback">
           <button
             type="button"
             className="tool-icon-btn"
@@ -184,8 +187,6 @@ export function EditControls({
               sports_martial_arts
             </span>
           </button>
-        </div>
-        <div className="tool playback-tool" aria-label="Weapon animation playback">
           <button
             type="button"
             className="tool-icon-btn"
