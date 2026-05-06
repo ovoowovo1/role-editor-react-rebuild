@@ -68,7 +68,8 @@ function removeSelectedDecos(role: RoleDocument, selectedIds: string[]): RoleDoc
   if (decorations.length === role.decorations.length) return null;
 
   const removedAboveHead = deletedIndexes.filter((index) => index < oldHeadIndex).length;
-  const validIds = new Set([...decorations.map((deco) => deco.id), HEAD_LAYER_ID]);
+  const validIds = new Set(decorations.map((deco) => deco.id));
+  validIds.add(HEAD_LAYER_ID);
   const groups = (role.groups ?? [])
     .map((group) => ({
       ...group,
@@ -86,7 +87,8 @@ function removeSelectedDecos(role: RoleDocument, selectedIds: string[]): RoleDoc
 }
 
 function validSelectionIds(role: RoleDocument, ids: string[]): string[] {
-  const valid = new Set([...role.decorations.map((deco) => deco.id), HEAD_LAYER_ID]);
+  const valid = new Set(role.decorations.map((deco) => deco.id));
+  valid.add(HEAD_LAYER_ID);
   const seen = new Set<string>();
   return ids.filter((id) => valid.has(id) && !seen.has(id) && seen.add(id));
 }
@@ -144,7 +146,7 @@ export function useRoleEditor() {
 
   const restoreSelection = useCallback(
     (ids: string[]) => {
-      const nextIds = ids.filter((id, index) => Boolean(id) && ids.indexOf(id) === index);
+      const nextIds = [...new Set(ids.filter(Boolean))];
       if (!nextIds.length) return;
 
       window.setTimeout(() => {

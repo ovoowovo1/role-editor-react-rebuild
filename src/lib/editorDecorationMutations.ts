@@ -4,8 +4,9 @@ import { createId, round } from './math';
 import { shiftHeadLayerForDeletedIndexes, shiftHeadLayerForInsert } from './editorRoleUtils';
 
 export function insertAfterSelection(role: RoleDocument, selectedIds: string[]): number {
+  const idToIndex = new Map(role.decorations.map((item, i) => [item.id, i]));
   const indexes = selectedIds
-    .map((id) => role.decorations.findIndex((item) => item.id === id))
+    .map((id) => idToIndex.get(id) ?? -1)
     .filter((index) => index >= 0);
   return indexes.length ? Math.max(...indexes) + 1 : 0;
 }
@@ -80,7 +81,8 @@ export function pasteClipboardIntoRole(
 }
 
 export function mirrorCopySelectedInRole(current: RoleDocument, selectedIds: string[], axis: 'horizontal' | 'vertical'): string[] {
-  const selected = current.decorations.filter((item) => selectedIds.includes(item.id));
+  const selectedSet = new Set(selectedIds);
+  const selected = current.decorations.filter((item) => selectedSet.has(item.id));
   if (!selected.length) return [];
   const insertIndex = insertAfterSelection(current, selectedIds);
   const mirrored = selected.map((item) => ({

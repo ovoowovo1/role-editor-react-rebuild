@@ -116,7 +116,8 @@ export function useRoleEditor() {
 
   useEffect(() => {
     setSelectedLayerIds((ids) => {
-      const valid = new Set([...editor.role.decorations.map((item) => item.id), HEAD_LAYER_ID]);
+      const valid = new Set(editor.role.decorations.map((item) => item.id));
+      valid.add(HEAD_LAYER_ID);
       return ids.filter((id) => valid.has(id));
     });
   }, [editor.role.decorations]);

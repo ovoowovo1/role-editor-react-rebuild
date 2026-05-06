@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(Get-ChildItem -Recurse -File -Path \"D:\\\\code\\\\role-editor-react-rebuild\\\\src\")",
+      "Bash(Select-Object -ExpandProperty FullName)"
     ]
   }
 }

@@ -7,7 +7,7 @@ import type { RoleDocument } from '../types/role';
 export type { InsertDraftSettings };
 
 function uniq(ids: string[]): string[] {
-  return ids.filter((id, index) => Boolean(id) && ids.indexOf(id) === index);
+  return [...new Set(ids.filter(Boolean))];
 }
 
 function reorderGroupWithoutUngrouping(role: RoleDocument, activeRowId: string, overRowId: string): RoleDocument | null {

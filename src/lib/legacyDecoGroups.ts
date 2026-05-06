@@ -37,7 +37,8 @@ function normalizeItemIdsFromLegacyGroup(group: LegacyDecoGroupInput, role: Role
   }
 
   if (Array.isArray(group.itemIds)) {
-    const valid = new Set([...role.decorations.map((item) => item.id), HEAD_LAYER_ID]);
+    const valid = new Set(role.decorations.map((item) => item.id));
+    valid.add(HEAD_LAYER_ID);
     return group.itemIds
       .map((value) => String(value))
       .filter((id, index, ids) => valid.has(id) && ids.indexOf(id) === index);

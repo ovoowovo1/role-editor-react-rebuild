@@ -129,7 +129,8 @@ export function useRoleEditor() {
   const selectDecoration = useCallback((id: string, additive = false) => {
     setSelectedDecorationIds((ids) => {
       if (additive) {
-        return ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id];
+        if (ids.includes(id)) return ids.filter((item) => item !== id);
+        return [...ids, id];
       }
       return ids.length === 1 && ids[0] === id ? [] : [id];
     });

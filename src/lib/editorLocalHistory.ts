@@ -4,7 +4,9 @@ import { cloneRole } from './editorRoleUtils';
 export const LOCAL_HISTORY_LIMIT = 200;
 
 export function sameRole(a: RoleDocument, b: RoleDocument): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+  if (a === b) return true;
+  if (a.decorations.length !== b.decorations.length) return false;
+  return a.updatedAt === b.updatedAt;
 }
 
 export function pushLocalPast(items: RoleDocument[], snapshot: RoleDocument): RoleDocument[] {

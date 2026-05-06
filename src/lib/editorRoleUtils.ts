@@ -9,7 +9,17 @@ export const ORIGINAL_DECO_MIN_RATIO = 0.001;
 export const ORIGINAL_DECO_MAX_RATIO = 2;
 
 export function cloneRole(role: RoleDocument): RoleDocument {
-  return JSON.parse(JSON.stringify(role)) as RoleDocument;
+  return {
+    ...role,
+    decorations: role.decorations.map((item) => ({ ...item })),
+    groups: (role.groups ?? []).map((group) => ({
+      ...group,
+      itemIds: [...group.itemIds]
+    })),
+    partFrames: { ...role.partFrames },
+    partScales: { ...role.partScales },
+    headLayer: { ...role.headLayer }
+  };
 }
 
 export function touch(role: RoleDocument): RoleDocument {
@@ -61,7 +71,8 @@ export function shiftHeadLayerForDeletedIndexes(role: RoleDocument, oldHeadIndex
 }
 
 export function syncGroups(role: RoleDocument): RoleDocument {
-  const existingIds = new Set([...role.decorations.map((item) => item.id), HEAD_LAYER_ID]);
+  const existingIds = new Set(role.decorations.map((item) => item.id));
+  existingIds.add(HEAD_LAYER_ID);
   const claimedIds = new Set<string>();
   const groups = (role.groups ?? [])
     .map((group) => {
