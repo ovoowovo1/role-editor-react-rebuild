@@ -1,50 +1,47 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent
+} from 'react';
 import { HEAD_LAYER_ID } from '../../constants/layers';
 import { optionById } from '../../mock/options';
 import type { HeadLayerTransform } from '../../types/role';
 import { AssetPreview } from '../AssetPreview';
 import type { LayerRowModel } from './layerListModels';
 
-function useDragStyle(rowId: string) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: rowId });
-  return {
-    attributes,
-    listeners,
-    setNodeRef,
-    isDragging,
-    style: {
-      transform: CSS.Transform.toString(transform),
-      transition
-    }
-  };
-}
+type DragHandleProps = Pick<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  'aria-pressed' | 'onClick' | 'onKeyDown' | 'onPointerDown' | 'tabIndex'
+>;
 
 export function LayerItemRow({
   row,
+  isDragging = false,
+  dragHandleProps,
   onSelect,
   onToggleVisibility,
   onDelete
 }: {
   row: LayerRowModel;
+  isDragging?: boolean;
+  dragHandleProps?: DragHandleProps;
   onSelect(id: string, additive: boolean): void;
   onToggleVisibility(id: string): void;
   onDelete(id: string): void;
 }) {
   const deco = row.deco!;
   const option = optionById[deco.assetId];
-  const drag = useDragStyle(row.rowId);
 
   return (
     <div
-      ref={drag.setNodeRef}
-      style={drag.style}
-      className={`layer-row ${row.grouped ? 'group-child' : ''} ${row.selected ? 'selected' : ''} ${drag.isDragging ? 'dragging' : ''} ${!deco.visible ? 'muted' : ''}`}
+      className={`layer-row ${row.grouped ? 'group-child' : ''} ${row.selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${!deco.visible ? 'muted' : ''}`}
       onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelect(deco.id, event.ctrlKey || event.metaKey)}
       data-layer-id={deco.id}
     >
-      <button className="drag-handle" type="button" {...drag.attributes} {...drag.listeners} title="Drag layer to reorder or move between groups">
+      <button className="drag-handle" type="button" {...dragHandleProps} title="Drag layer to reorder or move between groups">
         ⋮⋮
       </button>
       <div className="layer-badge">{(row.index ?? 0) + 1}</div>
@@ -85,28 +82,29 @@ export function HeadRow({
   row,
   headLayer,
   headOptionId,
+  isDragging = false,
+  dragHandleProps,
   onSelect,
   onToggleVisibility
 }: {
   row: LayerRowModel;
   headLayer: HeadLayerTransform;
   headOptionId: string;
+  isDragging?: boolean;
+  dragHandleProps?: DragHandleProps;
   onSelect(id: string, additive: boolean): void;
   onToggleVisibility(id: string): void;
 }) {
   const option = optionById[headOptionId];
-  const drag = useDragStyle(row.rowId);
 
   return (
     <div
-      ref={drag.setNodeRef}
-      style={drag.style}
-      className={`layer-row head-layer ${row.grouped ? 'group-child' : ''} ${row.selected ? 'selected' : ''} ${drag.isDragging ? 'dragging' : ''} ${headLayer.visible === false ? 'muted' : ''}`}
+      className={`layer-row head-layer ${row.grouped ? 'group-child' : ''} ${row.selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${headLayer.visible === false ? 'muted' : ''}`}
       data-layer-id="head"
       title="Head is a singleton virtual layer from the original RoleDeco HEAD_CODE entry"
       onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelect(HEAD_LAYER_ID, event.ctrlKey || event.metaKey)}
     >
-      <button className="drag-handle" type="button" {...drag.attributes} {...drag.listeners} title="Drag Head layer to change its order or move it into groups">
+      <button className="drag-handle" type="button" {...dragHandleProps} title="Drag Head layer to change its order or move it into groups">
         ⋮⋮
       </button>
       <div className="layer-badge">{(row.index ?? 0) + 1}</div>
@@ -137,6 +135,8 @@ export function HeadRow({
 
 export function GroupHeaderRow({
   row,
+  isDragging = false,
+  dragHandleProps,
   onSelectGroup,
   onToggleGroupCollapsed,
   onToggleGroupVisibility,
@@ -144,6 +144,8 @@ export function GroupHeaderRow({
   onUngroup
 }: {
   row: LayerRowModel;
+  isDragging?: boolean;
+  dragHandleProps?: DragHandleProps;
   onSelectGroup(groupId: string, additive: boolean): void;
   onToggleGroupCollapsed(groupId: string): void;
   onToggleGroupVisibility(groupId: string): void;
@@ -151,7 +153,6 @@ export function GroupHeaderRow({
   onUngroup(groupId: string): void;
 }) {
   const group = row.group!;
-  const drag = useDragStyle(row.rowId);
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(group.name);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -194,13 +195,11 @@ export function GroupHeaderRow({
 
   return (
     <div
-      ref={drag.setNodeRef}
-      style={drag.style}
-      className={`layer-group ${row.selected ? 'selected' : ''} ${drag.isDragging ? 'dragging' : ''} ${group.visible === false ? 'muted' : ''}`}
+      className={`layer-group ${row.selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${group.visible === false ? 'muted' : ''}`}
       onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelectGroup(group.id, event.ctrlKey || event.metaKey)}
       data-group-id={group.id}
     >
-      <button className="group-drag-handle" type="button" {...drag.attributes} {...drag.listeners} title="Drag group as one block">
+      <button className="group-drag-handle" type="button" {...dragHandleProps} title="Drag group as one block">
         ⋮⋮
       </button>
       <button

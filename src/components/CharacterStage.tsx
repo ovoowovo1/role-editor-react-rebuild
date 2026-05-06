@@ -27,9 +27,8 @@ interface CharacterStageProps {
   bodyAnimationRestartKey: number;
   stageScale: number;
   facingQuarterTurns: number;
-  onSelectDecoration(id: string, additive: boolean): void;
-  onClearSelection(): void;
   onUpdateDecoration(id: string, patch: Partial<DecorationLayer>, commit?: boolean): void;
+  onApplyDragDelta(dx: number, dy: number): void;
   onBeginTransient(): void;
   onCommitTransient(): void;
 }
@@ -38,6 +37,12 @@ interface DragState {
   id: string;
   offsetX: number;
   offsetY: number;
+  overlay?: {
+    container: Container;
+    items: Array<{ decoContainer: Container; startX: number; startY: number }>;
+    startX: number;
+    startY: number;
+  };
 }
 
 interface DisguiseDecoOptions {
@@ -62,6 +67,14 @@ interface StageSceneState {
 
 const ALPHA_MASK_DECO_CODES = new Set(['third_deco_34', 'third_deco_05', 'skydow_deco_302']);
 const BODY_ANIMATION_FRAME_MS = 1000 / 12;
+const DECO_GLOW_CAP = 80;
+
+let cachedGlowFilter: ReturnType<typeof createDecoSelectionGlowFilter> | null = null;
+
+function getCachedGlowFilter(): ReturnType<typeof createDecoSelectionGlowFilter> {
+  if (!cachedGlowFilter) cachedGlowFilter = createDecoSelectionGlowFilter();
+  return cachedGlowFilter;
+}
 
 function actorSceneKey(role: RoleDocument, bodyAnimationLabel: string): string {
   return JSON.stringify({
@@ -254,9 +267,9 @@ function applyHeadLayerDisplayTransform(headLayerClip: GafMovieClip, role: RoleD
   headLayerClip.visible = headLayer.visible !== false && !isRuntimeEmptyFrame('head', headFrame);
 }
 
-function syncDecorationSelection(record: DecoDisplayRecord, selected: boolean): void {
+function syncDecorationSelection(record: DecoDisplayRecord, selected: boolean, skipGlow: boolean): void {
   if (record.selected === selected) return;
-  record.container.filters = selected ? [createDecoSelectionGlowFilter()] : null;
+  record.container.filters = selected && !skipGlow ? [getCachedGlowFilter()] : null;
   record.selected = selected;
 }
 
@@ -267,12 +280,21 @@ function getClampedHeadLayerIndex(role: RoleDocument): number {
   return Math.max(0, Math.min(role.decorations.length, index));
 }
 
-function syncDisguiseChildOrder(scene: StageSceneState, role: RoleDocument): void {
+function syncDisguiseChildOrder(scene: StageSceneState, role: RoleDocument, overlay?: Container | null, selectedSet?: Set<string> | null): void {
   const topFirstChildren: Container[] = [];
+  let overlayAdded = false;
 
   for (const deco of role.decorations) {
     const record = scene.decoDisplays.get(deco.id);
-    if (record) topFirstChildren.push(record.container);
+    if (!record) continue;
+    if (selectedSet?.has(deco.id)) {
+      if (!overlayAdded && overlay) {
+        topFirstChildren.push(overlay);
+        overlayAdded = true;
+      }
+    } else {
+      topFirstChildren.push(record.container);
+    }
   }
 
   const headIndex = getClampedHeadLayerIndex(role);
@@ -299,6 +321,7 @@ function syncDecorationDisplays(
 ): void {
   const decorationsById = new Map(role.decorations.map((deco) => [deco.id, deco]));
   const selectedSet = new Set(selectedIds);
+  const skipGlow = selectedIds.length > DECO_GLOW_CAP;
 
   for (const [id, record] of scene.decoDisplays) {
     const deco = decorationsById.get(id);
@@ -326,7 +349,7 @@ function syncDecorationDisplays(
     }
 
     applyDecorationDisplayTransform(record.container, deco);
-    syncDecorationSelection(record, selectedSet.has(deco.id));
+    syncDecorationSelection(record, selectedSet.has(deco.id), skipGlow);
   }
 
   syncDisguiseChildOrder(scene, role);
@@ -379,9 +402,8 @@ export function CharacterStage({
   bodyAnimationRestartKey,
   stageScale,
   facingQuarterTurns,
-  onSelectDecoration,
-  onClearSelection,
   onUpdateDecoration,
+  onApplyDragDelta,
   onBeginTransient,
   onCommitTransient
 }: CharacterStageProps) {
@@ -393,9 +415,8 @@ export function CharacterStage({
   const roleRef = useRef(role);
   const selectedIdsRef = useRef(selectedIds);
   const callbacksRef = useRef({
-    onSelectDecoration,
-    onClearSelection,
     onUpdateDecoration,
+    onApplyDragDelta,
     onBeginTransient,
     onCommitTransient
   });
@@ -415,13 +436,12 @@ export function CharacterStage({
 
   useEffect(() => {
     callbacksRef.current = {
-      onSelectDecoration,
-      onClearSelection,
       onUpdateDecoration,
+      onApplyDragDelta,
       onBeginTransient,
       onCommitTransient
     };
-  }, [onBeginTransient, onClearSelection, onCommitTransient, onSelectDecoration, onUpdateDecoration]);
+  }, [onApplyDragDelta, onBeginTransient, onCommitTransient, onUpdateDecoration]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -526,13 +546,61 @@ export function CharacterStage({
       setSceneVersion((version) => version + 1);
 
       const decoOptions: DisguiseDecoOptions = {
-        onPointerDown: (id, event, root) => {
+        onPointerDown: (id, _event, root) => {
           const deco = roleRef.current.decorations.find((item) => item.id === id);
           if (!deco) return;
-          event.stopPropagation();
-          callbacksRef.current.onSelectDecoration(id, event.ctrlKey || event.metaKey);
+          if (!selectedIdsRef.current.includes(id)) return;
           callbacksRef.current.onBeginTransient();
-          const local = root.toLocal(event.global);
+
+          const isMultiDrag = selectedIdsRef.current.length > 1;
+          if (isMultiDrag && sceneRef.current) {
+            const currentScene = sceneRef.current;
+            const selectedSet = new Set(selectedIdsRef.current);
+            let cx = 0, cy = 0, count = 0;
+            const items: Array<{ decoContainer: Container; startX: number; startY: number }> = [];
+            const decoById = new Map(roleRef.current.decorations.map(d => [d.id, d]));
+            for (const [decId, record] of currentScene.decoDisplays) {
+              if (!selectedSet.has(decId)) continue;
+              const d = decoById.get(decId);
+              if (!d) continue;
+              cx += d.x; cy += d.y; count++;
+              items.push({ decoContainer: record.container, startX: d.x, startY: d.y });
+            }
+            if (count < 2) {
+              const local = root.toLocal(_event.global);
+              dragRef.current = { id, offsetX: local.x - deco.x, offsetY: local.y - deco.y };
+              return;
+            }
+            cx /= count; cy /= count;
+
+            const overlay = new Container();
+            overlay.position.set(cx, cy);
+            overlay.filters = [getCachedGlowFilter()];
+
+            // Add in reverse order so childIndex matches bottom-to-top z-order
+            for (let i = items.length - 1; i >= 0; i--) {
+              const item = items[i];
+              if (item.decoContainer.parent) {
+                item.decoContainer.parent.removeChild(item.decoContainer);
+              }
+              item.decoContainer.position.set(item.startX - cx, item.startY - cy);
+              overlay.addChild(item.decoContainer);
+            }
+
+            currentScene.disguiseRoot.addChild(overlay);
+            syncDisguiseChildOrder(currentScene, roleRef.current, overlay, selectedSet);
+
+            const local = root.toLocal(_event.global);
+            dragRef.current = {
+              id,
+              offsetX: local.x - cx,
+              offsetY: local.y - cy,
+              overlay: { container: overlay, items, startX: cx, startY: cy }
+            };
+            return;
+          }
+
+          const local = root.toLocal(_event.global);
           dragRef.current = {
             id,
             offsetX: local.x - deco.x,
@@ -562,6 +630,12 @@ export function CharacterStage({
         let nx = local.x - dragging.offsetX;
         let ny = local.y - dragging.offsetY;
         const disc = clampToDisc(nx, ny, positionRange(roleRef.current));
+
+        if (dragging.overlay) {
+          dragging.overlay.container.position.set(disc.x, disc.y);
+          return;
+        }
+
         nx = disc.x;
         ny = disc.y;
 
@@ -582,18 +656,45 @@ export function CharacterStage({
 
       const handleUp = () => {
         if (!dragRef.current) return;
+        const dragging = dragRef.current;
+
+        if (dragging.overlay) {
+          const currentScene = sceneRef.current;
+          const dx = dragging.overlay.container.position.x - dragging.overlay.startX;
+          const dy = dragging.overlay.container.position.y - dragging.overlay.startY;
+
+          if (currentScene) {
+            for (const item of dragging.overlay.items) {
+              if (item.decoContainer.parent) {
+                item.decoContainer.parent.removeChild(item.decoContainer);
+              }
+              const newAbsX = item.startX + dx;
+              const newAbsY = item.startY + dy;
+              const disc = clampToDisc(newAbsX, newAbsY, positionRange(roleRef.current));
+              item.decoContainer.position.set(disc.x, disc.y);
+              currentScene.disguiseRoot.addChild(item.decoContainer);
+            }
+            syncDisguiseChildOrder(currentScene, roleRef.current);
+          }
+
+          if (!dragging.overlay.container.destroyed) {
+            dragging.overlay.container.destroy({ children: false });
+          }
+
+          callbacksRef.current.onApplyDragDelta(dx, dy);
+          callbacksRef.current.onCommitTransient();
+
+          dragRef.current = null;
+          return;
+        }
+
         dragRef.current = null;
         callbacksRef.current.onCommitTransient();
-      };
-
-      const handleStagePointerDown = (event: FederatedPointerEvent) => {
-        if (event.target === stage) callbacksRef.current.onClearSelection();
       };
 
       stage.on('pointermove', handleMove);
       stage.on('pointerup', handleUp);
       stage.on('pointerupoutside', handleUp);
-      stage.on('pointerdown', handleStagePointerDown);
 
       stageTeardownRef.current = () => {
         dragRef.current = null;
@@ -603,7 +704,6 @@ export function CharacterStage({
         stage.off('pointermove', handleMove);
         stage.off('pointerup', handleUp);
         stage.off('pointerupoutside', handleUp);
-        stage.off('pointerdown', handleStagePointerDown);
         for (const child of stage.removeChildren()) {
           if (!child.destroyed) child.destroy({ children: true });
         }
@@ -626,13 +726,61 @@ export function CharacterStage({
     if (!scene) return;
 
     const decoOptions: DisguiseDecoOptions = {
-      onPointerDown: (id, event, root) => {
+      onPointerDown: (id, _event, root) => {
         const deco = roleRef.current.decorations.find((item) => item.id === id);
         if (!deco) return;
-        event.stopPropagation();
-        callbacksRef.current.onSelectDecoration(id, event.ctrlKey || event.metaKey);
+        if (!selectedIdsRef.current.includes(id)) return;
         callbacksRef.current.onBeginTransient();
-        const local = root.toLocal(event.global);
+
+        const isMultiDrag = selectedIdsRef.current.length > 1;
+        if (isMultiDrag && sceneRef.current) {
+          const currentScene = sceneRef.current;
+          const selectedSet = new Set(selectedIdsRef.current);
+          let cx = 0, cy = 0, count = 0;
+          const items: Array<{ decoContainer: Container; startX: number; startY: number }> = [];
+          const decoById = new Map(roleRef.current.decorations.map(d => [d.id, d]));
+          for (const [decId, record] of currentScene.decoDisplays) {
+            if (!selectedSet.has(decId)) continue;
+            const d = decoById.get(decId);
+            if (!d) continue;
+            cx += d.x; cy += d.y; count++;
+            items.push({ decoContainer: record.container, startX: d.x, startY: d.y });
+          }
+          if (count < 2) {
+            const local = root.toLocal(_event.global);
+            dragRef.current = { id, offsetX: local.x - deco.x, offsetY: local.y - deco.y };
+            return;
+          }
+          cx /= count; cy /= count;
+
+          const overlay = new Container();
+          overlay.position.set(cx, cy);
+          overlay.filters = [getCachedGlowFilter()];
+
+          // Add in reverse order so childIndex matches bottom-to-top z-order
+          for (let i = items.length - 1; i >= 0; i--) {
+            const item = items[i];
+            if (item.decoContainer.parent) {
+              item.decoContainer.parent.removeChild(item.decoContainer);
+            }
+            item.decoContainer.position.set(item.startX - cx, item.startY - cy);
+            overlay.addChild(item.decoContainer);
+          }
+
+          currentScene.disguiseRoot.addChild(overlay);
+          syncDisguiseChildOrder(currentScene, roleRef.current, overlay, selectedSet);
+
+          const local = root.toLocal(_event.global);
+          dragRef.current = {
+            id,
+            offsetX: local.x - cx,
+            offsetY: local.y - cy,
+            overlay: { container: overlay, items, startX: cx, startY: cy }
+          };
+          return;
+        }
+
+        const local = root.toLocal(_event.global);
         dragRef.current = {
           id,
           offsetX: local.x - deco.x,
@@ -719,7 +867,7 @@ export function CharacterStage({
         <div className="piece piece-two" />
       </div>
       <div ref={hostRef} className="pixi-host" />
-      <div className="stage-help">Drag selected Deco on canvas · Ctrl/Cmd-click for multi-select</div>
+      <div className="stage-help">Drag selected Deco on canvas</div>
     </section>
   );
 }

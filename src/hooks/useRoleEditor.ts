@@ -137,6 +137,21 @@ export function useRoleEditor() {
 
   const clearSelection = useCallback(() => setSelectedDecorationIds([]), []);
 
+  const selectMultipleDecorations = useCallback((ids: string[]) => {
+    setSelectedDecorationIds(ids);
+  }, []);
+
+  const applyDragDeltaToSelected = useCallback((dx: number, dy: number) => {
+    updateRole((current) => {
+      const selected = new Set(selectedDecorationIds);
+      current.decorations = current.decorations.map((item) => {
+        if (!selected.has(item.id)) return item;
+        return { ...item, x: item.x + dx, y: item.y + dy };
+      });
+      return current;
+    }, false);
+  }, [selectedDecorationIds, updateRole]);
+
   const selectAllDecorations = useCallback(() => {
     setSelectedDecorationIds(role.decorations.map((item) => item.id));
   }, [role.decorations]);
@@ -369,7 +384,9 @@ export function useRoleEditor() {
     updatePartById,
     selectDecoration,
     clearSelection,
+    selectMultipleDecorations,
     selectAllDecorations,
+    applyDragDeltaToSelected,
     updateDecoration,
     updateSelectedTransform,
     nudgeSelected,

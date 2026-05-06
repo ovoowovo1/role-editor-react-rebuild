@@ -87,7 +87,8 @@ function removeSelectedDecos(role: RoleDocument, selectedIds: string[]): RoleDoc
 
 function validSelectionIds(role: RoleDocument, ids: string[]): string[] {
   const valid = new Set([...role.decorations.map((deco) => deco.id), HEAD_LAYER_ID]);
-  return ids.filter((id, index) => valid.has(id) && ids.indexOf(id) === index);
+  const seen = new Set<string>();
+  return ids.filter((id) => valid.has(id) && !seen.has(id) && seen.add(id));
 }
 
 function nextSelection(current: string[], id: string, additive: boolean): string[] {
@@ -127,10 +128,10 @@ export function useRoleEditor() {
     return [];
   }, [editor.role, editor.selectedDecorationIds]);
 
-  const stableSelectedDecorations = useMemo(
-    () => editor.role.decorations.filter((deco) => stableSelectedDecorationIds.includes(deco.id)),
-    [editor.role.decorations, stableSelectedDecorationIds]
-  );
+  const stableSelectedDecorations = useMemo(() => {
+    const selectedSet = new Set(stableSelectedDecorationIds);
+    return editor.role.decorations.filter((deco) => selectedSet.has(deco.id));
+  }, [editor.role.decorations, stableSelectedDecorationIds]);
 
   const stableEditValues = useMemo<TransformValues>(() => {
     const decoIds = stableSelectedDecorationIds.filter((id) => id !== HEAD_LAYER_ID);
@@ -217,12 +218,15 @@ export function useRoleEditor() {
     [editor, stableSelectedDecorationIds]
   );
 
+  const selectMultipleDecorations = useCallback((ids: string[]) => {
+    selectedIdsRef.current = ids;
+    editor.selectMultipleDecorations(ids);
+  }, [editor]);
+
   const selectAllDecorations = useCallback(() => {
     const ids = layerIdsForRole(editor.role);
-    selectedIdsRef.current = ids;
-    editor.clearSelection();
-    ids.forEach((id, index) => editor.selectDecoration(id, index > 0));
-  }, [editor]);
+    selectMultipleDecorations(ids);
+  }, [editor, selectMultipleDecorations]);
 
   const beginTransient = useCallback(() => {
     transientBeforeRef.current = cloneRole(roleRef.current);
@@ -420,6 +424,7 @@ export function useRoleEditor() {
     undo,
     redo,
     selectDecoration,
+    selectMultipleDecorations,
     selectAllDecorations,
     clearSelection,
     beginTransient,

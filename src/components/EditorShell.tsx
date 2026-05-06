@@ -282,9 +282,8 @@ export function EditorShell() {
                 bodyAnimationRestartKey={bodyAnimationRestartKey}
                 stageScale={editor.stageScale}
                 facingQuarterTurns={facingQuarterTurns}
-                onSelectDecoration={editor.selectDecoration}
-                onClearSelection={editor.clearSelection}
                 onUpdateDecoration={editor.updateDecoration}
+                onApplyDragDelta={(dx, dy) => editor.applyDragDeltaToSelected(dx, dy)}
                 onBeginTransient={editor.beginTransient}
                 onCommitTransient={editor.commitTransient}
               />
@@ -304,6 +303,7 @@ export function EditorShell() {
               selectionScaleMax={editor.selectionScaleMax}
               onBeginTransient={editor.beginTransient}
               onCommitTransient={editor.commitTransient}
+              onCancelSelection={editor.clearSelection}
               onTransformChange={editor.updateSelectedTransform}
               onFlip={editor.flipSelected}
               onMirrorCopyHorizontal={editor.mirrorCopyHorizontalSelected}
@@ -329,6 +329,7 @@ export function EditorShell() {
             selectedIds={editor.selectedDecorationIds}
             canGroupSelected={editor.canGroupSelected}
             onSelect={editor.selectDecoration}
+            onSelectMany={editor.selectMultipleDecorations}
             onSelectGroup={editor.selectGroup}
             onGroupSelected={() => {
               editor.groupSelected();

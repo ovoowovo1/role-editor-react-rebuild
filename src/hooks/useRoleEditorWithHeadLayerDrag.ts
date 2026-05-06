@@ -126,10 +126,10 @@ export function useRoleEditor() {
     [editor.role, selectedLayerIds]
   );
 
-  const selectedDecorations = useMemo(
-    () => editor.role.decorations.filter((item) => selectedLayerIds.includes(item.id)),
-    [editor.role.decorations, selectedLayerIds]
-  );
+  const selectedDecorations = useMemo(() => {
+    const selectedSet = new Set(selectedLayerIds);
+    return editor.role.decorations.filter((item) => selectedSet.has(item.id));
+  }, [editor.role.decorations, selectedLayerIds]);
 
   const canGroupSelected = useMemo(
     () => ungroupedSelectedLayerIds(editor.role, selectedLayerIds).length >= 2,
@@ -154,6 +154,11 @@ export function useRoleEditor() {
   const clearSelection = useCallback(() => {
     setSelectedLayerIds([]);
     editor.clearSelection();
+  }, [editor]);
+
+  const selectMultipleDecorations = useCallback((ids: string[]) => {
+    setSelectedLayerIds(ids);
+    editor.selectMultipleDecorations(ids.filter((id) => id !== HEAD_LAYER_ID));
   }, [editor]);
 
   const selectGroup = useCallback(
@@ -321,6 +326,7 @@ export function useRoleEditor() {
     insertDraftSettings,
     setInsertDraftSettings,
     selectDecoration,
+    selectMultipleDecorations,
     clearSelection,
     selectGroup,
     groupSelected,

@@ -16,6 +16,7 @@ interface EditControlsProps {
   selectionScaleMax: number;
   onBeginTransient(): void;
   onCommitTransient(): void;
+  onCancelSelection(): void;
   onTransformChange(patch: Partial<TransformValues>, commit?: boolean): void;
   onFlip(): void;
   onMirrorCopyHorizontal(): void;
@@ -94,6 +95,7 @@ export function EditControls({
   selectionScaleMax,
   onBeginTransient,
   onCommitTransient,
+  onCancelSelection,
   onTransformChange,
   onFlip,
   onMirrorCopyHorizontal,
@@ -111,7 +113,14 @@ export function EditControls({
     <section className={`edit-function ${disabled ? 'disabled' : ''}`} aria-label="Edit controls">
       <div className="tool-row" aria-label="Icon toolbar">
         <div className="tool">
-          <button type="button" disabled className="tool-icon-btn" aria-label="Touch mode（尚未啟用）" title="Touch mode">
+          <button
+            type="button"
+            className="tool-icon-btn"
+            disabled={disabled}
+            onClick={onCancelSelection}
+            aria-label="取消選取"
+            title="取消選取"
+          >
             <span className="material-icons" aria-hidden="true">
               touch_app
             </span>

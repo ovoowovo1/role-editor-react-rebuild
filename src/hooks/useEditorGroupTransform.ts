@@ -22,6 +22,8 @@ import {
 
 type UpdateRole = (updater: (current: RoleDocument) => RoleDocument, commit?: boolean) => void;
 
+const LARGE_SELECTION_SNAPSHOT_CAP = 80;
+
 export function useEditorGroupTransform({
   role,
   roleRef,
@@ -44,8 +46,20 @@ export function useEditorGroupTransform({
     dy: 0
   });
 
-  const selectionKey = useMemo(() => snapshotKeyFromIds(selectedDecorationIds), [selectedDecorationIds]);
+  const selectionKey = useMemo(() => {
+    if (selectedDecorationIds.length > LARGE_SELECTION_SNAPSHOT_CAP) return '';
+    return snapshotKeyFromIds(selectedDecorationIds);
+  }, [selectedDecorationIds]);
   useEffect(() => {
+    if (selectedDecorationIds.length < 2) {
+      setGroupSnapshot(null);
+      setGroupTransform({ scaleX: 1, scaleY: 1, rotationDeg: 0, dx: 0, dy: 0 });
+      return;
+    }
+    if (selectedDecorationIds.length > LARGE_SELECTION_SNAPSHOT_CAP) {
+      setGroupSnapshot(null);
+      return;
+    }
     const currentRole = roleRef.current;
     const ordered = orderedSelectedDecorations(currentRole, selectedDecorationIds);
     const snapshot = snapshotGroupSelection(ordered);
@@ -102,9 +116,22 @@ export function useEditorGroupTransform({
     return groupScaleBounds?.max ?? ORIGINAL_DECO_MAX_SCALE;
   }, [groupScaleBounds, selectedDecorations]);
 
+  const ensureGroupSnapshot = useCallback((): DecoGroupSnapshot | null => {
+    if (groupSnapshot) return groupSnapshot;
+    if (selectedDecorationIds.length < 2) return null;
+    const currentRole = roleRef.current;
+    const ordered = orderedSelectedDecorations(currentRole, selectedDecorationIds);
+    const snapshot = snapshotGroupSelection(ordered);
+    if (snapshot) {
+      setGroupSnapshot(snapshot);
+    }
+    return snapshot;
+  }, [groupSnapshot, selectedDecorationIds, roleRef]);
+
   const updateSelectedTransform = useCallback(
     (patch: Partial<TransformValues>, commit = true) => {
-      const isMultiSelect = selectedDecorationIds.length > 1 && !!groupSnapshot;
+      const snapshot = ensureGroupSnapshot();
+      const isMultiSelect = selectedDecorationIds.length > 1 && !!snapshot;
       let nextGroupTransform: DecoGroupParentTransform | null = null;
 
       updateRole((current) => {
@@ -113,8 +140,8 @@ export function useEditorGroupTransform({
         const selected = new Set(selectedDecorationIds);
         const range = positionRangeFromRole(current);
 
-        if (isMultiSelect && groupSnapshot) {
-          const currentFirstPos = deriveFirstItemPosition(groupTransform, groupSnapshot);
+        if (isMultiSelect && snapshot) {
+          const currentFirstPos = deriveFirstItemPosition(groupTransform, snapshot);
           const firstX = currentFirstPos?.x ?? first.x;
           const firstY = currentFirstPos?.y ?? first.y;
           const scaleMin = groupScaleBounds?.min ?? ORIGINAL_DECO_MIN_SCALE;
@@ -145,7 +172,7 @@ export function useEditorGroupTransform({
 
           current.decorations = current.decorations.map((item) => {
             if (!selected.has(item.id)) return item;
-            const derived = applyGroupParentToItem(next, groupSnapshot, item.id);
+            const derived = applyGroupParentToItem(next, snapshot, item.id);
             if (!derived) return item;
             return {
               ...item,
@@ -184,12 +211,13 @@ export function useEditorGroupTransform({
 
       if (nextGroupTransform) setGroupTransform(nextGroupTransform);
     },
-    [groupScaleBounds, groupSnapshot, groupTransform, selectedDecorationIds, updateRole]
+    [ensureGroupSnapshot, groupScaleBounds, groupTransform, selectedDecorationIds, updateRole]
   );
 
   const nudgeSelected = useCallback(
     (dx: number, dy: number, commit = true) => {
-      if (groupSnapshot && selectedDecorationIds.length > 1) {
+      const snapshot = ensureGroupSnapshot();
+      if (snapshot && selectedDecorationIds.length > 1) {
         const nextParent: DecoGroupParentTransform = {
           ...groupTransform,
           dx: groupTransform.dx + dx,
@@ -200,7 +228,7 @@ export function useEditorGroupTransform({
           const range = positionRangeFromRole(current);
           current.decorations = current.decorations.map((item) => {
             if (!selected.has(item.id)) return item;
-            const derived = applyGroupParentToItem(nextParent, groupSnapshot, item.id);
+            const derived = applyGroupParentToItem(nextParent, snapshot, item.id);
             if (!derived) return item;
             const disc = clampToDisc(derived.x, derived.y, range);
             return {
@@ -228,22 +256,24 @@ export function useEditorGroupTransform({
         return current;
       }, commit);
     },
-    [groupSnapshot, groupTransform, selectedDecorationIds, updateRole]
+    [ensureGroupSnapshot, groupTransform, selectedDecorationIds, updateRole]
   );
 
   const rotateSelectedBy = useCallback(
     (degrees: number) => {
-      const current = groupSnapshot && selectedDecorationIds.length > 1
+      const snapshot = ensureGroupSnapshot();
+      const current = snapshot && selectedDecorationIds.length > 1
         ? groupTransform.rotationDeg
         : getFirstSelected(role, selectedDecorationIds)?.rotation ?? 0;
       updateSelectedTransform({ rotate: normalizeDegrees(current + degrees) });
     },
-    [groupSnapshot, groupTransform, role, selectedDecorationIds, updateSelectedTransform]
+    [ensureGroupSnapshot, groupTransform, role, selectedDecorationIds, updateSelectedTransform]
   );
 
   const scaleSelectedBy = useCallback(
     (amount: number) => {
-      if (groupSnapshot && selectedDecorationIds.length > 1) {
+      const snapshot = ensureGroupSnapshot();
+      if (snapshot && selectedDecorationIds.length > 1) {
         const signX = groupTransform.scaleX >= 0 ? 1 : -1;
         const target = Math.abs(groupTransform.scaleX) + amount;
         updateSelectedTransform({ scale: target * signX });
@@ -254,12 +284,13 @@ export function useEditorGroupTransform({
       const signX = first.scaleX >= 0 ? 1 : -1;
       updateSelectedTransform({ scale: (Math.abs(first.scaleX) + amount) * signX });
     },
-    [groupSnapshot, groupTransform, role, selectedDecorationIds, updateSelectedTransform]
+    [ensureGroupSnapshot, groupTransform, role, selectedDecorationIds, updateSelectedTransform]
   );
 
   const ratioSelectedBy = useCallback(
     (amount: number) => {
-      if (groupSnapshot && selectedDecorationIds.length > 1) {
+      const snapshot = ensureGroupSnapshot();
+      if (snapshot && selectedDecorationIds.length > 1) {
         const ratio = groupTransform.scaleY / (groupTransform.scaleX || 1);
         updateSelectedTransform({ ratio: ratio + amount });
         return;
@@ -269,11 +300,12 @@ export function useEditorGroupTransform({
       const ratio = first.scaleY / (first.scaleX || 1);
       updateSelectedTransform({ ratio: ratio + amount });
     },
-    [groupSnapshot, groupTransform, role, selectedDecorationIds, updateSelectedTransform]
+    [ensureGroupSnapshot, groupTransform, role, selectedDecorationIds, updateSelectedTransform]
   );
 
   const flipSelected = useCallback(() => {
-    if (groupSnapshot && selectedDecorationIds.length > 1) {
+    const snapshot = ensureGroupSnapshot();
+    if (snapshot && selectedDecorationIds.length > 1) {
       const nextParent: DecoGroupParentTransform = {
         ...groupTransform,
         scaleX: -groupTransform.scaleX
@@ -283,7 +315,7 @@ export function useEditorGroupTransform({
       updateRole((current) => {
         current.decorations = current.decorations.map((item) => {
           if (!selected.has(item.id)) return item;
-          const derived = applyGroupParentToItem(nextParent, groupSnapshot, item.id);
+          const derived = applyGroupParentToItem(nextParent, snapshot, item.id);
           if (!derived) return item;
           return {
             ...item,
@@ -304,10 +336,11 @@ export function useEditorGroupTransform({
       current.decorations = current.decorations.map((item) => (selected.has(item.id) ? { ...item, scaleX: -item.scaleX } : item));
       return current;
     });
-  }, [groupSnapshot, groupTransform, roleRef, selectedDecorationIds, updateRole]);
+  }, [ensureGroupSnapshot, groupTransform, roleRef, selectedDecorationIds, updateRole]);
 
   const flipSelectedVertical = useCallback(() => {
-    if (groupSnapshot && selectedDecorationIds.length > 1) {
+    const snapshot = ensureGroupSnapshot();
+    if (snapshot && selectedDecorationIds.length > 1) {
       const nextParent: DecoGroupParentTransform = {
         ...groupTransform,
         scaleY: -groupTransform.scaleY
@@ -317,7 +350,7 @@ export function useEditorGroupTransform({
       updateRole((current) => {
         current.decorations = current.decorations.map((item) => {
           if (!selected.has(item.id)) return item;
-          const derived = applyGroupParentToItem(nextParent, groupSnapshot, item.id);
+          const derived = applyGroupParentToItem(nextParent, snapshot, item.id);
           if (!derived) return item;
           return {
             ...item,
@@ -338,7 +371,7 @@ export function useEditorGroupTransform({
       current.decorations = current.decorations.map((item) => (selected.has(item.id) ? { ...item, scaleY: -item.scaleY } : item));
       return current;
     });
-  }, [groupSnapshot, groupTransform, roleRef, selectedDecorationIds, updateRole]);
+  }, [ensureGroupSnapshot, groupTransform, roleRef, selectedDecorationIds, updateRole]);
 
   return {
     editValues,

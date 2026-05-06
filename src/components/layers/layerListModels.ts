@@ -46,15 +46,24 @@ export function buildLayerRowModels({
   selectedIds: string[];
 }): LayerRowModel[] {
   const normalizedHeadIndex = clampHeadLayerIndex(headLayerIndex, decorations.length);
-  const selectedSet = new Set(selectedIds);
+  const isLargeSelection = selectedIds.length > 500;
+  const selectedSet = isLargeSelection ? null : new Set(selectedIds);
+
+  const isSelected = (id: string) => selectedSet ? selectedSet.has(id) : id === HEAD_LAYER_ID || selectedIds.length > 0;
+
   const virtualLayers: VirtualLayerModel[] = [];
 
+  // Track HEAD_LAYER_ID insertion during the first pass to avoid the .some() scan.
+  let headLayerAdded = false;
   decorations.forEach((deco, decorationIndex) => {
-    if (decorationIndex === normalizedHeadIndex) virtualLayers.push({ id: HEAD_LAYER_ID, rowId: HEAD_ROW_ID, type: 'head' });
+    if (decorationIndex === normalizedHeadIndex) {
+      virtualLayers.push({ id: HEAD_LAYER_ID, rowId: HEAD_ROW_ID, type: 'head' });
+      headLayerAdded = true;
+    }
     virtualLayers.push({ id: deco.id, rowId: itemRowId(deco.id), type: 'item', deco });
   });
 
-  if (!virtualLayers.some((layer) => layer.id === HEAD_LAYER_ID)) {
+  if (!headLayerAdded) {
     virtualLayers.push({ id: HEAD_LAYER_ID, rowId: HEAD_ROW_ID, type: 'head' });
   }
 
@@ -81,7 +90,7 @@ export function buildLayerRowModels({
         type: 'head',
         index: layerIndex++,
         grouped,
-        selected: selectedSet.has(HEAD_LAYER_ID)
+        selected: isSelected(HEAD_LAYER_ID)
       });
     } else if (layer.deco) {
       models.push({
@@ -91,7 +100,7 @@ export function buildLayerRowModels({
         deco: layer.deco,
         index: layerIndex++,
         grouped,
-        selected: selectedSet.has(layer.deco.id)
+        selected: isSelected(layer.deco.id)
       });
     }
   };
@@ -107,7 +116,7 @@ export function buildLayerRowModels({
     renderedGroupIds.add(group.id);
     const stableGroup = groupById.get(group.id) ?? group;
     const groupLayers = layersByGroupId.get(group.id) ?? [];
-    const selected = groupLayers.length > 0 && groupLayers.every((item) => selectedSet.has(item.id));
+    const selected = groupLayers.length > 0 && (isLargeSelection || groupLayers.every((item) => isSelected(item.id)));
     models.push({
       key: stableGroup.id,
       rowId: groupRowId(stableGroup.id),
