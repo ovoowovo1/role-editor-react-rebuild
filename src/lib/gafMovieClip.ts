@@ -14,10 +14,24 @@ const TYPE_TIMELINE = 'timeline';
 
 export type GafMovieClipSpec =
   | { kind: 'atlas'; frames: readonly GafAtlasFrame[] }
-  | { kind: 'timeline'; manifest: GafRuntimeManifest; timelineId: string; textureUrl: string; alphaMask?: boolean };
+  | {
+      kind: 'timeline';
+      manifest: GafRuntimeManifest;
+      timelineId: string;
+      textureUrl: string;
+      alphaMask?: boolean;
+      hiddenNamedParts?: readonly string[];
+      hideUnnamedTextureInstances?: boolean;
+      dedupeNamedParts?: boolean;
+      nestedTimelineFrame?: 'current' | 'first';
+    };
 
-interface CreateGafClipOptions {
+export interface CreateGafClipOptions {
   alphaMask?: boolean;
+  hiddenNamedParts?: readonly string[];
+  hideUnnamedTextureInstances?: boolean;
+  dedupeNamedParts?: boolean;
+  nestedTimelineFrame?: 'current' | 'first';
 }
 
 function clamp01(a: number): number {
@@ -92,7 +106,11 @@ export function createGafClip(
         manifest,
         timelineId: id,
         textureUrl,
-        alphaMask: options.alphaMask
+        alphaMask: options.alphaMask,
+        hiddenNamedParts: options.hiddenNamedParts,
+        hideUnnamedTextureInstances: options.hideUnnamedTextureInstances,
+        dedupeNamedParts: options.dedupeNamedParts,
+        nestedTimelineFrame: options.nestedTimelineFrame
       });
     }
   }
@@ -104,9 +122,10 @@ export function createActorGafClip(
   linkage: string,
   manifest: ActorGafRuntimeManifest | undefined,
   textureUrl: string,
-  atlasFallback: readonly GafAtlasFrame[]
+  atlasFallback: readonly GafAtlasFrame[],
+  options: CreateGafClipOptions = {}
 ): GafMovieClip {
-  return createGafClip(failedTextures, linkage, manifest, textureUrl, atlasFallback);
+  return createGafClip(failedTextures, linkage, manifest, textureUrl, atlasFallback, options);
 }
 
 /**
@@ -126,8 +145,13 @@ export class GafMovieClip extends Container {
   private _timeline: GafTimelineSerialized | null = null;
   private _textureUrl = '';
   private _alphaMask = false;
+  private _hiddenNamedParts = new Set<string>();
+  private _hideUnnamedTextureInstances = false;
+  private _dedupeNamedParts = false;
+  private _nestedTimelineFrame: 'current' | 'first' = 'current';
 
   private _currentFrame = 1;
+  private _namedChildProps = new Set<string>();
   loop = true;
 
   constructor(failedTextures: Set<string>, spec: GafMovieClipSpec) {
@@ -142,6 +166,10 @@ export class GafMovieClip extends Container {
     this._manifest = spec.manifest;
     this._textureUrl = spec.textureUrl;
     this._alphaMask = !!spec.alphaMask;
+    this._hiddenNamedParts = new Set(spec.hiddenNamedParts ?? []);
+    this._hideUnnamedTextureInstances = !!spec.hideUnnamedTextureInstances;
+    this._dedupeNamedParts = !!spec.dedupeNamedParts;
+    this._nestedTimelineFrame = spec.nestedTimelineFrame ?? 'current';
     this._timeline = spec.manifest.timelinesById[spec.timelineId] ?? null;
     if (!this._timeline) {
       console.warn(`[GafMovieClip] Unknown timeline "${spec.timelineId}"`);
@@ -163,7 +191,7 @@ export class GafMovieClip extends Container {
     return this._timeline?.framesCount ?? 0;
   }
 
-  gotoAndStop(frame: number): void {
+  gotoAndStop(frame: number | string): void {
     this._currentFrame = this._clampFrame(frame);
     if (this._spec.kind === 'atlas') {
       this._renderAtlasFrame();
@@ -172,7 +200,7 @@ export class GafMovieClip extends Container {
     this._renderTimelineFrame();
   }
 
-  gotoAndPlay(frame: number): void {
+  gotoAndPlay(frame: number | string): void {
     this.gotoAndStop(frame);
   }
 
@@ -180,8 +208,8 @@ export class GafMovieClip extends Container {
 
   play(): void {}
 
-  private _clampFrame(frame: number): number {
-    const numeric = typeof frame === 'number' ? frame : Number(frame);
+  private _clampFrame(frame: number | string): number {
+    const numeric = this._resolveFrame(frame);
     if (!Number.isFinite(numeric) || numeric <= 0) return 1;
     const rounded = Math.round(numeric);
     if (this._spec.kind === 'atlas') {
@@ -193,7 +221,15 @@ export class GafMovieClip extends Container {
     return Math.max(1, Math.min(fc, rounded));
   }
 
+  private _resolveFrame(frame: number | string): number {
+    if (typeof frame !== 'string') return frame;
+    const sequence = this._timeline?.sequences?.[frame];
+    if (sequence) return sequence.startFrame;
+    return Number(frame);
+  }
+
   private _destroyLayerChildren(): void {
+    this._clearNamedChildProps();
     while (this.children.length > 0) {
       const child = this.removeChild(this.children[0]);
       if (!child.destroyed) {
@@ -201,6 +237,35 @@ export class GafMovieClip extends Container {
       }
     }
     this._sprite = null;
+  }
+
+  private _clearNamedChildProps(): void {
+    const self = this as unknown as Record<string, unknown>;
+    for (const prop of this._namedChildProps) {
+      delete self[prop];
+    }
+    this._namedChildProps.clear();
+  }
+
+  private _assignNamedChild(objectId: string, child: Container): void {
+    const name = this._timeline?.namedParts?.[objectId];
+    if (!name) return;
+    child.name = name;
+    (this as unknown as Record<string, Container>)[name] = child;
+    this._namedChildProps.add(name);
+  }
+
+  private _isHiddenNamedPart(objectId: string): boolean {
+    const name = this._timeline?.namedParts?.[objectId];
+    return !!name && this._hiddenNamedParts.has(name);
+  }
+
+  private _isUnnamedTextureInstance(objectId: string): boolean {
+    return !this._timeline?.namedParts?.[objectId];
+  }
+
+  private _namedPartName(objectId: string): string | null {
+    return this._timeline?.namedParts?.[objectId] ?? null;
   }
 
   private _renderAtlasFrame(): void {
@@ -233,12 +298,20 @@ export class GafMovieClip extends Container {
     const key = String(this._currentFrame);
     const raw = tl.frames[key] ?? [];
     const insts = [...raw].sort((a, b) => a.zIndex - b.zIndex);
+    const renderedNamedParts = new Set<string>();
 
     for (const inst of insts) {
       const ao = tl.animationObjects[inst.objectId];
       if (!ao || ao.mask) continue;
+      if (this._isHiddenNamedPart(inst.objectId)) continue;
+      const namedPartName = this._namedPartName(inst.objectId);
+      if (this._dedupeNamedParts && namedPartName) {
+        if (renderedNamedParts.has(namedPartName)) continue;
+        renderedNamedParts.add(namedPartName);
+      }
 
       if (ao.type === TYPE_TEXTURE) {
+        if (this._hideUnnamedTextureInstances && this._isUnnamedTextureInstance(inst.objectId)) continue;
         const el = manifest.elements[ao.regionId];
         if (!el) continue;
         if (this._failedTextures.has(this._textureUrl)) continue;
@@ -253,6 +326,7 @@ export class GafMovieClip extends Container {
         const world = composeWorldMatrix(instanceMatrix(inst.matrix), elementPivotMatrix(el));
         applyMatrixToDisplayObject(sprite, world);
         this.addChild(sprite);
+        this._assignNamedChild(inst.objectId, sprite);
         continue;
       }
 
@@ -264,12 +338,19 @@ export class GafMovieClip extends Container {
           kind: 'timeline',
           manifest,
           timelineId: nestedId,
-          textureUrl: this._textureUrl
+          textureUrl: this._textureUrl,
+          hiddenNamedParts: [...this._hiddenNamedParts],
+          hideUnnamedTextureInstances: this._hideUnnamedTextureInstances,
+          dedupeNamedParts: this._dedupeNamedParts,
+          nestedTimelineFrame: this._nestedTimelineFrame
         });
-        nested.gotoAndStop(this._currentFrame);
+        if (this._nestedTimelineFrame === 'current') {
+          nested.gotoAndStop(this._currentFrame);
+        }
         nested.alpha = clamp01(inst.alpha);
         applyMatrixToDisplayObject(nested, instanceMatrix(inst.matrix));
         this.addChild(nested);
+        this._assignNamedChild(inst.objectId, nested);
       }
     }
   }

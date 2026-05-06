@@ -31,9 +31,9 @@ export interface ActorPreviewSlot {
 }
 
 export const actorClipHierarchy = {
-  root: ['footContainer', 'capeClip.container', 'bodyAttachmentContainer'],
+  root: ['footContainer', 'capeClip.container', 'body'],
   footContainer: ['rightFoot.clip', 'leftFoot.clip'],
-  bodyAnimation: ['capeClip.container', 'rightHand.clip', 'leftHand.clip', 'headClip.container']
+  bodyAnimation: ['rightHand.clip', 'leftHand.clip', 'headClip.container']
 } as const;
 
 /**
@@ -46,24 +46,11 @@ export const actorClipHierarchy = {
 export const ACTOR_BODY_SCALE = 1;
 
 export const actorPreviewSlots = {
-  // Extracted from ActorClip body attachment placeholders in
-  // public/assets/gaf/twactor.gaf. Matrix values are PIXI-style: [a, b, c, d, tx, ty].
+  // Matrix values are PIXI-style: [a, b, c, d, tx, ty].
   cape: {
     // Old ActorClip positions capeClip.container from headClip.container; this slot only keeps the outer transform neutral.
     matrix: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 },
     fallbackSize: 40
-  },
-  rightHand: {
-    matrix: { a: 0.7856361269950867, b: -0.6143983602523804, c: 0.5733987092971802, d: 0.7332095503807068, tx: 11.75, ty: -15.899999618530273 },
-    fallbackSize: 32
-  },
-  leftHand: {
-    matrix: { a: 0.2947200536727905, b: -0.9527800679206848, c: -0.8891997337341309, d: -0.2750529944896698, tx: 24.549999237060547, ty: -2.799999952316284 },
-    fallbackSize: 32
-  },
-  head: {
-    matrix: { a: 1, b: 0, c: 0, d: 1, tx: 2.75, ty: 0.5 },
-    fallbackSize: 32
   },
 
   // Extracted from actor01_feet normal frame placeholders in twactor.gaf.

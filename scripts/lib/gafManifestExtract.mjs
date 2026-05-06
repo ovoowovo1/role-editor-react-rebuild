@@ -74,6 +74,18 @@ function serializeTimelineForRuntime(tl) {
     };
   }
 
+  const namedPartEntries = [...(tl.namedParts ?? [])];
+  const namedParts = {};
+  for (const [objId, name] of namedPartEntries) {
+    namedParts[objId] = name;
+  }
+
+  const sequenceEntries = [...(tl.sequences ?? [])];
+  const sequences = {};
+  for (const [id, sequence] of sequenceEntries) {
+    sequences[id] = sequence;
+  }
+
   /** @type {Record<string, { objectId:string, zIndex:number, alpha:number, maskId:null|string, matrix:any }[]>} */
   const framesObj = {};
 
@@ -104,6 +116,8 @@ function serializeTimelineForRuntime(tl) {
     bounds: tl.bounds,
     pivot: tl.pivot,
     animationObjects,
+    ...(namedPartEntries.length ? { namedParts } : {}),
+    ...(sequenceEntries.length ? { sequences } : {}),
     frames: framesObj
   };
 }

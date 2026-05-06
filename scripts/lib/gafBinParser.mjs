@@ -110,6 +110,8 @@ function createTimeline(versionMajor, versionMinor, id, assetId, framesCount, bo
     pivot,
     linkage,
     animationObjects: new Map(),
+    namedParts: new Map(),
+    sequences: new Map(),
     /** frameNumber -> instances[] */
     frames: new Map()
   };
@@ -299,19 +301,22 @@ function readAnimationObjects(tagID, r, timeline) {
   }
 }
 
-function skipAnimationSequences(r) {
+function readAnimationSequences(r, timeline) {
   const length = r.readUint32();
   for (let i = 0; i < length; i++) {
-    r.readUTF();
-    r.skip(4);
+    const id = r.readUTF();
+    const startFrame = r.readUint16();
+    const endFrame = r.readUint16();
+    if (id) timeline.sequences.set(id, { startFrame, endFrame });
   }
 }
 
-function skipNamedParts(r) {
+function readNamedParts(r, timeline) {
   const length = r.readUint32();
   for (let i = 0; i < length; i++) {
-    r.readUint32();
-    r.readUTF();
+    const objectId = String(r.readUint32());
+    const name = r.readUTF();
+    if (name) timeline.namedParts.set(objectId, name);
   }
 }
 
@@ -536,10 +541,18 @@ export function parseGafBinary(buffer, assetId = 'asset') {
         readAnimationFrames(tagID, r, cfg.activeTimeline);
         break;
       case TAG_DEFINE_NAMED_PARTS:
-        skipNamedParts(r);
+        if (!cfg.activeTimeline) {
+          r.skip(tagLength);
+          break;
+        }
+        readNamedParts(r, cfg.activeTimeline);
         break;
       case TAG_DEFINE_SEQUENCES:
-        skipAnimationSequences(r);
+        if (!cfg.activeTimeline) {
+          r.skip(tagLength);
+          break;
+        }
+        readAnimationSequences(r, cfg.activeTimeline);
         break;
       case TAG_DEFINE_TEXT_FIELDS:
         r.skip(tagLength);

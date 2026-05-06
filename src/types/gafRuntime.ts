@@ -37,6 +37,11 @@ export interface GafAnimationObjectSerialized {
   mask: boolean;
 }
 
+export interface GafSequenceSerialized {
+  startFrame: number;
+  endFrame: number;
+}
+
 export interface GafTimelineSerialized {
   id: string;
   linkage: string;
@@ -44,6 +49,9 @@ export interface GafTimelineSerialized {
   bounds: { x: number; y: number; width: number; height: number };
   pivot: { x: number; y: number };
   animationObjects: Record<string, GafAnimationObjectSerialized>;
+  /** GAF named parts, keyed by animation object id. Used by the actor body to expose rightHand/leftHand/headClip slots. */
+  namedParts?: Record<string, string>;
+  sequences?: Record<string, GafSequenceSerialized>;
   frames: Record<string, GafFrameInstanceSerialized[]>;
 }
 

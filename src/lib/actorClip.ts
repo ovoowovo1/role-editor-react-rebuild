@@ -2,7 +2,7 @@ import { Container, Matrix } from 'pixi.js';
 import { actorAtlasFrames, actorRuntimeManifest, gafSources } from '../mock/gafManifest';
 import { actorPreviewSlots, type ActorPreviewSlot } from './actorClipAdapter';
 import { actorPartRuntime } from './twlibPartRuntime';
-import { createActorGafClip, type GafMovieClip } from './gafMovieClip';
+import { createActorGafClip, type CreateGafClipOptions, type GafMovieClip } from './gafMovieClip';
 
 /**
  * Lightweight recreation of the TWLibLib ActorClip runtime hierarchy used by
@@ -47,15 +47,41 @@ function applySlotMatrix(target: Container, slot: ActorPreviewSlot): void {
   target.alpha = slot.alpha ?? 1;
 }
 
-function makeClip(library: string, failedTextures: Set<string>): GafMovieClip {
+function makeClip(
+  library: string,
+  failedTextures: Set<string>,
+  options: CreateGafClipOptions = {}
+): GafMovieClip {
   return createActorGafClip(
     failedTextures,
     library,
     actorRuntimeManifest,
     gafSources.actorTexture,
-    actorAtlasFrames[library] ?? []
+    actorAtlasFrames[library] ?? [],
+    options
   );
 }
+
+const ACTOR_BODY_LIBRARY = 'actor01_body';
+const ACTOR_BODY_IDLE_FRAME = 'IDLE_KONGFU_TYPE';
+const ACTOR_BODY_HIDDEN_EDITOR_PARTS = [
+  'weapon',
+  'weaponReload',
+  'blade',
+  'claw0',
+  'claw1',
+  'scope',
+  'weapon0',
+  'weapon1',
+  'weaponLeft',
+  'weaponRight'
+] as const;
+
+type NamedBodyAnimation = Container & {
+  rightHand?: Container;
+  leftHand?: Container;
+  headClip?: Container;
+};
 
 /**
  * ActorPart matches the old TWLibLib wrapper: it owns a MovieClip and exposes
@@ -167,28 +193,26 @@ type FootContainer = Container & {
  *         rightFoot.clip
  *       leftFootSlot           (slot: leftFoot matrix)
  *         leftFoot.clip
- *     capeClip.container       (slot: cape matrix)
+ *     capeClip.container
  *       capeClip.clip
- *     bodyAttachmentContainer
- *       rightHandSlot          (slot: rightHand matrix)
+ *     body                     (actor01_body GAF timeline)
+ *       animation.rightHand
  *         rightHand.clip
- *       leftHandSlot           (slot: leftHand matrix)
+ *       animation.leftHand
  *         leftHand.clip
- *       headClip.container     (slot: head matrix)
- *         headClip.clip
- *         [disguise]           (set via headClip.setDisguise)
+ *       animation.headClip
+ *         headClip.container
  *
- * Slot matrices live on dedicated slot holders so setFrame(scale) on the inner
- * clip does not overwrite the GAF placeholder transform.
+ * Body attachments intentionally use the old TWLibLib named GAF placeholders.
  */
 export class ActorClip extends Container {
   footContainer: FootContainer;
+  body: GafMovieClip;
   rightFoot: ActorFoot;
   leftFoot: ActorFoot;
   capeClip: ActorCape;
   rightHand: ActorHand;
   leftHand: ActorHand;
-  bodyAttachmentContainer: Container;
   headClip: ActorHead;
 
   constructor(failedTextures: Set<string>) {
@@ -200,6 +224,11 @@ export class ActorClip extends Container {
     this.leftHand = new ActorHand(failedTextures);
     this.capeClip = new ActorCape(failedTextures);
     this.headClip = new ActorHead(failedTextures);
+    this.body = makeClip(ACTOR_BODY_LIBRARY, failedTextures, {
+      hiddenNamedParts: ACTOR_BODY_HIDDEN_EDITOR_PARTS,
+      dedupeNamedParts: true,
+      nestedTimelineFrame: 'first'
+    });
 
     const footContainer = new Container() as FootContainer;
     footContainer.loop = true;
@@ -221,23 +250,53 @@ export class ActorClip extends Container {
     applySlotMatrix(this.capeClip.container, actorPreviewSlots.cape);
     this.addChild(this.capeClip.container);
 
-    this.bodyAttachmentContainer = new Container();
-
-    const rightHandSlot = new Container();
-    applySlotMatrix(rightHandSlot, actorPreviewSlots.rightHand);
-    rightHandSlot.addChild(this.rightHand.clip);
-    this.bodyAttachmentContainer.addChild(rightHandSlot);
-
-    const leftHandSlot = new Container();
-    applySlotMatrix(leftHandSlot, actorPreviewSlots.leftHand);
-    leftHandSlot.addChild(this.leftHand.clip);
-    this.bodyAttachmentContainer.addChild(leftHandSlot);
-
-    applySlotMatrix(this.headClip.container, actorPreviewSlots.head);
-    this.bodyAttachmentContainer.addChild(this.headClip.container);
-
-    this.addChild(this.bodyAttachmentContainer);
+    this.resetBodyFrame();
+    this.addChild(this.body);
     this.syncCapeToHead();
+  }
+
+  get bodyAnimation(): NamedBodyAnimation | null {
+    const named = (this.body as unknown as { animation?: Container }).animation;
+    if (named instanceof Container) return named as NamedBodyAnimation;
+    for (let index = this.body.children.length - 1; index >= 0; index--) {
+      const child = this.body.children[index];
+      if (child instanceof Container) return child as NamedBodyAnimation;
+    }
+    return null;
+  }
+
+  resetBodyFrame(): void {
+    this.setBodyFrame(ACTOR_BODY_IDLE_FRAME);
+  }
+
+  setBodyFrame(frame: number | string): void {
+    this.detachBodyParts();
+    this.body.gotoAndStop(frame);
+    this.attachBodyParts();
+  }
+
+  private attachBodyParts(animation: NamedBodyAnimation | null = this.bodyAnimation): void {
+    if (!animation) return;
+    this.attachBodyPart(animation.rightHand, this.rightHand.clip);
+    this.attachBodyPart(animation.leftHand, this.leftHand.clip);
+    this.attachBodyPart(animation.headClip, this.headClip.container);
+  }
+
+  private attachBodyPart(slot: Container | undefined, part: Container): void {
+    if (!slot || part.parent === slot) return;
+    slot.addChild(part);
+  }
+
+  private detachBodyParts(): void {
+    this.detachBodyPart(this.rightHand.clip);
+    this.detachBodyPart(this.leftHand.clip);
+    this.detachBodyPart(this.headClip.container);
+  }
+
+  private detachBodyPart(part: Container): void {
+    if (part.parent) {
+      part.parent.removeChild(part);
+    }
   }
 
   private syncCapeToHead(): void {
