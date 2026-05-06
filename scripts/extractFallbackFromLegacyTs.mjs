@@ -77,10 +77,13 @@ function main() {
     assetManifest: {
       decorations: '/assets/gaf/decorations.gaf',
       actor: '/assets/gaf/twactor.gaf',
+      assets: '/assets/gaf/twassests.gaf',
       decorationsTexture: '/assets/gaf/decorations.png',
       actorTexture: '/assets/gaf/twactor.png',
+      assetsTexture: '/assets/gaf/twassests.png',
       decorationsTextureName: 'decorations.png',
-      actorTextureName: 'twactor.png'
+      actorTextureName: 'twactor.png',
+      assetsTextureName: 'twassests.png'
     },
     decorationGafSymbols: extractSymbols(ts),
     decorationAtlasFrameData: JSON.parse(stripTrailingCommas(decoObjRaw)),

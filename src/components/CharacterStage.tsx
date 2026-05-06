@@ -465,6 +465,7 @@ export function CharacterStage({
     let cancelled = false;
     const buildRole = roleRef.current;
     const urls = collectAtlasTextureUrlsForRole(buildRole);
+    urls.push(gafSources.assetsTexture);
 
     partitionAtlasTextureUrls(urls).then(({ failed: failedTextures }) => {
       if (cancelled || buildId !== stageBuildGenerationRef.current) return;

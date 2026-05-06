@@ -14,10 +14,13 @@ export type ActorGafRuntimeManifest = GafRuntimeManifest;
 export interface GafAssetManifest {
   decorations: string;
   actor: string;
+  assets: string;
   decorationsTexture: string;
   actorTexture: string;
+  assetsTexture: string;
   decorationsTextureName: string;
   actorTextureName: string;
+  assetsTextureName: string;
 }
 
 interface GeneratedGafManifest {
@@ -34,6 +37,8 @@ interface GeneratedGafManifest {
   };
   /** Present when built from decorations.gaf (schema >= 2); optional in scripts/gafManifest.fallback.json */
   decorationRuntime?: GafRuntimeManifest;
+  /** Present when built from twassests.gaf (schema >= 2); optional in scripts/gafManifest.fallback.json */
+  assetsRuntime?: GafRuntimeManifest;
   /** Present when built from twactor.gaf (schema >= 2); optional in scripts/gafManifest.fallback.json */
   actorRuntime?: GafRuntimeManifest;
 }
@@ -84,4 +89,5 @@ export const actorAtlasFrames: Record<string, GafAtlasFrame[]> = withTextureList
 export const actorFallbackFrameCounts = manifest.actorFallbackFrameCounts;
 
 export const decorationRuntimeManifest: GafRuntimeManifest | undefined = manifest.decorationRuntime;
+export const assetsRuntimeManifest: GafRuntimeManifest | undefined = manifest.assetsRuntime;
 export const actorRuntimeManifest: GafRuntimeManifest | undefined = manifest.actorRuntime;

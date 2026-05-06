@@ -1,9 +1,15 @@
 import { Container, Matrix } from 'pixi.js';
-import { actorAtlasFrames, actorRuntimeManifest, gafSources } from '../mock/gafManifest';
+import { actorAtlasFrames, actorRuntimeManifest, assetsRuntimeManifest, gafSources } from '../mock/gafManifest';
 import { actorPreviewSlots, type ActorPreviewSlot } from './actorClipAdapter';
 import { actorPartRuntime } from './twlibPartRuntime';
 import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from './actorBodyAnimation';
-import { createActorGafClip, type CreateGafClipOptions, type GafMovieClip } from './gafMovieClip';
+import {
+  createActorGafClip,
+  createGafClip,
+  resolveGafTimelineId,
+  type CreateGafClipOptions,
+  type GafMovieClip
+} from './gafMovieClip';
 
 /**
  * Lightweight recreation of the TWLibLib ActorClip runtime hierarchy used by
@@ -63,6 +69,49 @@ function makeClip(
   );
 }
 
+function bodyFrameNameFromLabel(label: string): string {
+  return label.replace(/^(IDLE|FIRE|RELOAD)_/, '');
+}
+
+function findWeaponPreviewConfig(label: string): WeaponPreviewConfig | null {
+  const frameName = bodyFrameNameFromLabel(label);
+  if (frameName === 'KONGFU_TYPE') return null;
+  return WEAPON_PREVIEW_CONFIGS.find((config) => frameName.startsWith(config.frameName)) ?? null;
+}
+
+function resolvePreviewClip(linkage: string | undefined, preferredSource?: WeaponClipSource): WeaponPreviewClipConfig | null {
+  if (!linkage) return null;
+
+  const hasActorClip = !!actorRuntimeManifest && !!resolveGafTimelineId(actorRuntimeManifest, linkage);
+  const hasAssetsClip = !!assetsRuntimeManifest && !!resolveGafTimelineId(assetsRuntimeManifest, linkage);
+
+  if (preferredSource === 'actor' && hasActorClip) return { linkage, source: 'actor' };
+  if (preferredSource === 'assets' && hasAssetsClip) return { linkage, source: 'assets' };
+  if (hasAssetsClip) return { linkage, source: 'assets' };
+  if (hasActorClip) return { linkage, source: 'actor' };
+  return null;
+}
+
+function resolveWeaponClipConfig(config: WeaponPreviewConfig): WeaponPreviewClipConfig | null {
+  return (
+    resolvePreviewClip(config.animClip?.weapon, 'actor') ??
+    resolvePreviewClip(config.weaponClip) ??
+    resolvePreviewClip(config.clip)
+  );
+}
+
+function resolveReloadClipConfig(config: WeaponPreviewConfig): WeaponPreviewClipConfig | null {
+  return resolvePreviewClip(config.animClip?.reload, 'actor') ?? resolvePreviewClip(config.weaponClip) ?? resolvePreviewClip(config.clip);
+}
+
+function clearSlotChildren(slot: Container): void {
+  for (const child of slot.removeChildren()) {
+    if (!child.destroyed) {
+      child.destroy({ children: true });
+    }
+  }
+}
+
 const ACTOR_BODY_LIBRARY = 'actor01_body';
 
 type NamedBodyAnimation = Container & {
@@ -70,6 +119,67 @@ type NamedBodyAnimation = Container & {
   leftHand?: Container;
   headClip?: Container;
 };
+
+type WeaponClipSource = 'actor' | 'assets';
+
+interface WeaponPreviewClipConfig {
+  linkage: string;
+  source: WeaponClipSource;
+}
+
+interface WeaponPreviewConfig {
+  frameName: string;
+  clip: string;
+  weaponClip?: string;
+  animClip?: {
+    weapon?: string;
+    reload?: string;
+  };
+}
+
+const WEAPON_PREVIEW_CONFIGS: readonly WeaponPreviewConfig[] = [
+  { frameName: 'HANDGUN_TYPE', clip: 'lib_handgun', animClip: { weapon: 'anim_handgun', reload: 'anim_handgun_reload' } },
+  { frameName: 'RIFLE_TYPE', clip: 'lib_rifle', animClip: { weapon: 'anim_rifle', reload: 'anim_rifle_reload' } },
+  { frameName: 'SNIPEGUN_TYPE', clip: 'lib_snipegun', animClip: { weapon: 'anim_sniper', reload: 'anim_sniper_reload' } },
+  { frameName: 'SHOTGUN_TYPE', clip: 'lib_shotgun', animClip: { weapon: 'anim_shotgun', reload: 'anim_shotgun_reload' } },
+  { frameName: 'BOW_TYPE', clip: 'lib_bow' },
+  {
+    frameName: 'ANAESTHETIC',
+    clip: 'lib_weapon_anaesthetic',
+    animClip: { weapon: 'anim_anaestheticRifle', reload: 'anim_anaestheticRifle_reload' }
+  },
+  {
+    frameName: 'FLAMETHROWER_TYPE',
+    clip: 'lib_weapon_icon_flamethrower',
+    animClip: { weapon: 'anim_flamethrower', reload: 'anim_flamethrower_reload' }
+  },
+  { frameName: 'LAUNCHER_TYPE', clip: 'lib_weapon_icon_launcher', animClip: { weapon: 'anim_rocketlauncher' } },
+  {
+    frameName: 'DOUBLEGUNS_TYPE',
+    clip: 'lib_doubleguns',
+    animClip: { weapon: 'anim_silvereagle', reload: 'anim_silvereagle_reload' }
+  },
+  { frameName: 'GATLING', clip: 'lib_icon_gatling', weaponClip: 'lib_weapon_gatling' },
+  { frameName: 'LASERGUN', clip: 'lib_weapon_lasergun', animClip: { weapon: 'anim_lasergun' } },
+  { frameName: 'SHURIKEN', clip: 'lib_shuriken_icon' },
+  { frameName: 'MINIGUN', clip: 'lib_minigun', animClip: { weapon: 'anim_minigun' } },
+  { frameName: 'KNIFE_TYPE', clip: 'lib_knife' },
+  { frameName: 'HOOK_TYPE', clip: 'lib_hook' },
+  { frameName: 'SWORD_TYPE', clip: 'lib_sword' },
+  { frameName: 'SHIELD_TYPE', clip: 'lib_shieldweapon' },
+  { frameName: 'FRISBEE_TYPE', clip: 'lib_frisbee' },
+  { frameName: 'SCYTHE', clip: 'lib_weapon_scythe' },
+  { frameName: 'GIANTAXE_TYPE', clip: 'lib_giantAxe' },
+  { frameName: 'GRENADE_TYPE', clip: 'lib_timebomb' },
+  { frameName: 'ICESABER_TYPE', clip: 'lib_icon_icesaber' },
+  { frameName: 'ESHOSTSTAFF', clip: 'lib_icon_eshoststaff' },
+  { frameName: 'BITE_TYPE', clip: 'lib_zombie_claw' },
+  { frameName: 'SPIT_TYPE', clip: 'lib_zombie_claw' },
+  { frameName: 'NUNCHAKU', clip: 'lib_weapon_nunchaku' },
+  { frameName: 'BLADE_TYPE', clip: 'lib_actor_blade' },
+  { frameName: 'REVENGE_BLADE', clip: 'lib_actor_blade' },
+  { frameName: 'MAGIC_WAND', clip: 'lib_weapon_magicwand' }
+];
 
 /**
  * ActorPart matches the old TWLibLib wrapper: it owns a MovieClip and exposes
@@ -202,10 +312,14 @@ export class ActorClip extends Container {
   rightHand: ActorHand;
   leftHand: ActorHand;
   headClip: ActorHead;
+  private readonly _failedTextures: Set<string>;
+  private _bodyAnimationLabel: string;
 
   constructor(failedTextures: Set<string>, bodyAnimationLabel = DEFAULT_ACTOR_BODY_ANIMATION_LABEL) {
     super();
 
+    this._failedTextures = failedTextures;
+    this._bodyAnimationLabel = bodyAnimationLabel;
     this.rightFoot = new ActorFoot(failedTextures);
     this.leftFoot = new ActorFoot(failedTextures);
     this.rightHand = new ActorHand(failedTextures);
@@ -264,9 +378,13 @@ export class ActorClip extends Container {
   }
 
   setBodyFrame(frame: number | string): void {
+    if (typeof frame === 'string') {
+      this._bodyAnimationLabel = frame;
+    }
     this.detachBodyParts();
     this.body.gotoAndStop(frame);
     this.attachBodyParts();
+    this.attachWeaponParts();
     if (this.headClip.container.parent) this.syncCapeToHead();
   }
 
@@ -292,6 +410,59 @@ export class ActorClip extends Container {
     if (part.parent) {
       part.parent.removeChild(part);
     }
+  }
+
+  private attachWeaponParts(animation: NamedBodyAnimation | null = this.bodyAnimation): void {
+    if (!animation) return;
+    const weaponConfig = findWeaponPreviewConfig(this._bodyAnimationLabel);
+    if (!weaponConfig) return;
+
+    const weaponClip = resolveWeaponClipConfig(weaponConfig);
+    const reloadClip = resolveReloadClipConfig(weaponConfig);
+    const sequenceFrame = this.getBodySequenceFrame();
+
+    for (const child of animation.children) {
+      if (!(child instanceof Container) || !child.name) continue;
+      if (child.name.startsWith('weaponReload')) {
+        this.attachWeaponClip(child, reloadClip, sequenceFrame);
+      } else if (child.name.startsWith('weapon')) {
+        this.attachWeaponClip(child, weaponClip, sequenceFrame);
+      }
+    }
+  }
+
+  private attachWeaponClip(slot: Container, config: WeaponPreviewClipConfig | null, frame: number): void {
+    clearSlotChildren(slot);
+    if (!config) return;
+    const clip = this.createWeaponClip(config);
+    clip.name = 'weaponPreview';
+    clip.gotoAndStop(frame);
+    slot.addChild(clip);
+  }
+
+  private createWeaponClip(config: WeaponPreviewClipConfig): GafMovieClip {
+    if (config.source === 'actor') {
+      return createActorGafClip(
+        this._failedTextures,
+        config.linkage,
+        actorRuntimeManifest,
+        gafSources.actorTexture,
+        actorAtlasFrames[config.linkage] ?? []
+      );
+    }
+    return createGafClip(
+      this._failedTextures,
+      config.linkage,
+      assetsRuntimeManifest,
+      gafSources.assetsTexture,
+      []
+    );
+  }
+
+  private getBodySequenceFrame(): number {
+    const active = this.body.getActiveSequenceRange();
+    if (!active) return this.body.currentFrame;
+    return this.body.currentFrame - active.startFrame + 1;
   }
 
   private syncCapeToHead(): void {

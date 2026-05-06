@@ -28,8 +28,10 @@ const OUT = path.join(root, 'src', 'generated', 'gafManifest.json');
 
 const DEC_GAF = path.join(GAFDIR, 'decorations.gaf');
 const ACT_GAF = path.join(GAFDIR, 'twactor.gaf');
+const ASSETS_GAF = path.join(GAFDIR, 'twassests.gaf');
 const DEC_PNG = path.join(GAFDIR, 'decorations.png');
 const ACT_PNG = path.join(GAFDIR, 'twactor.png');
+const ASSETS_PNG = path.join(GAFDIR, 'twassests.png');
 
 function copyFallback(reason) {
   if (!fs.existsSync(FALLBACK)) {
@@ -81,21 +83,26 @@ async function main() {
     return;
   }
 
-  if (!fs.existsSync(DEC_GAF) || !fs.existsSync(ACT_GAF)) {
-    copyFallback(`Missing ${path.relative(root, DEC_GAF)} or ${path.relative(root, ACT_GAF)}`);
+  if (!fs.existsSync(DEC_GAF) || !fs.existsSync(ACT_GAF) || !fs.existsSync(ASSETS_GAF)) {
+    copyFallback(
+      `Missing ${path.relative(root, DEC_GAF)}, ${path.relative(root, ACT_GAF)}, or ${path.relative(root, ASSETS_GAF)}`
+    );
     return;
   }
 
   const decBuf = await loadGafPayload(DEC_GAF, 'decorations.gaf');
   const actBuf = await loadGafPayload(ACT_GAF, 'twactor.gaf');
+  const assetsBuf = await loadGafPayload(ASSETS_GAF, 'twassests.gaf');
 
   const decParsed = parseGafBinary(decBuf, 'decorations');
   const actParsed = parseGafBinary(actBuf, 'twactor');
+  const assetsParsed = parseGafBinary(assetsBuf, 'twassests');
 
   const deco = extractDecorationSlice(decParsed);
   const actor = extractActorSlice(actParsed);
   const { decorationRuntime } = extractDecorationRuntime(decParsed);
   const { actorRuntime } = extractActorRuntime(actParsed, actor.actorAtlasFrameData);
+  const assetsRuntime = extractDecorationRuntime(assetsParsed).decorationRuntime;
 
   if (fs.existsSync(DEC_PNG)) {
     const dims = readPngDimensions(fs.readFileSync(DEC_PNG));
@@ -111,6 +118,22 @@ async function main() {
     console.warn(`[generate:gaf] Optional ${path.relative(root, ACT_PNG)} not found — skipping PNG bounds check`);
   }
 
+  if (fs.existsSync(ASSETS_PNG)) {
+    const dims = readPngDimensions(fs.readFileSync(ASSETS_PNG));
+    validateAtlasAgainstPng(
+      'twassests.png',
+      Object.values(assetsRuntime.elements).map((el) => ({
+        x: el.region.x,
+        y: el.region.y,
+        width: el.region.width,
+        height: el.region.height
+      })),
+      dims
+    );
+  } else {
+    console.warn(`[generate:gaf] Optional ${path.relative(root, ASSETS_PNG)} not found - skipping PNG bounds check`);
+  }
+
   const payload = {
     schemaVersion: 2,
     generatedAt: new Date().toISOString(),
@@ -118,14 +141,18 @@ async function main() {
     assetManifest: {
       decorations: '/assets/gaf/decorations.gaf',
       actor: '/assets/gaf/twactor.gaf',
+      assets: '/assets/gaf/twassests.gaf',
       decorationsTexture: '/assets/gaf/decorations.png',
       actorTexture: '/assets/gaf/twactor.png',
+      assetsTexture: '/assets/gaf/twassests.png',
       decorationsTextureName: 'decorations.png',
-      actorTextureName: 'twactor.png'
+      actorTextureName: 'twactor.png',
+      assetsTextureName: 'twassests.png'
     },
     decorationGafSymbols: deco.decorationGafSymbols,
     decorationAtlasFrameData: deco.decorationAtlasFrameData,
     decorationRuntime,
+    assetsRuntime,
     actorAtlasFrameData: actor.actorAtlasFrameData,
     actorFallbackFrameCounts: actor.actorFallbackFrameCounts,
     actorRuntime
