@@ -6,6 +6,7 @@ interface EditControlsProps {
   editValues: TransformValues;
   selectedCount: number;
   bodyAnimationLabel: string;
+  bodyAnimationPlaying: boolean;
   stageScale: number;
   positionRange: number;
   stageMinScale: number;
@@ -21,6 +22,9 @@ interface EditControlsProps {
   onMirrorCopyVertical(): void;
   onFaceRotate(): void;
   onOpenWeaponAnimation(): void;
+  onStartWeaponAnimation(): void;
+  onStopWeaponAnimation(): void;
+  onRestartWeaponAnimation(): void;
   onStageScaleChange(scale: number): void;
 }
 
@@ -81,6 +85,7 @@ export function EditControls({
   editValues,
   selectedCount,
   bodyAnimationLabel,
+  bodyAnimationPlaying,
   stageScale,
   positionRange,
   stageMinScale,
@@ -95,6 +100,9 @@ export function EditControls({
   onMirrorCopyVertical,
   onFaceRotate,
   onOpenWeaponAnimation,
+  onStartWeaponAnimation,
+  onStopWeaponAnimation,
+  onRestartWeaponAnimation,
   onStageScaleChange
 }: EditControlsProps) {
   const pr = Math.max(1, positionRange);
@@ -165,6 +173,43 @@ export function EditControls({
           >
             <span className="material-icons" aria-hidden="true">
               sports_martial_arts
+            </span>
+          </button>
+        </div>
+        <div className="tool playback-tool" aria-label="Weapon animation playback">
+          <button
+            type="button"
+            className="tool-icon-btn"
+            disabled={bodyAnimationPlaying}
+            onClick={onStartWeaponAnimation}
+            aria-label="Start weapon animation"
+            title="Start"
+          >
+            <span className="material-icons" aria-hidden="true">
+              play_arrow
+            </span>
+          </button>
+          <button
+            type="button"
+            className="tool-icon-btn"
+            disabled={!bodyAnimationPlaying}
+            onClick={onStopWeaponAnimation}
+            aria-label="Stop weapon animation"
+            title="Stop"
+          >
+            <span className="material-icons" aria-hidden="true">
+              stop
+            </span>
+          </button>
+          <button
+            type="button"
+            className="tool-icon-btn"
+            onClick={onRestartWeaponAnimation}
+            aria-label="Restart weapon animation"
+            title="Restart"
+          >
+            <span className="material-icons" aria-hidden="true">
+              replay
             </span>
           </button>
         </div>

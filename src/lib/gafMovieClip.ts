@@ -4,6 +4,7 @@ import type {
   GafRuntimeManifest,
   GafElementSerialized,
   GafFrameInstanceSerialized,
+  GafSequenceSerialized,
   GafTimelineSerialized
 } from '../types/gafRuntime';
 import type { GafAtlasFrame } from '../types/role';
@@ -11,6 +12,7 @@ import { applyGafAtlasToSprite } from './gafAtlasSprite';
 
 const TYPE_TEXTURE = 'texture';
 const TYPE_TIMELINE = 'timeline';
+type NestedTimelineFrameMode = 'current' | 'first' | 'sequence-relative';
 
 export type GafMovieClipSpec =
   | { kind: 'atlas'; frames: readonly GafAtlasFrame[] }
@@ -23,7 +25,7 @@ export type GafMovieClipSpec =
       hiddenNamedParts?: readonly string[];
       hideUnnamedTextureInstances?: boolean;
       dedupeNamedParts?: boolean;
-      nestedTimelineFrame?: 'current' | 'first';
+      nestedTimelineFrame?: NestedTimelineFrameMode;
     };
 
 export interface CreateGafClipOptions {
@@ -31,7 +33,7 @@ export interface CreateGafClipOptions {
   hiddenNamedParts?: readonly string[];
   hideUnnamedTextureInstances?: boolean;
   dedupeNamedParts?: boolean;
-  nestedTimelineFrame?: 'current' | 'first';
+  nestedTimelineFrame?: NestedTimelineFrameMode;
 }
 
 function clamp01(a: number): number {
@@ -148,9 +150,10 @@ export class GafMovieClip extends Container {
   private _hiddenNamedParts = new Set<string>();
   private _hideUnnamedTextureInstances = false;
   private _dedupeNamedParts = false;
-  private _nestedTimelineFrame: 'current' | 'first' = 'current';
+  private _nestedTimelineFrame: NestedTimelineFrameMode = 'current';
 
   private _currentFrame = 1;
+  private _activeSequenceRange: GafSequenceSerialized | null = null;
   private _namedChildProps = new Set<string>();
   loop = true;
 
@@ -192,7 +195,11 @@ export class GafMovieClip extends Container {
   }
 
   gotoAndStop(frame: number | string): void {
-    this._currentFrame = this._clampFrame(frame);
+    const resolved = this._resolveFrame(frame);
+    if (typeof frame === 'string') {
+      this._activeSequenceRange = resolved.sequence;
+    }
+    this._currentFrame = this._clampNumericFrame(resolved.frame);
     if (this._spec.kind === 'atlas') {
       this._renderAtlasFrame();
       return;
@@ -208,8 +215,16 @@ export class GafMovieClip extends Container {
 
   play(): void {}
 
-  private _clampFrame(frame: number | string): number {
-    const numeric = this._resolveFrame(frame);
+  getActiveSequenceRange(): GafSequenceSerialized | null {
+    return this._activeSequenceRange;
+  }
+
+  getSequenceRange(label: string): GafSequenceSerialized | null {
+    return this._timeline?.sequences?.[label] ?? null;
+  }
+
+  private _clampNumericFrame(frame: number): number {
+    const numeric = frame;
     if (!Number.isFinite(numeric) || numeric <= 0) return 1;
     const rounded = Math.round(numeric);
     if (this._spec.kind === 'atlas') {
@@ -221,11 +236,19 @@ export class GafMovieClip extends Container {
     return Math.max(1, Math.min(fc, rounded));
   }
 
-  private _resolveFrame(frame: number | string): number {
-    if (typeof frame !== 'string') return frame;
+  private _resolveFrame(frame: number | string): { frame: number; sequence: GafSequenceSerialized | null } {
+    if (typeof frame !== 'string') return { frame, sequence: null };
     const sequence = this._timeline?.sequences?.[frame];
-    if (sequence) return sequence.startFrame;
-    return Number(frame);
+    if (sequence) return { frame: sequence.startFrame, sequence };
+    return { frame: Number(frame), sequence: null };
+  }
+
+  private _nestedFrameForChild(): number {
+    if (this._nestedTimelineFrame === 'first') return 1;
+    if (this._nestedTimelineFrame === 'sequence-relative' && this._activeSequenceRange) {
+      return this._currentFrame - this._activeSequenceRange.startFrame + 1;
+    }
+    return this._currentFrame;
   }
 
   private _destroyLayerChildren(): void {
@@ -344,9 +367,7 @@ export class GafMovieClip extends Container {
           dedupeNamedParts: this._dedupeNamedParts,
           nestedTimelineFrame: this._nestedTimelineFrame
         });
-        if (this._nestedTimelineFrame === 'current') {
-          nested.gotoAndStop(this._currentFrame);
-        }
+        nested.gotoAndStop(this._nestedFrameForChild());
         nested.alpha = clamp01(inst.alpha);
         applyMatrixToDisplayObject(nested, instanceMatrix(inst.matrix));
         this.addChild(nested);

@@ -462,16 +462,23 @@ input:disabled {
 .tool-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .tool-row .tool {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  flex-wrap: wrap;
   padding: 4px 6px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.42);
   border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.tool-row .playback-tool {
+  flex: 0 0 auto;
 }
 
 .tool-icon-btn {

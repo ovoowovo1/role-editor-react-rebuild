@@ -214,7 +214,7 @@ export class ActorClip extends Container {
     this.headClip = new ActorHead(failedTextures);
     this.body = makeClip(ACTOR_BODY_LIBRARY, failedTextures, {
       dedupeNamedParts: true,
-      nestedTimelineFrame: 'first'
+      nestedTimelineFrame: 'sequence-relative'
     });
 
     const footContainer = new Container() as FootContainer;
@@ -256,10 +256,18 @@ export class ActorClip extends Container {
     this.setBodyFrame(DEFAULT_ACTOR_BODY_ANIMATION_LABEL);
   }
 
+  getBodyFrameRange(label = DEFAULT_ACTOR_BODY_ANIMATION_LABEL): { startFrame: number; endFrame: number } {
+    const active = this.body.getActiveSequenceRange();
+    const selected = this.body.getSequenceRange(label);
+    const fallbackFrame = this.body.currentFrame;
+    return active ?? selected ?? { startFrame: fallbackFrame, endFrame: fallbackFrame };
+  }
+
   setBodyFrame(frame: number | string): void {
     this.detachBodyParts();
     this.body.gotoAndStop(frame);
     this.attachBodyParts();
+    if (this.headClip.container.parent) this.syncCapeToHead();
   }
 
   private attachBodyParts(animation: NamedBodyAnimation | null = this.bodyAnimation): void {

@@ -146,6 +146,8 @@ export function EditorShell() {
   const [insertSettingsOpen, setInsertSettingsOpen] = useState(false);
   const [weaponAnimationOpen, setWeaponAnimationOpen] = useState(false);
   const [bodyAnimationLabel, setBodyAnimationLabel] = useState(DEFAULT_ACTOR_BODY_ANIMATION_LABEL);
+  const [bodyAnimationPlaying, setBodyAnimationPlaying] = useState(false);
+  const [bodyAnimationRestartKey, setBodyAnimationRestartKey] = useState(0);
   const [facingQuarterTurns, setFacingQuarterTurns] = useState(0);
   const [topBarMode, setTopBarMode] = useState<TopBarMode>(editor.selectedTab);
 
@@ -276,6 +278,8 @@ export function EditorShell() {
                 role={editor.role}
                 selectedIds={editor.selectedDecorationIds}
                 bodyAnimationLabel={bodyAnimationLabel}
+                bodyAnimationPlaying={bodyAnimationPlaying}
+                bodyAnimationRestartKey={bodyAnimationRestartKey}
                 stageScale={editor.stageScale}
                 facingQuarterTurns={facingQuarterTurns}
                 onSelectDecoration={editor.selectDecoration}
@@ -290,6 +294,7 @@ export function EditorShell() {
               faceAlwaysEnabled
               selectedCount={editor.selectedDecorationIds.length}
               bodyAnimationLabel={bodyAnimationLabel}
+              bodyAnimationPlaying={bodyAnimationPlaying}
               editValues={editor.editValues}
               stageScale={editor.stageScale}
               positionRange={editor.role.positionRange ?? 60}
@@ -305,6 +310,12 @@ export function EditorShell() {
               onMirrorCopyVertical={editor.mirrorCopyVerticalSelected}
               onFaceRotate={() => setFacingQuarterTurns((turns) => (turns + 1) % 4)}
               onOpenWeaponAnimation={() => setWeaponAnimationOpen(true)}
+              onStartWeaponAnimation={() => setBodyAnimationPlaying(true)}
+              onStopWeaponAnimation={() => setBodyAnimationPlaying(false)}
+              onRestartWeaponAnimation={() => {
+                setBodyAnimationRestartKey((key) => key + 1);
+                setBodyAnimationPlaying(false);
+              }}
               onStageScaleChange={editor.setStageScale}
             />
           </section>
@@ -346,6 +357,8 @@ export function EditorShell() {
           value={bodyAnimationLabel}
           onChange={(label) => {
             setBodyAnimationLabel(label);
+            setBodyAnimationRestartKey((key) => key + 1);
+            setBodyAnimationPlaying(true);
             setStatus(`Preview weapon animation: ${label}`);
           }}
           onClose={() => setWeaponAnimationOpen(false)}

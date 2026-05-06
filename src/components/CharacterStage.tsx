@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Application, Container, FederatedPointerEvent, Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
 import type { BodyPartTab, DecorationLayer, PartOption, RoleDocument } from '../types/role';
 import { getBodyPartOption, optionById } from '../mock/options';
@@ -23,6 +23,8 @@ interface CharacterStageProps {
   role: RoleDocument;
   selectedIds: string[];
   bodyAnimationLabel: string;
+  bodyAnimationPlaying: boolean;
+  bodyAnimationRestartKey: number;
   stageScale: number;
   facingQuarterTurns: number;
   onSelectDecoration(id: string, additive: boolean): void;
@@ -50,6 +52,7 @@ interface DecoDisplayRecord {
 
 interface StageSceneState {
   actorStage: Container;
+  actorClip: ActorClip;
   disguiseRoot: Container;
   headLayerClip: GafMovieClip;
   failedTextures: Set<string>;
@@ -58,6 +61,7 @@ interface StageSceneState {
 }
 
 const ALPHA_MASK_DECO_CODES = new Set(['third_deco_34', 'third_deco_05', 'skydow_deco_302']);
+const BODY_ANIMATION_FRAME_MS = 1000 / 12;
 
 function actorSceneKey(role: RoleDocument, bodyAnimationLabel: string): string {
   return JSON.stringify({
@@ -371,6 +375,8 @@ export function CharacterStage({
   role,
   selectedIds,
   bodyAnimationLabel,
+  bodyAnimationPlaying,
+  bodyAnimationRestartKey,
   stageScale,
   facingQuarterTurns,
   onSelectDecoration,
@@ -395,6 +401,8 @@ export function CharacterStage({
   });
   const stageBuildGenerationRef = useRef(0);
   const stageTeardownRef = useRef<(() => void) | null>(null);
+  const [sceneVersion, setSceneVersion] = useState(0);
+  const lastPlaybackResetRef = useRef({ sceneVersion: -1, label: '', restartKey: -1 });
   const sceneKey = actorSceneKey(role, bodyAnimationLabel);
 
   useEffect(() => {
@@ -506,6 +514,7 @@ export function CharacterStage({
 
       const scene: StageSceneState = {
         actorStage,
+        actorClip,
         disguiseRoot,
         headLayerClip,
         failedTextures,
@@ -513,6 +522,7 @@ export function CharacterStage({
         updatePosition
       };
       sceneRef.current = scene;
+      setSceneVersion((version) => version + 1);
 
       const decoOptions: DisguiseDecoOptions = {
         onPointerDown: (id, event, root) => {
@@ -633,6 +643,55 @@ export function CharacterStage({
     applyHeadLayerDisplayTransform(scene.headLayerClip, role);
     syncDecorationDisplays(scene, role, selectedIds, decoOptions);
   }, [role, selectedIds]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const lastReset = lastPlaybackResetRef.current;
+    if (
+      lastReset.sceneVersion !== sceneVersion ||
+      lastReset.label !== bodyAnimationLabel ||
+      lastReset.restartKey !== bodyAnimationRestartKey
+    ) {
+      scene.actorClip.setBodyFrame(bodyAnimationLabel);
+      lastPlaybackResetRef.current = {
+        sceneVersion,
+        label: bodyAnimationLabel,
+        restartKey: bodyAnimationRestartKey
+      };
+    }
+
+    if (!bodyAnimationPlaying) return;
+
+    let rafId = 0;
+    let lastTime = performance.now();
+    let accumulated = 0;
+
+    const advanceFrame = () => {
+      const currentScene = sceneRef.current;
+      if (currentScene !== scene || scene.actorClip.destroyed) return;
+      const range = scene.actorClip.getBodyFrameRange(bodyAnimationLabel);
+      const currentFrame = scene.actorClip.body.currentFrame;
+      const nextFrame = currentFrame >= range.endFrame ? range.startFrame : currentFrame + 1;
+      scene.actorClip.setBodyFrame(nextFrame);
+    };
+
+    const tick = (time: number) => {
+      const currentScene = sceneRef.current;
+      if (currentScene !== scene || scene.actorClip.destroyed) return;
+      accumulated += time - lastTime;
+      lastTime = time;
+      while (accumulated >= BODY_ANIMATION_FRAME_MS) {
+        advanceFrame();
+        accumulated -= BODY_ANIMATION_FRAME_MS;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [bodyAnimationLabel, bodyAnimationPlaying, bodyAnimationRestartKey, sceneVersion]);
 
   useEffect(() => {
     const scene = sceneRef.current;
