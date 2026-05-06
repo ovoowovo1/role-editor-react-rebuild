@@ -17,6 +17,20 @@ export function ungroupedSelectedIds(role: RoleDocument, selectedIds: string[]):
   return role.decorations.filter((item) => selected.has(item.id) && !groupMap.has(item.id)).map((item) => item.id);
 }
 
+/** Early-exit version: stops scanning after finding 2 ungrouped items. */
+export function hasUngroupedSelected(role: RoleDocument, selectedIds: string[]): boolean {
+  if (selectedIds.length < 2) return false;
+  const groupMap = makeGroupMap(role.groups ?? []);
+  const selected = new Set(selectedIds);
+  let found = 0;
+  for (const item of role.decorations) {
+    if (selected.has(item.id) && !groupMap.has(item.id)) {
+      if (++found >= 2) return true;
+    }
+  }
+  return false;
+}
+
 export function createGroupFromSelection(current: RoleDocument, selectedIds: string[]): void {
   const itemIds = ungroupedSelectedIds(current, selectedIds);
   if (itemIds.length < 2) return;

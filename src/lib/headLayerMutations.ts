@@ -140,6 +140,19 @@ export function ungroupedSelectedLayerIds(role: RoleDocument, selectedIds: strin
   return orderedLayerIds(role, selectedIds).filter((id) => selected.has(id) && !grouped.has(id));
 }
 
+export function hasUngroupedSelectedLayerIds(role: RoleDocument, selectedIds: string[]): boolean {
+  if (selectedIds.length < 2) return false;
+  const selected = new Set(selectedIds);
+  const grouped = new Set((role.groups ?? []).flatMap((group) => group.itemIds));
+  let found = 0;
+  for (const deco of role.decorations) {
+    if (selected.has(deco.id) && !grouped.has(deco.id)) {
+      if (++found >= 2) return true;
+    }
+  }
+  return false;
+}
+
 export function createGroupFromLayerSelection(role: RoleDocument, selectedIds: string[]): RoleDocument | null {
   const itemIds = ungroupedSelectedLayerIds(role, selectedIds);
   if (itemIds.length < 2) return null;

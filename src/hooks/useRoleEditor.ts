@@ -22,6 +22,7 @@ import {
 } from '../lib/editorDecorationMutations';
 import {
   createGroupFromSelection,
+  hasUngroupedSelected,
   makeGroupMap,
   renameGroupInRole,
   setGroupVisibleInRole,
@@ -38,7 +39,7 @@ const STAGE_MIN_SCALE = 1;
 const STAGE_MAX_SCALE = 6;
 
 export function useRoleEditor() {
-  const history = useHistory<RoleDocument>(createDefaultRole(), { limit: 200 });
+  const history = useHistory<RoleDocument>(createDefaultRole(), { limit: 30 });
   const { present: role, setPresent: setRole } = history;
   const [selectedTab, setSelectedTab] = useState<PartTab>('deco');
   const [selectedDecorationIds, setSelectedDecorationIds] = useState<string[]>([]);
@@ -73,7 +74,7 @@ export function useRoleEditor() {
   );
   const groupMap = useMemo(() => makeGroupMap(role.groups ?? []), [role.groups]);
   const canGroupSelected = useMemo(
-    () => ungroupedSelectedIds(role, selectedDecorationIds).length >= 2,
+    () => hasUngroupedSelected(role, selectedDecorationIds),
     [role, selectedDecorationIds]
   );
 

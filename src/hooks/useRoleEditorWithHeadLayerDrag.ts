@@ -23,7 +23,8 @@ import {
   toggleHeadVisibility,
   toggleLayerSelection,
   ungroupIncludingHead,
-  ungroupedSelectedLayerIds
+  ungroupedSelectedLayerIds,
+  hasUngroupedSelectedLayerIds
 } from '../lib/headLayerMutations';
 import { useRoleEditor as useBaseRoleEditor } from './useRoleEditor';
 
@@ -133,7 +134,7 @@ export function useRoleEditor() {
   }, [editor.role.decorations, selectedLayerIds]);
 
   const canGroupSelected = useMemo(
-    () => ungroupedSelectedLayerIds(editor.role, selectedLayerIds).length >= 2,
+    () => hasUngroupedSelectedLayerIds(editor.role, selectedLayerIds),
     [editor.role, selectedLayerIds]
   );
 

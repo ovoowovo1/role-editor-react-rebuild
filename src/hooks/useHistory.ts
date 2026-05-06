@@ -11,7 +11,7 @@ interface UseHistoryOptions<T> {
 
 export function useHistory<T>(initialValue: T, options: UseHistoryOptions<T> = {}) {
   const limit = options.limit ?? 200;
-  const serialize = options.serialize ?? ((value: T) => JSON.stringify(value));
+  const serialize = options.serialize ?? ((value: T) => (value as any).updatedAt ?? JSON.stringify(value));
   const [present, setPresentState] = useState<T>(initialValue);
   const [past, setPast] = useState<T[]>([]);
   const [future, setFuture] = useState<T[]>([]);
