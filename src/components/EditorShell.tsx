@@ -16,7 +16,7 @@ import { createRoleJsonBlob, createTwroleBlob } from '../lib/legacyTwroleExport'
 import { parseRoleFileWithLegacyGroups, parseRoleFileInWorkerWithLegacyGroups } from '../lib/legacyGroupImport';
 import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../lib/actorBodyAnimation';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
-import { useRoleEditor, type InsertDraftSettings } from '../hooks/useRoleEditorWithMergeSelection';
+import { useRoleEditor, type InsertDraftSettings } from '../hooks/useRoleEditor';
 import type { PartTab } from '../types/role';
 
 const CharacterStage = lazy(async () => import('./CharacterStage').then((module) => ({ default: module.CharacterStage })));

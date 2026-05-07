@@ -269,7 +269,7 @@ export function EditControls({
             value={editValues.posX}
             min={-pr}
             max={pr}
-            step={0.5}
+            step={0.1}
             disabled={disabled}
             onBegin={onBeginTransient}
             onCommit={onCommitTransient}
@@ -280,7 +280,7 @@ export function EditControls({
             value={editValues.posY}
             min={-pr}
             max={pr}
-            step={0.5}
+            step={0.1}
             disabled={disabled}
             onBegin={onBeginTransient}
             onCommit={onCommitTransient}

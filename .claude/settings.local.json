@@ -27,7 +27,16 @@
       "Bash(curl -s \"https://api.github.com/search/repositories?q=haxePixiGAF+GAFMovieClip\")",
       "Bash(curl -s \"https://api.github.com/search/repositories?q=haxePixiGAF&per_page=3\")",
       "Bash(curl -s \"https://api.github.com/search/repositories?q=GAF+PixiJS+runtime&per_page=5\")",
-      "Bash(curl -s \"https://registry.npmjs.org/-/v1/search?text=gaf+pixi&size=5\")"
+      "Bash(curl -s \"https://registry.npmjs.org/-/v1/search?text=gaf+pixi&size=5\")",
+      "Bash(Get-ChildItem -Recurse -Depth 3 \"D:\\\\code\\\\role-editor-react-rebuild\\\\src\")",
+      "Bash(Select-Object FullName)",
+      "Bash(Get-ChildItem -Recurse -Name \"D:\\\\code\\\\role-editor-react-rebuild\\\\src\")",
+      "Bash(Sort-Object)",
+      "Bash(Get-ChildItem -Force \"d:\\\\code\\\\role-editor-react-rebuild\")",
+      "Bash(Select-Object Name, Mode)",
+      "Bash(Format-Table -AutoSize)",
+      "PowerShell(git *)",
+      "Bash(Remove-Item *)"
     ]
   }
 }
