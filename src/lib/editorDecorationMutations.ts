@@ -20,8 +20,8 @@ export function makeDecoration(option: PartOption, index: number): DecorationLay
     name: option.label,
     x: round(((index % 5) - 2) * spread, 2),
     y: round(-50 + Math.floor(index / 5) * 8, 2),
-    scaleX: 0.5,
-    scaleY: 0.5,
+    scaleX: 1,
+    scaleY: 1,
     rotation: 0,
     visible: true,
     opacity: 1

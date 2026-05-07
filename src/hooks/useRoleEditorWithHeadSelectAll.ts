@@ -52,8 +52,8 @@ function makeCenteredDecoration(option: PartOption): DecorationLayer {
     name: option.label,
     x: 0,
     y: 0,
-    scaleX: 0.5,
-    scaleY: 0.5,
+    scaleX: 1,
+    scaleY: 1,
     rotation: 0,
     visible: true,
     opacity: 1

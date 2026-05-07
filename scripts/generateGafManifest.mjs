@@ -13,6 +13,7 @@ import {
   extractActorSlice,
   extractDecorationRuntime,
   extractDecorationSlice,
+  extractGafRuntime,
   flattenActorFrames,
   flattenDecorationFrames,
   readPngDimensions,
@@ -102,7 +103,7 @@ async function main() {
   const actor = extractActorSlice(actParsed);
   const { decorationRuntime } = extractDecorationRuntime(decParsed);
   const { actorRuntime } = extractActorRuntime(actParsed, actor.actorAtlasFrameData);
-  const assetsRuntime = extractDecorationRuntime(assetsParsed).decorationRuntime;
+  const assetsRuntime = extractGafRuntime(assetsParsed);
 
   if (fs.existsSync(DEC_PNG)) {
     const dims = readPngDimensions(fs.readFileSync(DEC_PNG));

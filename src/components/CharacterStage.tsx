@@ -246,7 +246,7 @@ function createDisguiseEntryDisplay(
       decorationRuntimeManifest,
       gafSources.decorationsTexture,
       fallback,
-      { alphaMask: ALPHA_MASK_DECO_CODES.has(linkage), timelineScale: 0.5 }
+      { alphaMask: ALPHA_MASK_DECO_CODES.has(linkage), timelineScale: decorationRuntimeManifest.timelineScale }
     );
     wrapper.addChild(clip);
   } else {

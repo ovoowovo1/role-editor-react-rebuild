@@ -115,7 +115,7 @@ export function createGafClip(
         hideUnnamedTextureInstances: options.hideUnnamedTextureInstances,
         dedupeNamedParts: options.dedupeNamedParts,
         nestedTimelineFrame: options.nestedTimelineFrame,
-        timelineScale: options.timelineScale
+        timelineScale: options.timelineScale ?? manifest.timelineScale
       });
     }
   }
@@ -375,7 +375,8 @@ export class GafMovieClip extends Container {
           hiddenNamedParts: [...this._hiddenNamedParts],
           hideUnnamedTextureInstances: this._hideUnnamedTextureInstances,
           dedupeNamedParts: this._dedupeNamedParts,
-          nestedTimelineFrame: this._nestedTimelineFrame
+          nestedTimelineFrame: this._nestedTimelineFrame,
+          timelineScale: this._timelineScale
         });
         nested.gotoAndStop(this._nestedFrameForChild());
         nested.alpha = clamp01(inst.alpha);

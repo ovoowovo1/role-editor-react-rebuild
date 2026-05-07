@@ -73,8 +73,14 @@ interface DecorationImportResult {
   headLayer: HeadLayerTransform;
 }
 
+interface LegacyRotationHint {
+  radians: number;
+  degrees: number;
+}
+
 const HEAD_DECO_CODES = new Set(['head', 'HEAD', 'lib_actor_head', 'actor_head', 'role_head', '__head__']);
 const TWROLE_HEADER = [0, 1] as const;
+const legacyDecorationRotationHints = new Map<string, LegacyRotationHint>();
 
 /**
  * Prefix applied to the `assetId` of a DecorationLayer whose original `code`
@@ -195,6 +201,20 @@ function readRotationDegrees(input: any): number {
   return degreesToNormalized(input?.rotation);
 }
 
+function rememberLegacyDecorationRotation(id: string, rawRadians: unknown, rotationDegrees: number): void {
+  const radians = typeof rawRadians === 'number' ? rawRadians : typeof rawRadians === 'string' ? Number(rawRadians) : NaN;
+  if (!Number.isFinite(radians)) return;
+  legacyDecorationRotationHints.set(id, { radians, degrees: rotationDegrees });
+}
+
+function rotationRadiansForExport(layer: DecorationLayer): number {
+  const hint = legacyDecorationRotationHints.get(layer.id);
+  if (hint && normalizeDegrees(layer.rotation) === hint.degrees) {
+    return hint.radians;
+  }
+  return (layer.rotation * Math.PI) / 180;
+}
+
 const SAFE_SCALE_FALLBACK = 1;
 
 function readScaleNumber(scale: unknown): number | null {
@@ -258,6 +278,11 @@ function normalizeDecoration(input: any, index: number): DecorationLayer {
   const rawCode = input?.code ?? input?.c ?? input?.assetId;
   const code = String(rawCode ?? '').trim() || 'unknown';
   const option = resolveDecoOption(rawCode);
+  const id = typeof input?.id === 'string' ? input.id : createId('deco');
+  const rotation = readRotationDegrees(input);
+  if (input && Object.prototype.hasOwnProperty.call(input, 'r')) {
+    rememberLegacyDecorationRotation(id, input.r, rotation);
+  }
   // For LEGACY input (no nested `position` object), treat `position` as null so
   // downstream code falls through to `input.x` / `input.y`. Using
   // `input?.position ?? input` previously aliased scale.x to the flat `x` field
@@ -287,7 +312,7 @@ function normalizeDecoration(input: any, index: number): DecorationLayer {
       : `Missing: ${code}`;
 
   return {
-    id: typeof input?.id === 'string' ? input.id : createId('deco'),
+    id,
     code,
     assetId: resolvedId,
     name: resolvedName,
@@ -295,7 +320,7 @@ function normalizeDecoration(input: any, index: number): DecorationLayer {
     y: safeNumber(position?.y ?? input?.y, 0),
     scaleX,
     scaleY,
-    rotation: readRotationDegrees(input),
+    rotation,
     visible: input?.visible !== false,
     opacity: safeNumber(input?.opacity ?? input?.alpha, 1)
   };
@@ -642,7 +667,7 @@ function exportOldEditorDecolist(role: RoleDocument): LegacyCompactDecoEntry[] {
       y: layer.y,
       sx: layer.scaleX,
       sy: layer.scaleY,
-      r: (layer.rotation * Math.PI) / 180
+      r: rotationRadiansForExport(layer)
     };
   });
 }

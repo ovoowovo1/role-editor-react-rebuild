@@ -56,6 +56,8 @@ export interface GafTimelineSerialized {
 }
 
 export interface GafRuntimeManifest {
+  /** GAF timeline scale used by the original runtime when applying instance tx/ty. */
+  timelineScale?: number;
   elements: Record<string, GafElementSerialized>;
   timelinesById: Record<string, GafTimelineSerialized>;
   timelinesByLinkage: Record<string, string>;

@@ -6,6 +6,11 @@ function isActorLinkage(linkage) {
   return /^lib_actor_/i.test(linkage) || /^lib_anim_/i.test(linkage) || /^actor\d/i.test(linkage);
 }
 
+function timelineScaleForParsed(parsed) {
+  const scale = parsed?.defaultScale;
+  return typeof scale === 'number' && Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
 function pickTextureFrame(insts, timeline, elements) {
   if (!insts?.length) return null;
   const sorted = [...insts].sort((a, b) => a.zIndex - b.zIndex);
@@ -127,7 +132,7 @@ function clampDisplayAlpha(a) {
   return Math.min(Math.max(a, 0), 1);
 }
 
-export function extractGafRuntime(parsed) {
+export function extractGafRuntime(parsed, options = {}) {
   const elementsObj = {};
   for (const [id, el] of parsed.defaultElements) {
     elementsObj[String(id)] = serializeElementForRuntime(el);
@@ -145,6 +150,7 @@ export function extractGafRuntime(parsed) {
   }
 
   return {
+    ...(options.includeTimelineScale ? { timelineScale: timelineScaleForParsed(parsed) } : {}),
     elements: elementsObj,
     timelinesById,
     timelinesByLinkage
@@ -152,7 +158,7 @@ export function extractGafRuntime(parsed) {
 }
 
 export function extractDecorationRuntime(parsed) {
-  return { decorationRuntime: extractGafRuntime(parsed) };
+  return { decorationRuntime: extractGafRuntime(parsed, { includeTimelineScale: true }) };
 }
 
 /**
