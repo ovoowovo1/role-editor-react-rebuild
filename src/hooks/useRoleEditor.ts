@@ -30,7 +30,7 @@ import {
   ungroupedSelectedIds,
   ungroupInRole
 } from '../lib/editorGroupMutations';
-import { reorderBaseEditorLayers } from '../lib/editorLayerDrag';
+import { reorderBaseEditorLayersImmutable } from '../lib/editorLayerDrag';
 import { shiftHeadLayerForInsert } from '../lib/editorRoleUtils';
 import { useEditorGroupTransform } from './useEditorGroupTransform';
 import { useHistory } from './useHistory';
@@ -246,12 +246,12 @@ export function useRoleEditor() {
   const reorderDecorations = useCallback(
     (activeRowId: string, overRowId: string) => {
       if (activeRowId === overRowId) return;
-      updateRole((current) => {
-        reorderBaseEditorLayers(current, activeRowId, overRowId, selectedDecorationIds);
-        return current;
-      });
+      setRole(
+        (current) => reorderBaseEditorLayersImmutable(current, activeRowId, overRowId, selectedDecorationIds) ?? current,
+        'history'
+      );
     },
-    [selectedDecorationIds, updateRole]
+    [selectedDecorationIds, setRole]
   );
 
   const moveSelectedToBoundary = useCallback(

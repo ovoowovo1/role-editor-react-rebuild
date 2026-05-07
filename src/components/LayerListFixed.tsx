@@ -36,11 +36,19 @@ interface VirtualRenderItem {
   height: number;
 }
 
+interface DraggableTarget {
+  rowId: string;
+  index: number;
+  center: number;
+}
+
 interface VirtualLayout {
   totalHeight: number;
   visibleItems: VirtualRenderItem[];
   offsets: number[];
   heights: number[];
+  rowIndexById: Map<string, number>;
+  draggableTargets: DraggableTarget[];
 }
 
 interface LayerDragState {
@@ -98,16 +106,29 @@ function buildVirtualItems(rows: VirtualLayerRow[], scrollTop: number, viewportH
   visibleItems: VirtualRenderItem[];
   offsets: number[];
   heights: number[];
+  rowIndexById: Map<string, number>;
+  draggableTargets: DraggableTarget[];
 } {
   const offsets: number[] = [];
   const heights: number[] = [];
+  const rowIndexById = new Map<string, number>();
+  const draggableTargets: DraggableTarget[] = [];
   let totalHeight = 0;
 
-  rows.forEach((row) => {
+  rows.forEach((row, index) => {
     const height = layerRowHeight(row);
+    const top = totalHeight;
+    rowIndexById.set(row.rowId, index);
     offsets.push(totalHeight);
     heights.push(height);
     totalHeight += height;
+    if (isDraggableRow(row)) {
+      draggableTargets.push({
+        rowId: row.rowId,
+        index,
+        center: top + height / 2
+      });
+    }
   });
 
   const viewportBottom = scrollTop + Math.max(viewportHeight, 1);
@@ -133,28 +154,28 @@ function buildVirtualItems(rows: VirtualLayerRow[], scrollTop: number, viewportH
     });
   }
 
-  return { totalHeight, visibleItems, offsets, heights };
+  return { totalHeight, visibleItems, offsets, heights, rowIndexById, draggableTargets };
 }
 
-function closestDraggableRowId(rows: VirtualLayerRow[], offsets: number[], heights: number[], virtualY: number): string | null {
-  let closestId: string | null = null;
-  let closestDistance = Number.POSITIVE_INFINITY;
+function closestDraggableRowId(targets: DraggableTarget[], virtualY: number): string | null {
+  if (!targets.length) return null;
 
-  rows.forEach((row, index) => {
-    if (!isDraggableRow(row)) return;
-    const center = offsets[index] + heights[index] / 2;
-    const distance = Math.abs(center - virtualY);
-    if (distance < closestDistance) {
-      closestDistance = distance;
-      closestId = row.rowId;
+  let low = 0;
+  let high = targets.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (targets[mid].center < virtualY) {
+      low = mid + 1;
+    } else {
+      high = mid;
     }
-  });
+  }
 
-  return closestId;
-}
-
-function rowIndexById(rows: VirtualLayerRow[], rowId: string): number {
-  return rows.findIndex((row) => row.rowId === rowId);
+  const next = low < targets.length ? targets[low] : null;
+  const previous = low > 0 ? targets[low - 1] : null;
+  if (!previous) return next?.rowId ?? null;
+  if (!next) return previous.rowId;
+  return Math.abs(next.center - virtualY) < Math.abs(virtualY - previous.center) ? next.rowId : previous.rowId;
 }
 
 function nextDraggableRowId(rows: VirtualLayerRow[], startIndex: number, direction: 1 | -1): string | null {
@@ -310,13 +331,13 @@ export function LayerList({
       ),
     [!!dragState, scrollState.scrollTop, scrollState.viewportHeight, virtualRows]
   );
-  const { totalHeight, visibleItems, offsets, heights } = virtualLayout;
+  const { totalHeight, visibleItems, offsets, heights, rowIndexById, draggableTargets } = virtualLayout;
 
   const scrollRowIntoView = useCallback(
     (rowId: string) => {
       const scrollEl = scrollRef.current;
       if (!scrollEl) return;
-      const index = rowIndexById(virtualRows, rowId);
+      const index = rowIndexById.get(rowId) ?? -1;
       if (index < 0) return;
       const top = offsets[index];
       const bottom = top + heights[index];
@@ -326,7 +347,7 @@ export function LayerList({
         scrollEl.scrollTop = bottom - scrollEl.clientHeight;
       }
     },
-    [heights, offsets, virtualRows]
+    [heights, offsets, rowIndexById]
   );
 
   const updatePointerOver = useCallback(
@@ -335,7 +356,7 @@ export function LayerList({
       if (!scrollEl) return;
       const rect = scrollEl.getBoundingClientRect();
       const virtualY = clientY - rect.top + scrollEl.scrollTop;
-      const overRowId = closestDraggableRowId(virtualRows, offsets, heights, virtualY);
+      const overRowId = closestDraggableRowId(draggableTargets, virtualY);
       if (!overRowId) return;
       setDragState((current) => {
         if (!current || current.overRowId === overRowId) return current;
@@ -344,7 +365,7 @@ export function LayerList({
         return next;
       });
     },
-    [heights, offsets, virtualRows]
+    [draggableTargets]
   );
 
   const stopAutoScroll = useCallback(() => {
@@ -472,7 +493,7 @@ export function LayerList({
     (direction: 1 | -1) => {
       const current = dragStateRef.current;
       if (!current) return;
-      const currentIndex = rowIndexById(virtualRows, current.overRowId);
+      const currentIndex = rowIndexById.get(current.overRowId) ?? -1;
       const nextRowId = nextDraggableRowId(virtualRows, currentIndex, direction);
       if (!nextRowId) return;
       const next = { ...current, overRowId: nextRowId };
@@ -480,7 +501,7 @@ export function LayerList({
       setDragState(next);
       scrollRowIntoView(nextRowId);
     },
-    [scrollRowIntoView, virtualRows]
+    [rowIndexById, scrollRowIntoView, virtualRows]
   );
 
   const dragHandlePropsForRow = useCallback(
@@ -520,13 +541,13 @@ export function LayerList({
 
   const insertionIndicatorTop = useMemo(() => {
     if (!dragState) return null;
-    const activeIndex = rowIndexById(virtualRows, dragState.activeRowId);
-    const overIndex = rowIndexById(virtualRows, dragState.overRowId);
+    const activeIndex = rowIndexById.get(dragState.activeRowId) ?? -1;
+    const overIndex = rowIndexById.get(dragState.overRowId) ?? -1;
     if (overIndex < 0) return null;
     const overTop = offsets[overIndex];
     const overBottom = overTop + heights[overIndex];
     return activeIndex >= 0 && activeIndex < overIndex ? overBottom : overTop;
-  }, [dragState, heights, offsets, virtualRows]);
+  }, [dragState, heights, offsets, rowIndexById]);
 
   useEffect(() => {
     if (dragState?.mode !== 'pointer') return;

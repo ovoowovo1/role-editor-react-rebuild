@@ -3,13 +3,17 @@ import { HEAD_LAYER_ID } from '../constants/layers';
 import { getHeadLayerIndex, layerIdsForRole } from '../lib/layerOrdering';
 import { createId } from '../lib/math';
 import { insertDecorations, settingsForScope } from '../lib/editorInsertSettings';
-import { pushLocalFuture, pushLocalPast, sameRole } from '../lib/editorLocalHistory';
+import { LOCAL_HISTORY_LIMIT, sameRole } from '../lib/editorLocalHistory';
 import { cloneRole } from '../lib/editorRoleUtils';
 import { nextGroupId } from '../lib/headLayerMutations';
 import { useRoleEditor as useHeadLayerEditor, type InsertDraftSettings } from './useRoleEditorWithHeadLayerDrag';
 import type { DecorationGroup, DecorationLayer, PartOption, RoleDocument, TransformValues } from '../types/role';
 
 export type { InsertDraftSettings };
+
+type LocalHistoryEntry =
+  | { kind: 'snapshot'; role: RoleDocument }
+  | { kind: 'translate'; ids: string[]; dx: number; dy: number; selectionIds: string[] };
 
 function roundPosition(value: number): number {
   return Math.round(value * 100) / 100;
@@ -51,6 +55,52 @@ function copyDecoration(item: DecorationLayer, patch: Partial<DecorationLayer> =
     ...item,
     id: createId('deco'),
     ...patch
+  };
+}
+
+function cloneHistoryEntry(entry: LocalHistoryEntry): LocalHistoryEntry {
+  if (entry.kind === 'snapshot') return { kind: 'snapshot', role: cloneRole(entry.role) };
+  return {
+    kind: 'translate',
+    ids: [...entry.ids],
+    dx: entry.dx,
+    dy: entry.dy,
+    selectionIds: [...entry.selectionIds]
+  };
+}
+
+function pushLocalHistoryEntry(items: LocalHistoryEntry[], entry: LocalHistoryEntry): LocalHistoryEntry[] {
+  return [...items, cloneHistoryEntry(entry)].slice(-LOCAL_HISTORY_LIMIT);
+}
+
+function pushLocalFutureEntry(items: LocalHistoryEntry[], entry: LocalHistoryEntry): LocalHistoryEntry[] {
+  return [cloneHistoryEntry(entry), ...items].slice(0, LOCAL_HISTORY_LIMIT);
+}
+
+function makeSnapshotEntry(role: RoleDocument): LocalHistoryEntry {
+  return { kind: 'snapshot', role };
+}
+
+function applyTranslateDelta(role: RoleDocument, ids: string[], dx: number, dy: number): RoleDocument {
+  const movingIds = new Set(ids.filter((id) => id !== HEAD_LAYER_ID));
+  if (!movingIds.size || (Math.abs(dx) <= Number.EPSILON && Math.abs(dy) <= Number.EPSILON)) return role;
+
+  let changed = false;
+  const decorations = role.decorations.map((item) => {
+    if (!movingIds.has(item.id)) return item;
+    changed = true;
+    return {
+      ...item,
+      x: roundPosition(item.x + dx),
+      y: roundPosition(item.y + dy)
+    };
+  });
+
+  if (!changed) return role;
+  return {
+    ...role,
+    decorations,
+    updatedAt: new Date().toISOString()
   };
 }
 
@@ -104,8 +154,8 @@ export function useRoleEditor() {
   const selectedIdsRef = useRef(editor.selectedDecorationIds);
   const transientBeforeRef = useRef<RoleDocument | null>(null);
   const transientSelectionBeforeRef = useRef<string[]>([]);
-  const [localPast, setLocalPast] = useState<RoleDocument[]>([]);
-  const [localFuture, setLocalFuture] = useState<RoleDocument[]>([]);
+  const [localPast, setLocalPast] = useState<LocalHistoryEntry[]>([]);
+  const [localFuture, setLocalFuture] = useState<LocalHistoryEntry[]>([]);
   const [localClipboard, setLocalClipboard] = useState<DecorationLayer[]>([]);
 
   useEffect(() => {
@@ -153,15 +203,14 @@ export function useRoleEditor() {
         const stillValid = validSelectionIds(roleRef.current, nextIds);
         if (!stillValid.length) return;
         selectedIdsRef.current = stillValid;
-        editor.clearSelection();
-        stillValid.forEach((id, index) => editor.selectDecoration(id, index > 0));
+        editor.selectMultipleDecorations(stillValid);
       }, 0);
     },
     [editor]
   );
 
   const pushHistorySnapshot = useCallback((snapshot: RoleDocument) => {
-    setLocalPast((items) => pushLocalPast(items, snapshot));
+    setLocalPast((items) => pushLocalHistoryEntry(items, makeSnapshotEntry(snapshot)));
     setLocalFuture([]);
   }, []);
 
@@ -188,27 +237,43 @@ export function useRoleEditor() {
     if (localPast.length) {
       const previous = localPast[localPast.length - 1];
       setLocalPast((items) => items.slice(0, -1));
-      setLocalFuture((items) => pushLocalFuture(items, roleRef.current));
+      if (previous.kind === 'translate') {
+        setLocalFuture((items) => pushLocalFutureEntry(items, previous));
+        const nextRole = applyTranslateDelta(roleRef.current, previous.ids, -previous.dx, -previous.dy);
+        editor.importRole(nextRole);
+        restoreSelection(previous.selectionIds);
+        return;
+      }
+
+      setLocalFuture((items) => pushLocalFutureEntry(items, makeSnapshotEntry(roleRef.current)));
       selectedIdsRef.current = [];
-      editor.importRole(previous);
+      editor.importRole(previous.role);
       editor.clearSelection();
       return;
     }
     editor.undo();
-  }, [editor, localPast]);
+  }, [editor, localPast, restoreSelection]);
 
   const redo = useCallback(() => {
     if (localFuture.length) {
       const next = localFuture[0];
       setLocalFuture((items) => items.slice(1));
-      setLocalPast((items) => pushLocalPast(items, roleRef.current));
+      if (next.kind === 'translate') {
+        setLocalPast((items) => pushLocalHistoryEntry(items, next));
+        const nextRole = applyTranslateDelta(roleRef.current, next.ids, next.dx, next.dy);
+        editor.importRole(nextRole);
+        restoreSelection(next.selectionIds);
+        return;
+      }
+
+      setLocalPast((items) => pushLocalHistoryEntry(items, makeSnapshotEntry(roleRef.current)));
       selectedIdsRef.current = [];
-      editor.importRole(next);
+      editor.importRole(next.role);
       editor.clearSelection();
       return;
     }
     editor.redo();
-  }, [editor, localFuture]);
+  }, [editor, localFuture, restoreSelection]);
 
   const selectDecoration = useCallback(
     (id: string, additive = false) => {
@@ -247,6 +312,32 @@ export function useRoleEditor() {
     }
     restoreSelection(selectionBefore.length ? selectionBefore : selectedIdsRef.current);
   }, [editor, pushHistorySnapshot, restoreSelection]);
+
+  const commitDragDeltaToSelected = useCallback(
+    (dx: number, dy: number) => {
+      if (Math.abs(dx) <= Number.EPSILON && Math.abs(dy) <= Number.EPSILON) return;
+      const selectionIds = [...(stableSelectedDecorationIds.length ? stableSelectedDecorationIds : selectedIdsRef.current)];
+      const ids = validSelectionIds(roleRef.current, selectionIds).filter((id) => id !== HEAD_LAYER_ID);
+      if (!ids.length) return;
+
+      const nextRole = applyTranslateDelta(roleRef.current, ids, dx, dy);
+      if (nextRole === roleRef.current) return;
+
+      setLocalPast((items) =>
+        pushLocalHistoryEntry(items, {
+          kind: 'translate',
+          ids,
+          dx,
+          dy,
+          selectionIds
+        })
+      );
+      setLocalFuture([]);
+      editor.importRole(nextRole);
+      restoreSelection(selectionIds);
+    },
+    [editor, restoreSelection, stableSelectedDecorationIds]
+  );
 
   const updateDecoration = useCallback(
     (id: string, patch: Partial<DecorationLayer>, commit?: boolean) => {
@@ -431,6 +522,7 @@ export function useRoleEditor() {
     clearSelection,
     beginTransient,
     commitTransient,
+    commitDragDeltaToSelected,
     updateDecoration,
     updateSelectedTransform,
     choosePart,

@@ -2,6 +2,7 @@ import { GROUP_ROW_PREFIX, ITEM_ROW_PREFIX } from '../constants/layers';
 import type { DecorationGroup, RoleDocument } from '../types/role';
 import { moveBlock } from './math';
 import { groupForItem } from './editorGroupMutations';
+import { syncGroups, touch } from './editorRoleUtils';
 
 type LayerDragTarget =
   | { kind: 'group'; id: string }
@@ -107,3 +108,51 @@ export function reorderBaseEditorLayers(current: RoleDocument, activeRowId: stri
   moveLayerBlock(current, movingIds, overIds);
 }
 
+function sameGroups(a: DecorationGroup[] | undefined, b: DecorationGroup[] | undefined): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const leftGroup = left[index];
+    const rightGroup = right[index];
+    if (
+      leftGroup.id !== rightGroup.id ||
+      leftGroup.name !== rightGroup.name ||
+      leftGroup.collapsed !== rightGroup.collapsed ||
+      leftGroup.visible !== rightGroup.visible ||
+      leftGroup.itemIds.length !== rightGroup.itemIds.length
+    ) {
+      return false;
+    }
+    for (let itemIndex = 0; itemIndex < leftGroup.itemIds.length; itemIndex += 1) {
+      if (leftGroup.itemIds[itemIndex] !== rightGroup.itemIds[itemIndex]) return false;
+    }
+  }
+  return true;
+}
+
+export function reorderBaseEditorLayersImmutable(
+  role: RoleDocument,
+  activeRowId: string,
+  overRowId: string,
+  selectedDecorationIds: string[]
+): RoleDocument | null {
+  if (activeRowId === overRowId) return null;
+
+  const draft: RoleDocument = {
+    ...role,
+    decorations: role.decorations,
+    groups: (role.groups ?? []).map((group) => ({
+      ...group,
+      itemIds: [...group.itemIds]
+    }))
+  };
+
+  reorderBaseEditorLayers(draft, activeRowId, overRowId, selectedDecorationIds);
+
+  if (draft.decorations === role.decorations && sameGroups(draft.groups, role.groups)) {
+    return null;
+  }
+
+  return syncGroups(touch(draft));
+}

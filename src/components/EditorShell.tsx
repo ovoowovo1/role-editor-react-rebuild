@@ -290,6 +290,7 @@ export function EditorShell() {
                 facingQuarterTurns={facingQuarterTurns}
                 onUpdateDecoration={editor.updateDecoration}
                 onApplyDragDelta={(dx, dy) => editor.applyDragDeltaToSelected(dx, dy)}
+                onCommitDragDelta={editor.commitDragDeltaToSelected}
                 onBeginTransient={editor.beginTransient}
                 onCommitTransient={editor.commitTransient}
               />
