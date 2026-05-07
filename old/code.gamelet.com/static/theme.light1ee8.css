@@ -1,0 +1,21 @@
+body {
+    --bgcolor: #fff;
+    --color: #333;
+    --border-color: #ccc;
+    --link: #05d;
+    --link-hover: #08F;
+    --btn-bgcolor: #fafafa;
+    --btn-hover-bgcolor: #f1f1f1;
+    --btn-border-color: #ddd;
+    --btn-text-color: #333;
+    --btn-hover-border-color: #bbb;
+    --content-color: #24292e;
+    --color-dim: #666;
+    --color-dim2: #999;
+    --dropdown-bgcolor: rgba(255,255,255,0.9);
+    --dropdown-border-color: #999;
+    --dropdown-btn-hover-bgcolor: #dae1ff;
+    --poweredby-bgcolor: #eee;
+    --poweredby-color: #666;
+    --poweredby-hover-color: #000;
+}

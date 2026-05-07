@@ -260,50 +260,50 @@ export function useEditorGroupTransform({
   );
 
   const rotateSelectedBy = useCallback(
-    (degrees: number) => {
+    (degrees: number, commit = true) => {
       const snapshot = ensureGroupSnapshot();
       const current = snapshot && selectedDecorationIds.length > 1
         ? groupTransform.rotationDeg
         : getFirstSelected(role, selectedDecorationIds)?.rotation ?? 0;
-      updateSelectedTransform({ rotate: normalizeDegrees(current + degrees) });
+      updateSelectedTransform({ rotate: normalizeDegrees(current + degrees) }, commit);
     },
     [ensureGroupSnapshot, groupTransform, role, selectedDecorationIds, updateSelectedTransform]
   );
 
   const scaleSelectedBy = useCallback(
-    (amount: number) => {
+    (amount: number, commit = true) => {
       const snapshot = ensureGroupSnapshot();
       if (snapshot && selectedDecorationIds.length > 1) {
         const signX = groupTransform.scaleX >= 0 ? 1 : -1;
         const target = Math.abs(groupTransform.scaleX) + amount;
-        updateSelectedTransform({ scale: target * signX });
+        updateSelectedTransform({ scale: target * signX }, commit);
         return;
       }
       const first = getFirstSelected(role, selectedDecorationIds);
       if (!first) return;
       const signX = first.scaleX >= 0 ? 1 : -1;
-      updateSelectedTransform({ scale: (Math.abs(first.scaleX) + amount) * signX });
+      updateSelectedTransform({ scale: (Math.abs(first.scaleX) + amount) * signX }, commit);
     },
     [ensureGroupSnapshot, groupTransform, role, selectedDecorationIds, updateSelectedTransform]
   );
 
   const ratioSelectedBy = useCallback(
-    (amount: number) => {
+    (amount: number, commit = true) => {
       const snapshot = ensureGroupSnapshot();
       if (snapshot && selectedDecorationIds.length > 1) {
         const ratio = groupTransform.scaleY / (groupTransform.scaleX || 1);
-        updateSelectedTransform({ ratio: ratio + amount });
+        updateSelectedTransform({ ratio: ratio + amount }, commit);
         return;
       }
       const first = getFirstSelected(role, selectedDecorationIds);
       if (!first) return;
       const ratio = first.scaleY / (first.scaleX || 1);
-      updateSelectedTransform({ ratio: ratio + amount });
+      updateSelectedTransform({ ratio: ratio + amount }, commit);
     },
     [ensureGroupSnapshot, groupTransform, role, selectedDecorationIds, updateSelectedTransform]
   );
 
-  const flipSelected = useCallback(() => {
+  const flipSelected = useCallback((commit = true) => {
     const snapshot = ensureGroupSnapshot();
     if (snapshot && selectedDecorationIds.length > 1) {
       const nextParent: DecoGroupParentTransform = {
@@ -327,7 +327,7 @@ export function useEditorGroupTransform({
           };
         });
         return current;
-      });
+      }, commit);
       setGroupTransform(nextParent);
       return;
     }
@@ -335,10 +335,10 @@ export function useEditorGroupTransform({
       const selected = new Set(selectedDecorationIds);
       current.decorations = current.decorations.map((item) => (selected.has(item.id) ? { ...item, scaleX: -item.scaleX } : item));
       return current;
-    });
+    }, commit);
   }, [ensureGroupSnapshot, groupTransform, roleRef, selectedDecorationIds, updateRole]);
 
-  const flipSelectedVertical = useCallback(() => {
+  const flipSelectedVertical = useCallback((commit = true) => {
     const snapshot = ensureGroupSnapshot();
     if (snapshot && selectedDecorationIds.length > 1) {
       const nextParent: DecoGroupParentTransform = {
@@ -362,7 +362,7 @@ export function useEditorGroupTransform({
           };
         });
         return current;
-      });
+      }, commit);
       setGroupTransform(nextParent);
       return;
     }
@@ -370,7 +370,7 @@ export function useEditorGroupTransform({
       const selected = new Set(selectedDecorationIds);
       current.decorations = current.decorations.map((item) => (selected.has(item.id) ? { ...item, scaleY: -item.scaleY } : item));
       return current;
-    });
+    }, commit);
   }, [ensureGroupSnapshot, groupTransform, roleRef, selectedDecorationIds, updateRole]);
 
   return {
@@ -386,4 +386,3 @@ export function useEditorGroupTransform({
     flipSelectedVertical
   };
 }
-

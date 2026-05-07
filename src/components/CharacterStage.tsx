@@ -74,7 +74,7 @@ interface StageSceneState {
   updatePosition(): void;
 }
 
-const ALPHA_MASK_DECO_CODES = new Set(['third_deco_34', 'third_deco_05', 'skydow_deco_302']);
+const ALPHA_MASK_DECO_CODES: Set<string> = new Set();
 const BODY_ANIMATION_FRAME_MS = 1000 / 12;
 const DECO_GLOW_CAP = 80;
 const DEFER_STAGE_SYNC_DECO_COUNT = 2000;
@@ -246,7 +246,7 @@ function createDisguiseEntryDisplay(
       decorationRuntimeManifest,
       gafSources.decorationsTexture,
       fallback,
-      { alphaMask: ALPHA_MASK_DECO_CODES.has(linkage) }
+      { alphaMask: ALPHA_MASK_DECO_CODES.has(linkage), timelineScale: 0.5 }
     );
     wrapper.addChild(clip);
   } else {

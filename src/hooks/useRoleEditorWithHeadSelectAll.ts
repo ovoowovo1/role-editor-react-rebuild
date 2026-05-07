@@ -13,7 +13,17 @@ export type { InsertDraftSettings };
 
 type LocalHistoryEntry =
   | { kind: 'snapshot'; role: RoleDocument }
-  | { kind: 'translate'; ids: string[]; dx: number; dy: number; selectionIds: string[] };
+  | { kind: 'translate'; ids: string[]; dx: number; dy: number; selectionIds: string[] }
+  | { kind: 'transform'; target: DecorationTransformTarget[]; selectionIds: string[] };
+
+interface DecorationTransformTarget {
+  id: string;
+  x: number;
+  y: number;
+  scaleX: number;
+  scaleY: number;
+  rotation: number;
+}
 
 function roundPosition(value: number): number {
   return Math.round(value * 100) / 100;
@@ -60,6 +70,13 @@ function copyDecoration(item: DecorationLayer, patch: Partial<DecorationLayer> =
 
 function cloneHistoryEntry(entry: LocalHistoryEntry): LocalHistoryEntry {
   if (entry.kind === 'snapshot') return { kind: 'snapshot', role: cloneRole(entry.role) };
+  if (entry.kind === 'transform') {
+    return {
+      kind: 'transform',
+      target: entry.target.map((item) => ({ ...item })),
+      selectionIds: [...entry.selectionIds]
+    };
+  }
   return {
     kind: 'translate',
     ids: [...entry.ids],
@@ -102,6 +119,79 @@ function applyTranslateDelta(role: RoleDocument, ids: string[], dx: number, dy: 
     decorations,
     updatedAt: new Date().toISOString()
   };
+}
+
+function captureDecorationTransforms(role: RoleDocument, selectionIds: string[]): DecorationTransformTarget[] {
+  const selected = new Set(selectionIds.filter((id) => id && id !== HEAD_LAYER_ID));
+  if (!selected.size) return [];
+
+  const target: DecorationTransformTarget[] = [];
+  for (const item of role.decorations) {
+    if (!selected.has(item.id)) continue;
+    target.push({
+      id: item.id,
+      x: item.x,
+      y: item.y,
+      scaleX: item.scaleX,
+      scaleY: item.scaleY,
+      rotation: item.rotation
+    });
+  }
+  return target;
+}
+
+function applyDecorationTransformTarget(role: RoleDocument, target: DecorationTransformTarget[]): RoleDocument {
+  if (!target.length) return role;
+  const targetById = new Map(target.map((item) => [item.id, item]));
+  let changed = false;
+  const decorations = role.decorations.map((item) => {
+    const next = targetById.get(item.id);
+    if (!next) return item;
+    if (
+      item.x === next.x &&
+      item.y === next.y &&
+      item.scaleX === next.scaleX &&
+      item.scaleY === next.scaleY &&
+      item.rotation === next.rotation
+    ) {
+      return item;
+    }
+    changed = true;
+    return {
+      ...item,
+      x: next.x,
+      y: next.y,
+      scaleX: next.scaleX,
+      scaleY: next.scaleY,
+      rotation: next.rotation
+    };
+  });
+
+  if (!changed) return role;
+  return {
+    ...role,
+    decorations,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function sameTransformTarget(a: DecorationTransformTarget[], b: DecorationTransformTarget[]): boolean {
+  if (a.length !== b.length) return false;
+  const bById = new Map(b.map((item) => [item.id, item]));
+  for (const item of a) {
+    const other = bById.get(item.id);
+    if (!other) return false;
+    if (
+      item.x !== other.x ||
+      item.y !== other.y ||
+      item.scaleX !== other.scaleX ||
+      item.scaleY !== other.scaleY ||
+      item.rotation !== other.rotation
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function removeSelectedDecos(role: RoleDocument, selectedIds: string[]): RoleDocument | null {
@@ -153,7 +243,10 @@ export function useRoleEditor() {
   const roleRef = useRef(editor.role);
   const selectedIdsRef = useRef(editor.selectedDecorationIds);
   const transientBeforeRef = useRef<RoleDocument | null>(null);
+  const transientTransformBeforeRef = useRef<DecorationTransformTarget[] | null>(null);
   const transientSelectionBeforeRef = useRef<string[]>([]);
+  const pendingTransformHistoryRef = useRef<{ target: DecorationTransformTarget[]; selectionIds: string[] } | null>(null);
+  const pendingTransformFinalizeRef = useRef<number | null>(null);
   const [localPast, setLocalPast] = useState<LocalHistoryEntry[]>([]);
   const [localFuture, setLocalFuture] = useState<LocalHistoryEntry[]>([]);
   const [localClipboard, setLocalClipboard] = useState<DecorationLayer[]>([]);
@@ -209,6 +302,53 @@ export function useRoleEditor() {
     [editor]
   );
 
+  const finalizePendingTransformHistory = useCallback(
+    (role: RoleDocument = roleRef.current) => {
+      const pending = pendingTransformHistoryRef.current;
+      if (!pending) return;
+
+      const currentTarget = captureDecorationTransforms(role, pending.selectionIds);
+      pendingTransformHistoryRef.current = null;
+
+      if (!currentTarget.length || sameTransformTarget(pending.target, currentTarget)) return;
+      setLocalPast((items) =>
+        pushLocalHistoryEntry(items, {
+          kind: 'transform',
+          target: pending.target,
+          selectionIds: pending.selectionIds
+        })
+      );
+      setLocalFuture([]);
+      restoreSelection(pending.selectionIds);
+    },
+    [restoreSelection]
+  );
+
+  const schedulePendingTransformFinalize = useCallback(() => {
+    if (pendingTransformFinalizeRef.current !== null) {
+      cancelAnimationFrame(pendingTransformFinalizeRef.current);
+    }
+    pendingTransformFinalizeRef.current = requestAnimationFrame(() => {
+      pendingTransformFinalizeRef.current = requestAnimationFrame(() => {
+        pendingTransformFinalizeRef.current = null;
+        finalizePendingTransformHistory(roleRef.current);
+      });
+    });
+  }, [finalizePendingTransformHistory]);
+
+  useEffect(() => {
+    finalizePendingTransformHistory(editor.role);
+  }, [editor.role, finalizePendingTransformHistory]);
+
+  useEffect(
+    () => () => {
+      if (pendingTransformFinalizeRef.current !== null) {
+        cancelAnimationFrame(pendingTransformFinalizeRef.current);
+      }
+    },
+    []
+  );
+
   const pushHistorySnapshot = useCallback((snapshot: RoleDocument) => {
     setLocalPast((items) => pushLocalHistoryEntry(items, makeSnapshotEntry(snapshot)));
     setLocalFuture([]);
@@ -233,6 +373,25 @@ export function useRoleEditor() {
     [pushHistorySnapshot, restoreSelection]
   );
 
+  const withTransformHistory = useCallback(
+    (action: () => void, restoreIds = selectedIdsRef.current) => {
+      const selectionIds = validSelectionIds(roleRef.current, restoreIds.length ? restoreIds : selectedIdsRef.current);
+      const beforeTarget = captureDecorationTransforms(roleRef.current, selectionIds);
+      if (!beforeTarget.length) {
+        action();
+        return;
+      }
+
+      pendingTransformHistoryRef.current ??= {
+        target: beforeTarget,
+        selectionIds
+      };
+      action();
+      schedulePendingTransformFinalize();
+    },
+    [schedulePendingTransformFinalize]
+  );
+
   const undo = useCallback(() => {
     if (localPast.length) {
       const previous = localPast[localPast.length - 1];
@@ -240,6 +399,23 @@ export function useRoleEditor() {
       if (previous.kind === 'translate') {
         setLocalFuture((items) => pushLocalFutureEntry(items, previous));
         const nextRole = applyTranslateDelta(roleRef.current, previous.ids, -previous.dx, -previous.dy);
+        editor.importRole(nextRole);
+        restoreSelection(previous.selectionIds);
+        return;
+      }
+
+      if (previous.kind === 'transform') {
+        const currentTarget = captureDecorationTransforms(roleRef.current, previous.selectionIds);
+        if (currentTarget.length) {
+          setLocalFuture((items) =>
+            pushLocalFutureEntry(items, {
+              kind: 'transform',
+              target: currentTarget,
+              selectionIds: previous.selectionIds
+            })
+          );
+        }
+        const nextRole = applyDecorationTransformTarget(roleRef.current, previous.target);
         editor.importRole(nextRole);
         restoreSelection(previous.selectionIds);
         return;
@@ -261,6 +437,23 @@ export function useRoleEditor() {
       if (next.kind === 'translate') {
         setLocalPast((items) => pushLocalHistoryEntry(items, next));
         const nextRole = applyTranslateDelta(roleRef.current, next.ids, next.dx, next.dy);
+        editor.importRole(nextRole);
+        restoreSelection(next.selectionIds);
+        return;
+      }
+
+      if (next.kind === 'transform') {
+        const currentTarget = captureDecorationTransforms(roleRef.current, next.selectionIds);
+        if (currentTarget.length) {
+          setLocalPast((items) =>
+            pushLocalHistoryEntry(items, {
+              kind: 'transform',
+              target: currentTarget,
+              selectionIds: next.selectionIds
+            })
+          );
+        }
+        const nextRole = applyDecorationTransformTarget(roleRef.current, next.target);
         editor.importRole(nextRole);
         restoreSelection(next.selectionIds);
         return;
@@ -296,22 +489,45 @@ export function useRoleEditor() {
   }, [editor, selectMultipleDecorations]);
 
   const beginTransient = useCallback(() => {
+    const selectionBefore = stableSelectedDecorationIds.length ? [...stableSelectedDecorationIds] : [...selectedIdsRef.current];
+    const transformBefore = captureDecorationTransforms(roleRef.current, selectionBefore);
+    transientSelectionBeforeRef.current = selectionBefore;
+
+    if (transformBefore.length) {
+      transientBeforeRef.current = null;
+      transientTransformBeforeRef.current = transformBefore;
+      editor.cancelTransient();
+      return;
+    }
+
+    transientTransformBeforeRef.current = null;
     transientBeforeRef.current = cloneRole(roleRef.current);
-    transientSelectionBeforeRef.current = stableSelectedDecorationIds.length ? [...stableSelectedDecorationIds] : [...selectedIdsRef.current];
     editor.beginTransient();
   }, [editor, stableSelectedDecorationIds]);
 
   const commitTransient = useCallback(() => {
     const before = transientBeforeRef.current;
+    const transformBefore = transientTransformBeforeRef.current;
     const selectionBefore = transientSelectionBeforeRef.current;
     transientBeforeRef.current = null;
+    transientTransformBeforeRef.current = null;
     transientSelectionBeforeRef.current = [];
+
+    if (transformBefore) {
+      pendingTransformHistoryRef.current ??= {
+        target: transformBefore,
+        selectionIds: selectionBefore
+      };
+      schedulePendingTransformFinalize();
+      return;
+    }
+
     editor.commitTransient();
     if (before && !sameRole(before, roleRef.current)) {
       pushHistorySnapshot(before);
     }
     restoreSelection(selectionBefore.length ? selectionBefore : selectedIdsRef.current);
-  }, [editor, pushHistorySnapshot, restoreSelection]);
+  }, [editor, pushHistorySnapshot, restoreSelection, schedulePendingTransformFinalize]);
 
   const commitDragDeltaToSelected = useCallback(
     (dx: number, dy: number) => {
@@ -391,10 +607,10 @@ export function useRoleEditor() {
   const updateSelectedTransform = useCallback(
     (patch: Parameters<typeof editor.updateSelectedTransform>[0], commit?: boolean) => {
       const selectionBefore = stableSelectedDecorationIds.length ? [...stableSelectedDecorationIds] : [...selectedIdsRef.current];
-      if (commit) withImmediateHistory(() => editor.updateSelectedTransform(patch, commit), selectionBefore);
+      if (commit) withTransformHistory(() => editor.updateSelectedTransform(patch, false), selectionBefore);
       else editor.updateSelectedTransform(patch, commit);
     },
-    [editor, stableSelectedDecorationIds, withImmediateHistory]
+    [editor, stableSelectedDecorationIds, withTransformHistory]
   );
 
   const choosePart = useCallback(
@@ -496,6 +712,7 @@ export function useRoleEditor() {
 
   const clearSelection = useCallback(() => {
     selectedIdsRef.current = [];
+    transientTransformBeforeRef.current = null;
     transientSelectionBeforeRef.current = [];
     editor.clearSelection();
   }, [editor]);
@@ -531,11 +748,12 @@ export function useRoleEditor() {
     mirrorCopyHorizontalSelected,
     mirrorCopyVerticalSelected,
     mergeImportedRole,
-    rotateSelectedBy: (degrees: number) => withImmediateHistory(() => editor.rotateSelectedBy(degrees)),
-    scaleSelectedBy: (amount: number) => withImmediateHistory(() => editor.scaleSelectedBy(amount)),
-    ratioSelectedBy: (amount: number) => withImmediateHistory(() => editor.ratioSelectedBy(amount)),
-    nudgeSelected: (dx: number, dy: number) => withImmediateHistory(() => editor.nudgeSelected(dx, dy)),
-    flipSelected: () => withImmediateHistory(() => editor.flipSelected()),
+    rotateSelectedBy: (degrees: number) => withTransformHistory(() => editor.rotateSelectedBy(degrees, false)),
+    scaleSelectedBy: (amount: number) => withTransformHistory(() => editor.scaleSelectedBy(amount, false)),
+    ratioSelectedBy: (amount: number) => withTransformHistory(() => editor.ratioSelectedBy(amount, false)),
+    nudgeSelected: (dx: number, dy: number) => withTransformHistory(() => editor.nudgeSelected(dx, dy, false)),
+    flipSelected: () => withTransformHistory(() => editor.flipSelected(false)),
+    flipSelectedVertical: () => withTransformHistory(() => editor.flipSelectedVertical(false)),
     deleteSelected
   };
 }

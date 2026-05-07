@@ -3,7 +3,31 @@
     "allow": [
       "Bash(npm run *)",
       "Bash(Get-ChildItem -Recurse -File -Path \"D:\\\\code\\\\role-editor-react-rebuild\\\\src\")",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path \"D:\\\\code\\\\role-editor-react-rebuild\\\\old\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object Name, FullName, Mode, LastWriteTime)",
+      "Bash(grep *)",
+      "Bash(Select-String -Pattern \"ALPHA_MASK\" -Context 3,3)",
+      "Bash(npx tsc *)",
+      "Bash(node *)",
+      "Bash(Select-Object -First 30)",
+      "PowerShell(npx tsc --noEmit --pretty 2>&1)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(Join-Path *)",
+      "PowerShell($content = Get-Content \"D:\\\\code\\\\role-editor-react-rebuild\\\\old\\\\a.gamelete.online\\\\gassets\\\\resource\\\\7692dcaff8863eaaf776bd764e8fa5e9\\\\modules.js\" -Raw; $idx = 0; while \\(\\($idx = $content.IndexOf\\(\"GAF\", $idx, [StringComparison]::Ordinal\\)\\) -ge 0\\) { $start = [Math]::Max\\(0, $idx - 100\\); $len = [Math]::Min\\(300, $content.Length - $start\\); Write-Host \"--- Found GAF at index $idx ---\"; Write-Host $content.Substring\\($start, $len\\); Write-Host \"\"; $idx += 1; if \\(\\($idx - $content.IndexOf\\(\"GAF\", 0\\)\\) / 300 -gt 5\\) { break } })",
+      "PowerShell($content = Get-Content \"D:\\\\code\\\\role-editor-react-rebuild\\\\old\\\\a.gamelete.online\\\\gassets\\\\resource\\\\7692dcaff8863eaaf776bd764e8fa5e9\\\\modules.js\" -Raw; $idx = 0; while \\(\\($idx = $content.IndexOf\\(\"gafManager\", $idx, [StringComparison]::Ordinal\\)\\) -ge 0\\) { $start = [Math]::Max\\(0, $idx - 100\\); $len = [Math]::Min\\(500, $content.Length - $start\\); Write-Host \"--- Found gafManager at index $idx ---\"; Write-Host $content.Substring\\($start, $len\\); Write-Host \"\"; $idx += 1 })",
+      "PowerShell($content = Get-Content \"D:\\\\code\\\\role-editor-react-rebuild\\\\old\\\\a.gamelete.online\\\\gassets\\\\resource\\\\7692dcaff8863eaaf776bd764e8fa5e9\\\\modules.js\" -Raw; $idx = $content.IndexOf\\(\"GafManager\"\\); $start = [Math]::Max\\(0, $idx - 300\\); $len = [Math]::Min\\(600, $content.Length - $start\\); Write-Host $content.Substring\\($start, $len\\))",
+      "PowerShell($content = Get-Content \"D:\\\\code\\\\role-editor-react-rebuild\\\\old\\\\a.gamelete.online\\\\gassets\\\\resource\\\\7692dcaff8863eaaf776bd764e8fa5e9\\\\modules.js\" -Raw; $idx = $content.IndexOf\\(\"display/GafManager\"\\); $start = [Math]::Max\\(0, $idx\\); $len = [Math]::Min\\(1500, $content.Length - $start\\); Write-Host $content.Substring\\($start, $len\\))",
+      "WebSearch",
+      "Bash(npm search *)",
+      "PowerShell($content = Get-Content \"D:\\\\code\\\\role-editor-react-rebuild\\\\old\\\\code.gamelet.com\\\\gassets\\\\engine\\\\2vr46d\\\\static\\\\js\\\\boot.prod.min.js\" -Raw; Write-Host \"Length: $\\($content.Length\\)\"; if \\($content.Length -lt 30000\\) { Write-Host $content.Substring\\(0, [Math]::Min\\(2000, $content.Length\\)\\) } else { Write-Host \"Too large to display\" })",
+      "WebFetch(domain:a.gamelet.online)",
+      "Bash(curl -s -o D:/code/role-editor-react-rebuild/old/base-plugins.min.js \"https://a.gamelet.online/gassets/resource/ff0ddca4aec180ff4f4b00c9ca392d05/base-plugins-v16/base-plugins.min.js\")",
+      "PowerShell($c = Get-Content \"D:\\\\code\\\\role-editor-react-rebuild\\\\old\\\\base-plugins.min.js\" -Raw; $idx = $c.IndexOf\\(\"GAFMovieClip\"\\); Write-Host \"First GAFMovieClip at: $idx\"; $start = [Math]::Max\\(0, $idx - 200\\); $len = [Math]::Min\\(1200, $c.Length - $start\\); Write-Host $c.Substring\\($start, $len\\))",
+      "Bash(curl -s \"https://api.github.com/search/repositories?q=haxePixiGAF+GAFMovieClip\")",
+      "Bash(curl -s \"https://api.github.com/search/repositories?q=haxePixiGAF&per_page=3\")",
+      "Bash(curl -s \"https://api.github.com/search/repositories?q=GAF+PixiJS+runtime&per_page=5\")",
+      "Bash(curl -s \"https://registry.npmjs.org/-/v1/search?text=gaf+pixi&size=5\")"
     ]
   }
 }

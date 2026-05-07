@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html>
+
+
+<!-- Mirrored from twrolecgeditor.gamelet.online/?version=0.17.20 by HTTrack Website Copier/3.x [XR&CO'2014], Sat, 22 Nov 2025 07:16:27 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=UTF-8" /><!-- /Added by HTTrack -->
+<head>
+    <!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-FEMKYXFFVZ"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-FEMKYXFFVZ');
+</script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1" >
+    <meta property="og:url" content="https://twrolecgeditor.gamelet.online/" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="TWRoleCgEditor" />
+<meta property="og:description" content="One Paragraph of project description goes here" />
+<meta property="description" content="One Paragraph of project description goes here" />
+<meta property="og:image" content="http://code.gamelet.com/gassets/resource/f18685ffca7a9cb498665b2ad1d4c7c5/twRoleEditor.png?share" />
+<meta property="og:image:width" content="725" />
+<meta property="og:image:height" content="428" />
+<meta property="fb:app_id" content="2045515445695628" />
+<meta property="twitter:card" content="summary" />
+<meta property="twitter:text:title" content="TWRoleCgEditor" />
+<link rel="canonical" href="index.html">        <title>TWRoleCgEditor</title>
+        <link rel="icon" type="image/x-icon" href="https://gamelet.online/img/favicon_v2.ico" />
+        <link href="https://fonts.googleapis.com/css?family=Noto+Sans+TC|Roboto&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../cdnjs.cloudflare.com/ajax/libs/font-awesome/5.5.0/css/all.min.css" integrity="sha512-QfDd74mlg8afgSqm3Vq2Q65e9b3xMhJB4GZ9OcHDVy1hZ6pqBJPWWnMsKDXM7NINoKqJANNGBuVRIpIJ5dogfA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="../code.gamelet.com/static/github-markdown.min1ee8.css?v=78">
+    <link rel="stylesheet" href="../code.gamelet.com/static/theme.light1ee8.css?v=78">
+    <link rel="stylesheet" href="../code.gamelet.com/static/gamepage1ee8.css?v=78">
+    </head>
+
+<body class="app">
+    <div id="fb-root"></div>
+    <script>(function(d, s, id) {
+        var js, fjs = d.getElementsByTagName(s)[0];
+        if (d.getElementById(id)) return;
+        js = d.createElement(s); js.id = id;
+        js.src = '../connect.facebook.net/zh_TW/sdk.js#xfbml=1&version=v3.2&appId=2045515445695628&autoLogAppEvents=1';
+        fjs.parentNode.insertBefore(js, fjs);
+    }(document, 'script', 'facebook-jssdk'));</script>
+    <div class="main">
+                <div class="game-div" id="game">
+            <div class="game-container" style="width:100%;height:calc(100vh - 26px)">
+                <iframe class="game-frame" width="100%" height="100%" src="#"></iframe>
+                                <div class="game-cover">
+                                                            <div class="game-start-controls">
+                                                <button class="game-btn-play" onclick="onButtonPlay('/play/v0.17.20?locale=zh-Hant&amp;version=0.17.20')">
+                            <i class="fas fa-play"></i>
+                            <div class="label">開始玩</div>
+                            <div class="onlineppl">
+                                <i class="fas fa-male"></i>
+                                <span class="onlineppl-count"></span>
+                            </div>
+                        </button>
+                    </div>
+                                    </div>
+                            </div>
+            <div class="game-bottom-bar">
+                <div class="game-buttons-group btn-scrollto-group">
+                    <div class="btn-div btn-scrollto-info" onclick="scrollToInfo()"><i class="fas fa-chevron-down"></i></div>
+                    <div class="btn-div btn-scrollto-game" onclick="scrollToGame()"><i class="fas fa-chevron-up"></i></div>
+                </div>
+                <div class="game-buttons-group spacer"></div>
+                <div class="game-buttons-group">
+                    <div class="btn-div btn-game-expand" onclick="setGameFullscreen(1)"><i class="fas fa-expand"></i></div>
+                    <div class="btn-div btn-game-compress" onclick="setGameFullscreen(0)"><i class="fas fa-compress"></i></div>
+                </div>
+            </div>
+                        <div class="game-div-topbar">
+                <div class="locale-selector" onclick="toggleLocaleSelector()">
+                    <div class="locale-current">繁</div>
+                    <div class="locale-list">
+                                                <div onClick="selectLocale('en-US')">English</div>
+                                                <div onClick="selectLocale('zh-Hant')">繁體中文</div>
+                                                <div onClick="selectLocale('zh-Hans')">简体中文</div>
+                                                <div onClick="selectLocale('ja')">日本語</div>
+                                                <div onClick="selectLocale('ko')">한국어</div>
+                                            </div>
+                </div>
+                <div class="login-user" onclick="toggleLoginUser()">
+                    <img src="#" />
+                    <div class="user-detail">
+                        <div class="nickname"><span class="label">已登入</span><a class="profile value" target="cgsvruser"></a></div>
+                        <div class="username"><span class="label">帳號</span><a class="profile value" target="cgsvruser"></a></div>        
+                        <div class="login-actions">
+                            <a class="btn profile" target="cgsvruser">我的檔案</a>
+                            <a class="btn btn-gm" href="https://twrolecgeditor.gamelet.online/gm/tools">管理員工具</a>
+                            <button class="btn btn-logout" onclick="logout()">登出</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+                        <div class="game-div-reviewbox">
+                <button class="btn-icon" onclick="hideReviewBox()"><i class="fas fa-chevron-down"></i></button>
+                <div>這個遊戲需要你的評論才能正式上架</div>
+                <a class="btn btn-primary" href="#" target="_blank" onclick="hideReviewBox()">我要評論</a>
+            </div>
+        </div>
+        <div class="info-div">
+            <div class="column project-info">
+                <div class="box app-info" id="app-info">
+                    <div class="title">專案</div>
+                    <div class="content">
+                        <div>TWRoleCgEditor</div>
+                        <div class="spacer"></div>
+                                                <div class="metrics-item" title="349803 次瀏覽"><i class="fas fa-eye"></i>349,803</div>
+                        <div class="metrics-item" title="9368 位不重複的玩家"><i class="fas fa-user"></i>9,368</div>
+                        <div class="metrics-item" title="4446小時的遊玩時長"><i class="fas fa-gamepad"></i>4,446h</div>
+                                            </div>
+                </div>
+                <div class="box owner" id="owner">
+                    <div class="title">作者</div>
+                    <div class="content">
+                        <a href="https://code.gamelet.com/profile/113321052805704333314@google" target="_blank">
+                            <img src="https://lh3.googleusercontent.com/a/ACg8ocLKU7ePdF67bobQLjpZ1Jpt3tn-6DZN6ACGN_fXfG9IXTPpGYQ88Q=s96-c">
+                            <div>Haskasu</div>
+                        </a>
+                        <div class="spacer"></div>
+                    </div>
+                </div>
+                <div class="box description" id="description">
+                    <div class="title">介紹說明</div>
+                    <div class="content">
+                        <div class="build-version-root">
+                            <div class="build-version">
+                                版本 0.17.20<i class="fas fa-caret-down"></i>
+                            </div>
+                        </div>
+                        <div class="version-switcher">
+                            <a href="index.html" class="build-version">前往穩定版<i class="fas fa-angle-right"></i></a>
+                                                        <a href="index1da2.html?version=0.17.29" class="build-version">前往 0.17.29<i class="fas fa-angle-right"></i></a>
+                                                        <a href="indexedf5.html?version=0.17.27" class="build-version">前往 0.17.27<i class="fas fa-angle-right"></i></a>
+                                                        <a href="index6504.html?version=0.17.20" class="build-version disabled">前往 0.17.20<i class="fas fa-angle-right"></i></a>
+                                                        <a href="index3e76.html?version=0.17.19" class="build-version">前往 0.17.19<i class="fas fa-angle-right"></i></a>
+                                                        <a href="index6a7b.html?version=0.17.9" class="build-version">前往 0.17.9<i class="fas fa-angle-right"></i></a>
+                                                        <a class="build-version btn-shortintro" onclick="showDescription('shortintro')"><i class="fas fa-angle-left"></i> 介紹說明</a>
+                            <a class="build-version btn-readme" onclick="showDescription('readme')"><i class="fas fa-angle-left"></i> 讀我檔案</a>
+                            <a class="build-version btn-changelog" onclick="showDescription('changelog')"><i class="fas fa-angle-left"></i> 更新歷史</a>
+                        </div>
+                        <div class="project-description shortintro markdown-body"></div>
+                        <div class="project-description readme markdown-body"># TWRoleCgEditor
+
+One Paragraph of project description goes here
+
+## Getting Started
+
+(For a game project) Write some tips or instructions how to control in your game.
+
+(For building a module) Write a piece of codes to demostrate how to use this module.
+
+```typescript
+function examples() {
+
+}
+
+```
+
+## Authors
+**[Haskasu](/profile/Haskasu)**</div>
+                        <div class="project-description changelog markdown-body"># Changelog (TWRoleCgEditor)
+
+## [v0.17.20](/view/TWRoleCgEditor/0.17.20) (2024-06-15)
+#### Added
+- custom EsBall adds "noSpin" and "noArrow" props
+
+## [v0.17.1](/view/TWRoleCgEditor/0.17.1) (2024-05-05)
+#### Added
+- custom throwable weapon viewer/editor
+
+## [v0.16.4](/view/TWRoleCgEditor/0.16.4) (2023-07-31)
+#### Added
+- role editor: support multiple selection
+- role editor: support undo / redo
+
+## [v0.15.15](/view/TWRoleCgEditor/0.15.15) (2023-04-04)
+#### Added
+- support minigun
+
+## [v0.15.14](/view/TWRoleCgEditor/0.15.14) (2023-04-01)
+#### Added
+- support custom farWeapon
+
+## [v0.14.5](/view/TWRoleCgEditor/0.14.5) (2023-03-09)
+#### Added
+- support custom weapon/item of merged events sheet
+
+## [v0.13.0](/view/TWRoleCgEditor/0.13.0) (2023-02-09)
+#### Added
+- select MapObject type
+
+## [v0.12.0](/view/TWRoleCgEditor/0.12.0) (2022-04-17)
+#### Added
+- 新增編輯時角色可換面向的按鈕。
+
+## [v0.11.10](/view/TWRoleCgEditor/0.11.10) (2022-02-11)
+#### Fixed bugs:
+- fix dummyGame functions
+
+## [v0.11.9](/view/TWRoleCgEditor/0.11.9) (2022-01-18)
+#### Changed
+- support more sizes of mapBlocks
+
+## [v0.11.6](/view/TWRoleCgEditor/0.11.6) (2021-10-19)
+#### Fixed bugs:
+- fix weapon editor preview not working with TwilightWarsLib changes
+
+## [v0.11.2](/view/TWRoleCgEditor/0.11.2) (2021-08-11)
+#### Added
+- support customItem for itemIcon chooser
+
+## [v0.10.6](/view/TWRoleCgEditor/0.10.6) (2021-07-09)
+#### Added
+- add Custom Item editor
+
+## [v0.10.0](/view/TWRoleCgEditor/0.10.0) (2021-07-07)
+#### Changed
+- Support twrole design in custom weapon editor
+
+## [v0.9.22](/view/TWRoleCgEditor/0.9.22) (2021-06-24)
+#### Changed
+- Support multiple selection when selecting role
+
+## [v0.9.16](/view/TWRoleCgEditor/0.9.16) (2021-06-15)
+#### Added
+- add Custom Weapon Editor
+- add Custom Weapon Viewer
+
+## [v0.8.1](/view/TWRoleCgEditor/0.8.1) (2021-05-15)
+#### Added
+- add roleEditor hot keys to move/rotate/scale
+
+#### Fixed bugs:
+- fix roleEditor drag & drop flash issue
+
+## [v0.7.0](/view/TWRoleCgEditor/0.7.0) (2021-04-08)
+#### Changed
+- Ingame Editor now modify the uploaded roleDesign to fit the camp
+
+## [v0.6.1](/view/TWRoleCgEditor/0.6.1) (2021-04-07)
+#### Added
+- support ingame role editor
+
+## [v0.5.13](/view/TWRoleCgEditor/0.5.13) (2021-03-04)
+#### Added
+- add role editor
+- role helper support roles from resources
+
+## [v0.4.1](/view/TWRoleCgEditor/0.4.1) (2021-01-29)
+#### Added
+- select MapBlock type
+
+## [v0.3.13](/view/TWRoleCgEditor/0.3.13) (2021-01-03)
+#### Added
+- use StuffTypeList from TwilightWarsLib
+
+## [v0.3.12](/view/TWRoleCgEditor/0.3.12) (2020-11-18)
+#### Added
+- add grenades
+
+## [v0.3.11](/view/TWRoleCgEditor/0.3.11) (2020-11-01)
+#### Added
+- add mission items
+- add appUsage: selectMissionItem
+
+## [v0.2.1](/view/TWRoleCgEditor/0.2.1) (2020-09-17)
+#### Added
+- add "default" option when select a weapon
+
+## [v0.1.0](/view/TWRoleCgEditor/0.1.0) (2020-08-02)
+#### Added
+- add shield
+- add ammos
+
+#### Changes
+- add appUsage, item, selectGroundItem
+
+## [v0.0.13](/view/TWRoleCgEditor/0.0.13) (2020-07-16)
+#### Added
+- add selectWeapon
+- add weapon viewer
+
+## [v0.0.1](/view/TWRoleCgEditor/0.0.1) (2020-07-13)
+#### Added
+- first output
+
+## Authors
+**[Haskasu](/profile/113321052805704333314@google)**</div>
+                        <button class="btn-description-expand" onClick="expandProjectDescription()">
+                            <i class="fas fa-chevron-down"></i>
+                        </button>
+                        <div class="project-actions">
+                                                        <a class="btn-bar btn-project-action" href="https://code.gamelet.com/discuss/p/TWRoleCgEditor" target="_blank">
+                                <i class="fas fa-bug"></i>
+                                問題回報
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                            </div>
+            <div class="column interactive">
+                                <div class="box feedback" id="feedback">
+                    <div class="title">意見回饋</div>
+                    <div class="content">
+                        <div class="fb-like" data-href="https://twrolecgeditor.gamelet.online/" data-layout="button_count" data-action="like" data-size="small" data-show-faces="true" data-share="true"></div>
+                        <a class="twitter-share-button" href="https://twitter.com/intent/tweet" data-hashtags="CG,html5,game"><i class="fab fa-twitter"></i>Tweet</a>
+                                                <div class="fb-comments" data-href="https://twrolecgeditor.gamelet.online/" data-width="100%" data-numposts="10" data-colorscheme="light"></div>
+                                            </div>
+                </div>
+                                
+                
+                <div class="box badges" id="badges">
+                    <div class="title">遊戲勳章</div>
+                    <div class="content">
+                        <div class="title own">
+                            <a class="login-user"><img src="#" /></a>
+                            <span>已獲得勳章 x 0</span>
+                        </div>
+                        <div class="list own"></div>
+                        <div class="title miss"><span>還沒得到的勳章 x 0</span></div>
+                        <div class="list miss"></div>
+                    </div>
+                </div>
+                <div class="box scores" id="scores">
+                    <div class="title">分數排行</div>
+                    <div class="content">
+                        <div class="scores-titles-root">
+                            <div class="scores-title">
+                                <span></span>
+                                <i class="fas fa-caret-down"></i>
+                            </div>
+                            <div class="spacer"></div>
+                            <div class="timeRange-title">
+                                <span></span>
+                                <i class="fas fa-caret-down"></i>
+                            </div>
+                            <div class="scores-switcher"></div>
+                            <div class="timeRange-switcher">
+                                <a class="btn-timeRange Daily" onclick="setScoreTimeRange('Daily')"><span>今日</span><i class="fas fa-angle-right"></i></a>
+                                <a class="btn-timeRange Weekly" onclick="setScoreTimeRange('Weekly')"><span>本週</span><i class="fas fa-angle-right"></i></a>
+                                <a class="btn-timeRange Monthly" onclick="setScoreTimeRange('Monthly')"><span>這個月</span><i class="fas fa-angle-right"></i></a>
+                                <a class="btn-timeRange History" onclick="setScoreTimeRange('History')"><span>歷史紀錄</span><i class="fas fa-angle-right"></i></a>
+                            </div>
+                        </div>
+                        <div class="list"></div>
+                        <div class="loading-anim"><img src="../code.gamelet.com/static/ajax-loader1ee8.gif?v=78"></div>
+                    </div>
+                </div>
+                            </div>
+        </div>
+    </div>
+    <a class="poweredby" href="https://code.gamelet.com/">
+        動力來源 <img src="../code.gamelet.com/gassets/engine/2vr46d/static/img/logo_42.png"/> Code.Gamelet.com
+    </a>
+    <script>var CGApp={"project":{"code":"TWRoleCgEditor","name":"TWRoleCgEditor","desc":""},"ideUrl":"https:\/\/code.gamelet.com\/","svrUrl":"https:\/\/gamelet.online","playerUrl":"https:\/\/code.gamelet.com\/","playOnLoad":false,"fullscreenOnPlay":false,"locale":"zh-Hant","descHeight":300}</script>
+    <script src="../code.jquery.com/jquery-3.6.2.min.js" integrity="sha256-2krYZKh//PcchRtd+H+VyyQoZ/e3EcrkxhM8ycwASPA=" crossorigin="anonymous"></script>
+    <script src="../code.gamelet.com/static/showdown.min1ee8.js?v=78"></script>
+    <script src="../code.gamelet.com/static/store2.min1ee8.js?v=78"></script>
+    <script src="../code.gamelet.com/static/gamepage.min1ee8.js?v=78"></script>
+</body>
+
+
+<!-- Mirrored from twrolecgeditor.gamelet.online/?version=0.17.20 by HTTrack Website Copier/3.x [XR&CO'2014], Sat, 22 Nov 2025 07:16:27 GMT -->
+</html>

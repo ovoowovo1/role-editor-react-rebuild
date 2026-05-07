@@ -26,6 +26,7 @@ export type GafMovieClipSpec =
       hideUnnamedTextureInstances?: boolean;
       dedupeNamedParts?: boolean;
       nestedTimelineFrame?: NestedTimelineFrameMode;
+      timelineScale?: number;
     };
 
 export interface CreateGafClipOptions {
@@ -34,6 +35,7 @@ export interface CreateGafClipOptions {
   hideUnnamedTextureInstances?: boolean;
   dedupeNamedParts?: boolean;
   nestedTimelineFrame?: NestedTimelineFrameMode;
+  timelineScale?: number;
 }
 
 function clamp01(a: number): number {
@@ -112,7 +114,8 @@ export function createGafClip(
         hiddenNamedParts: options.hiddenNamedParts,
         hideUnnamedTextureInstances: options.hideUnnamedTextureInstances,
         dedupeNamedParts: options.dedupeNamedParts,
-        nestedTimelineFrame: options.nestedTimelineFrame
+        nestedTimelineFrame: options.nestedTimelineFrame,
+        timelineScale: options.timelineScale
       });
     }
   }
@@ -151,6 +154,7 @@ export class GafMovieClip extends Container {
   private _hideUnnamedTextureInstances = false;
   private _dedupeNamedParts = false;
   private _nestedTimelineFrame: NestedTimelineFrameMode = 'current';
+  private _timelineScale = 1;
 
   private _currentFrame = 1;
   private _activeSequenceRange: GafSequenceSerialized | null = null;
@@ -173,6 +177,7 @@ export class GafMovieClip extends Container {
     this._hideUnnamedTextureInstances = !!spec.hideUnnamedTextureInstances;
     this._dedupeNamedParts = !!spec.dedupeNamedParts;
     this._nestedTimelineFrame = spec.nestedTimelineFrame ?? 'current';
+    this._timelineScale = spec.timelineScale ?? 1;
     this._timeline = spec.manifest.timelinesById[spec.timelineId] ?? null;
     if (!this._timeline) {
       console.warn(`[GafMovieClip] Unknown timeline "${spec.timelineId}"`);
@@ -346,7 +351,12 @@ export class GafMovieClip extends Container {
           sprite.filters = [ALPHA_MASK_COLOR_FILTER];
         }
 
-        const world = composeWorldMatrix(instanceMatrix(inst.matrix), elementPivotMatrix(el));
+        const instMat = instanceMatrix(inst.matrix);
+        if (this._timelineScale !== 1) {
+          instMat.tx *= this._timelineScale;
+          instMat.ty *= this._timelineScale;
+        }
+        const world = composeWorldMatrix(instMat, elementPivotMatrix(el));
         applyMatrixToDisplayObject(sprite, world);
         this.addChild(sprite);
         this._assignNamedChild(inst.objectId, sprite);

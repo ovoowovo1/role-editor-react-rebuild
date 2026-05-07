@@ -1,0 +1,57 @@
+html, body {
+    margin: 0;
+}
+.site-root {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 8px 3px;
+    box-sizing: border-box;
+    min-height: 100vh;
+    max-width: 700px;
+    margin: auto;
+}
+.site-footer {
+    text-align: center;
+    margin-top: 20px;
+    padding: 8px 0 5px;
+    font-size: 15px;
+    background: #eee;
+    border-radius: 5px;
+    color: #333;
+}
+.site-content {
+    flex-grow: 1;
+}
+
+.site-header {
+    background-repeat: no-repeat;
+    display: flex;
+    align-items: flex-start;
+    background-image: url('../img/logo_v1_42.png');
+    height: 50px;
+}
+.button-home {
+    cursor: pointer;
+    height: 40px;
+    text-decoration: none !important;
+    color: #333;
+    font-size: larger;
+    float: left;
+    padding: 5px 0 0 50px;
+    display: flex;
+}
+.button-home .word:first-child {
+    margin-right: 5px;
+}
+.word {
+    display: inline-block;
+}
+.letter {
+    font-size: 22px;
+    text-shadow: 1px 1px 1px #826014;
+    font-family: 'Audiowide';
+}
+.sub {
+    font-size: 12px;
+    line-height: 5px;
+}
