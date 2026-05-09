@@ -79,6 +79,7 @@ const BODY_ANIMATION_FRAME_MS = 1000 / 12;
 const DECO_GLOW_CAP = 80;
 const DEFER_STAGE_SYNC_DECO_COUNT = 2000;
 const LARGE_MULTI_DRAG_THRESHOLD = 5000;
+const SCROLL_SURFACE_PADDING = 160;
 
 let cachedGlowFilter: ReturnType<typeof createDecoSelectionGlowFilter> | null = null;
 
@@ -469,6 +470,7 @@ export function CharacterStage({
   onBeginTransient,
   onCommitTransient
 }: CharacterStageProps) {
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const stageBgRef = useRef<HTMLDivElement | null>(null);
   const appRef = useRef<Application | null>(null);
@@ -490,6 +492,8 @@ export function CharacterStage({
   const [sceneVersion, setSceneVersion] = useState(0);
   const lastPlaybackResetRef = useRef({ sceneVersion: -1, label: '', restartKey: -1 });
   const sceneKey = actorSceneKey(role, bodyAnimationLabel);
+  const [surfaceSize, setSurfaceSize] = useState({ width: 1, height: 1 });
+  const [viewportSize, setViewportSize] = useState({ width: 1, height: 1 });
 
   beginDecorationDragRef.current = (id, event, root) => {
     const currentRole = roleRef.current;
@@ -630,6 +634,84 @@ export function CharacterStage({
   };
 
   useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const updateSurfaceSize = () => {
+      const viewportWidth = Math.max(1, viewport.clientWidth);
+      const viewportHeight = Math.max(1, viewport.clientHeight);
+      const zoom = Math.max(1, stageScale);
+      const needsScrollSurface = zoom > 1;
+      const nextViewportSize = { width: viewportWidth, height: viewportHeight };
+      const nextSurfaceSize = {
+        width: Math.ceil(viewportWidth * zoom + (needsScrollSurface ? SCROLL_SURFACE_PADDING * 2 : 0)),
+        height: Math.ceil(viewportHeight * zoom + (needsScrollSurface ? SCROLL_SURFACE_PADDING * 2 : 0))
+      };
+
+      setViewportSize((current) => {
+        if (current.width === nextViewportSize.width && current.height === nextViewportSize.height) return current;
+        return nextViewportSize;
+      });
+
+      setSurfaceSize((current) => {
+        if (current.width === nextSurfaceSize.width && current.height === nextSurfaceSize.height) return current;
+        return nextSurfaceSize;
+      });
+    };
+
+    updateSurfaceSize();
+
+    const resizeObserver = new ResizeObserver(updateSurfaceSize);
+    resizeObserver.observe(viewport);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [stageScale]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    let followupRafId = 0;
+    const rafId = requestAnimationFrame(() => {
+      viewport.scrollTo({
+        left: Math.max(0, (viewport.scrollWidth - viewport.clientWidth) / 2),
+        top: Math.max(0, (viewport.scrollHeight - viewport.clientHeight) / 2)
+      });
+      followupRafId = requestAnimationFrame(() => {
+        sceneRef.current?.updatePosition();
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (followupRafId) cancelAnimationFrame(followupRafId);
+    };
+  }, [stageScale, surfaceSize.width, surfaceSize.height]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    let rafId = 0;
+    const handleScroll = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        sceneRef.current?.updatePosition();
+      });
+    };
+
+    viewport.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      viewport.removeEventListener('scroll', handleScroll);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, []);
+
+  useEffect(() => {
     roleRef.current = role;
   }, [role]);
 
@@ -659,10 +741,16 @@ export function CharacterStage({
       resizeTo: host
     });
     appRef.current = app;
-    host.appendChild(app.view as HTMLCanvasElement);
+    const canvas = app.view as HTMLCanvasElement;
+    canvas.style.display = 'block';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    host.appendChild(canvas);
 
     const resizeObserver = new ResizeObserver(() => {
       app.renderer.resize(host.clientWidth, host.clientHeight);
+      app.stage.hitArea = app.screen;
+      sceneRef.current?.updatePosition();
     });
     resizeObserver.observe(host);
 
@@ -982,18 +1070,56 @@ export function CharacterStage({
   return (
     <section className="stage-panel">
       <div
-        ref={stageBgRef}
-        className="stage-bg"
-        aria-hidden="true"
+        ref={viewportRef}
+        className="stage-viewport"
         style={{
-          top: '50%',
-          transform: `translate(-50%, -50%) rotate(90deg) scale(${stageScale})`
+          position: 'relative',
+          width: '100%',
+          height: '100%',
+          overflow: 'auto',
+          overscrollBehavior: 'contain'
         }}
       >
-        <div className="piece" />
-        <div className="piece piece-two" />
+        <div
+          className="stage-scroll-surface"
+          style={{
+            position: 'relative',
+            width: `${surfaceSize.width}px`,
+            height: `${surfaceSize.height}px`,
+            minWidth: '100%',
+            minHeight: '100%',
+            overflow: 'visible',
+            isolation: 'isolate'
+          }}
+        >
+          <div
+            ref={stageBgRef}
+            className="stage-bg"
+            aria-hidden="true"
+            style={{
+              top: '50%',
+              left: '50%',
+              transform: `translate(-50%, -50%) rotate(90deg) scale(${stageScale})`
+            }}
+          >
+            <div className="piece" />
+            <div className="piece piece-two" />
+          </div>
+          <div
+            ref={hostRef}
+            className="pixi-host"
+            style={{
+              position: 'sticky',
+              top: 0,
+              left: 0,
+              zIndex: 2,
+              width: `${viewportSize.width}px`,
+              height: `${viewportSize.height}px`,
+              pointerEvents: 'auto'
+            }}
+          />
+        </div>
       </div>
-      <div ref={hostRef} className="pixi-host" />
       <div className="stage-help">{t('stage.help')}</div>
     </section>
   );

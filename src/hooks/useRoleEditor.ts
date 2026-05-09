@@ -78,7 +78,7 @@ import { atomsForRole, deriveRoleFromAtoms, layerIdsForRole, rowIdToAtoms } from
 export type { InsertDraftPlacement, InsertDraftScopes, InsertDraftSettings };
 
 const STAGE_MIN_SCALE = 1;
-const STAGE_MAX_SCALE = 6;
+const STAGE_MAX_SCALE = 30;
 
 function nextGroupName(role: RoleDocument): string {
   return `Group ${(role.groups ?? []).length + 1}`;
