@@ -182,6 +182,17 @@ export function useEditorGroupTransform({
     };
   }, []);
 
+  useEffect(() => {
+    if (!groupSnapshot || selectedDecorationIds.length < 2) return;
+    const first = getFirstSelected(role, selectedDecorationIds);
+    if (!first) return;
+
+    const syncedTransform = syncTransformToActualFirstPosition(groupTransformRef.current, groupSnapshot, first);
+    if (syncedTransform !== groupTransformRef.current) {
+      setCurrentGroupTransform(syncedTransform);
+    }
+  }, [groupSnapshot, role, selectedDecorationIds, setCurrentGroupTransform, syncTransformToActualFirstPosition]);
+
   const updateSelectedTransform = useCallback(
     (patch: Partial<TransformValues>, commit = true) => {
       const snapshot = ensureGroupSnapshot();
