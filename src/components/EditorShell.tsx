@@ -165,6 +165,22 @@ export function EditorShell() {
     return editor.role.parts[editor.selectedTab as keyof typeof editor.role.parts];
   }, [editor.role.parts, editor.selectedDecorations, editor.selectedTab, topBarMode]);
 
+  const stageTransformKey = useMemo(
+    () => [
+      editor.selectedDecorationIds.join('|'),
+      editor.selectedDecorationIds.length,
+      editor.editValues.rotate,
+      editor.editValues.scale,
+      editor.editValues.ratio
+    ].join(':'),
+    [
+      editor.selectedDecorationIds,
+      editor.editValues.rotate,
+      editor.editValues.scale,
+      editor.editValues.ratio
+    ]
+  );
+
   const handleTopBarChange = (mode: TopBarMode) => {
     setTopBarMode(mode);
     if (mode !== 'colorBlock') {
@@ -281,6 +297,7 @@ export function EditorShell() {
           <section className="edit-block">
             <Suspense fallback={<div className="stage-panel" />}>
               <CharacterStage
+                key={stageTransformKey}
                 role={editor.role}
                 selectedIds={editor.selectedDecorationIds}
                 bodyAnimationLabel={bodyAnimationLabel}
