@@ -209,6 +209,18 @@ export function useEditorGroupTransform({
           nextGroupTransform.dy += patch.posY - firstY;
         }
 
+        const shouldPreserveFirstPosition =
+          (typeof patch.rotate === 'number' || typeof patch.scale === 'number' || typeof patch.ratio === 'number') &&
+          typeof patch.posX !== 'number' &&
+          typeof patch.posY !== 'number';
+        if (shouldPreserveFirstPosition) {
+          const nextFirstPos = deriveFirstItemPosition(nextGroupTransform, snapshot);
+          if (nextFirstPos) {
+            nextGroupTransform.dx += firstX - nextFirstPos.x;
+            nextGroupTransform.dy += firstY - nextFirstPos.y;
+          }
+        }
+
         setCurrentGroupTransform(nextGroupTransform);
 
         updateRole((current) => {
