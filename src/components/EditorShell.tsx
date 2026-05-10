@@ -308,6 +308,8 @@ export function EditorShell() {
               stageMaxScale={editor.stageMaxScale}
               selectionScaleMin={editor.selectionScaleMin}
               selectionScaleMax={editor.selectionScaleMax}
+              selectionRatioMin={editor.selectionRatioMin}
+              selectionRatioMax={editor.selectionRatioMax}
               onBeginTransient={editor.beginTransient}
               onCommitTransient={editor.commitTransient}
               onCancelSelection={editor.clearSelection}

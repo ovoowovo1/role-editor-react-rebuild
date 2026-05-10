@@ -4,9 +4,9 @@ import { clamp } from './math';
 import { getHeadLayerIndex } from './layerOrdering';
 
 export const ORIGINAL_DECO_MIN_SCALE = 0.001;
-export const ORIGINAL_DECO_MAX_SCALE = 1;
+export const ORIGINAL_DECO_MAX_SCALE = 5;
 export const ORIGINAL_DECO_MIN_RATIO = 0.001;
-export const ORIGINAL_DECO_MAX_RATIO = 2;
+export const ORIGINAL_DECO_MAX_RATIO = 5;
 
 export function cloneRole(role: RoleDocument): RoleDocument {
   return {
@@ -54,6 +54,7 @@ export function decorationScaleBounds(item: DecorationLayer): { min: number; max
   if (isHeadDecoLayer(item)) return { min: 1, max: 2 };
   return { min: ORIGINAL_DECO_MIN_SCALE, max: ORIGINAL_DECO_MAX_SCALE };
 }
+
 
 export function clampDecoScaleForLayer(value: number, item: DecorationLayer): number {
   const { min, max } = decorationScaleBounds(item);

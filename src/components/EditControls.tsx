@@ -15,6 +15,9 @@ interface EditControlsProps {
   /** Deco scale slider range (head deco uses 1..2 in the original). */
   selectionScaleMin: number;
   selectionScaleMax: number;
+  /** Deco ratio slider range (head deco uses 1..2 in the original). */
+  selectionRatioMin: number;
+  selectionRatioMax: number;
   onBeginTransient(): void;
   onCommitTransient(): void;
   onCancelSelection(): void;
@@ -94,6 +97,8 @@ export function EditControls({
   stageMaxScale,
   selectionScaleMin,
   selectionScaleMax,
+  selectionRatioMin,
+  selectionRatioMax,
   onBeginTransient,
   onCommitTransient,
   onCancelSelection,
@@ -254,9 +259,9 @@ export function EditControls({
         <RangeControl
           label={t('edit.ratio')}
           value={editValues.ratio}
-          min={0.001}
-          max={2}
-          step={0.01}
+          min={selectionRatioMin}
+          max={selectionRatioMax}
+          step={0.001}
           disabled={disabled}
           hint="Shift+Z / Shift+X"
           onBegin={onBeginTransient}

@@ -182,7 +182,7 @@ export function useRoleEditor() {
   // ============================================================
   // Base history (fallback for coarse-grained undo/redo)
   // ============================================================
-  const history = useHistory<RoleDocument>(createDefaultRole(), { limit: 30 });
+  const history = useHistory<RoleDocument>(createDefaultRole(), { limit: 50 });
   const { present: role, setPresent: setRole } = history;
 
   // ============================================================
@@ -418,6 +418,8 @@ export function useRoleEditor() {
     editValues: editValuesRaw,
     selectionScaleMin,
     selectionScaleMax,
+    selectionRatioMin,
+    selectionRatioMax,
     updateSelectedTransform: updateSelectedTransformRaw,
     nudgeSelected: nudgeSelectedRaw,
     rotateSelectedBy: rotateSelectedByRaw,
@@ -1058,6 +1060,8 @@ export function useRoleEditor() {
     editValues: stableEditValues,
     selectionScaleMin,
     selectionScaleMax,
+    selectionRatioMin,
+    selectionRatioMax,
     clipboardCount: baseClipboard.length,
     stageScale,
     setStageScale,

@@ -12,6 +12,8 @@ import {
 import {
   ORIGINAL_DECO_MAX_SCALE,
   ORIGINAL_DECO_MIN_SCALE,
+  ORIGINAL_DECO_MAX_RATIO,
+  ORIGINAL_DECO_MIN_RATIO,
   clampDecoRatio,
   clampDecoScaleForLayer,
   decorationScaleBounds,
@@ -106,6 +108,7 @@ export function useEditorGroupTransform({
     return { min, max };
   }, [groupSnapshot]);
 
+
   const selectionScaleMin = useMemo(() => {
     if (selectedDecorations.length === 1) return decorationScaleBounds(selectedDecorations[0]).min;
     return groupScaleBounds?.min ?? ORIGINAL_DECO_MIN_SCALE;
@@ -115,6 +118,32 @@ export function useEditorGroupTransform({
     if (selectedDecorations.length === 1) return decorationScaleBounds(selectedDecorations[0]).max;
     return groupScaleBounds?.max ?? ORIGINAL_DECO_MAX_SCALE;
   }, [groupScaleBounds, selectedDecorations]);
+
+  const groupRatioBounds = useMemo(() => {
+    if (!groupSnapshot) return null;
+    let min = Number.MIN_SAFE_INTEGER;
+    let max = Number.MAX_SAFE_INTEGER;
+    for (const item of Object.values(groupSnapshot.items)) {
+      const ratio = Math.abs(item.scaleY / (item.scaleX || 1));
+      if (ratio < 1e-4) continue;
+      min = Math.max(min, ORIGINAL_DECO_MIN_RATIO / ratio);
+      max = Math.min(max, ORIGINAL_DECO_MAX_RATIO / ratio);
+    }
+    if (!Number.isFinite(min) || min < ORIGINAL_DECO_MIN_RATIO) min = ORIGINAL_DECO_MIN_RATIO;
+    if (!Number.isFinite(max) || max < min) max = Math.max(min, ORIGINAL_DECO_MAX_RATIO);
+    return { min, max };
+  }, [groupSnapshot]);
+
+  const selectionRatioMin = useMemo(() => {
+    if (selectedDecorations.length === 1) return decorationScaleBounds(selectedDecorations[0]).min;
+    return groupRatioBounds?.min ?? ORIGINAL_DECO_MIN_RATIO;
+  }, [groupRatioBounds, selectedDecorations]);
+
+  const selectionRatioMax = useMemo(() => {
+    if (selectedDecorations.length === 1) return decorationScaleBounds(selectedDecorations[0]).max;
+    return groupRatioBounds?.max ?? ORIGINAL_DECO_MAX_RATIO;
+  }, [groupRatioBounds, selectedDecorations]);
+  
 
   const ensureGroupSnapshot = useCallback((): DecoGroupSnapshot | null => {
     if (groupSnapshot) return groupSnapshot;
@@ -377,6 +406,8 @@ export function useEditorGroupTransform({
     editValues,
     selectionScaleMin,
     selectionScaleMax,
+    selectionRatioMin,
+    selectionRatioMax,
     updateSelectedTransform,
     nudgeSelected,
     rotateSelectedBy,
