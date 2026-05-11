@@ -82,7 +82,7 @@ export function buildLayerRowModels({
   const renderedGroupIds = new Set<string>();
   let layerIndex = 0;
 
-  const pushLayer = (layer: VirtualLayerModel, grouped = false) => {
+  const pushLayer = (layer: VirtualLayerModel, grouped = false, group?: DecorationGroup) => {
     if (layer.type === 'head') {
       models.push({
         key: `${HEAD_ROW_ID}-${grouped ? 'grouped' : 'free'}`,
@@ -90,6 +90,7 @@ export function buildLayerRowModels({
         type: 'head',
         index: layerIndex++,
         grouped,
+        group,
         selected: isSelected(HEAD_LAYER_ID)
       });
     } else if (layer.deco) {
@@ -100,6 +101,7 @@ export function buildLayerRowModels({
         deco: layer.deco,
         index: layerIndex++,
         grouped,
+        group,
         selected: isSelected(layer.deco.id)
       });
     }
@@ -127,10 +129,9 @@ export function buildLayerRowModels({
     });
 
     if (!stableGroup.collapsed) {
-      groupLayers.forEach((item) => pushLayer(item, true));
+      groupLayers.forEach((item) => pushLayer(item, true, stableGroup));
     }
   });
 
   return models;
 }
-

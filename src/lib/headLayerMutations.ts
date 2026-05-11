@@ -7,6 +7,7 @@ import {
 } from '../constants/layers';
 import type { DecorationGroup, RoleDocument } from '../types/role';
 import { createId } from './math';
+import type { LayerReorderOptions } from './editorLayerDrag';
 import { atomToLayerId, atomsForRole, deriveRoleFromAtoms, layerIdToAtom, orderedLayerIds } from './layerOrdering';
 import { groupForItem } from './editorGroupMutations';
 
@@ -46,51 +47,76 @@ function atomsForActive(role: RoleDocument, target: LayerDragTarget, selectedIds
   return [target.id];
 }
 
-function groupIdForTarget(role: RoleDocument, target: LayerDragTarget): string | null {
-  if (target.kind === 'group') return target.id;
-  if (target.kind === 'head') return role.groups?.find((group) => group.itemIds.includes(HEAD_LAYER_ID))?.id ?? null;
-  return role.groups?.find((group) => group.itemIds.includes(target.id))?.id ?? null;
+function groupForTarget(role: RoleDocument, target: LayerDragTarget, options: LayerReorderOptions = {}): DecorationGroup | null {
+  if (options.intent !== 'join-group') return null;
+  if (target.kind === 'group') return role.groups?.find((group) => group.id === target.id) ?? null;
+  if (target.kind === 'item') return groupForItem(role.groups ?? [], target.id) ?? null;
+  if (target.kind === 'head') return groupForItem(role.groups ?? [], HEAD_LAYER_ID) ?? null;
+  return null;
 }
 
-function syncGroupsForMovedAtoms(role: RoleDocument, active: LayerDragTarget, over: LayerDragTarget, movingAtoms: string[]): void {
+function syncGroupsForMovedAtoms(
+  role: RoleDocument,
+  active: LayerDragTarget,
+  over: LayerDragTarget,
+  movingAtoms: string[],
+  options: LayerReorderOptions = {}
+): void {
   const movingIds = movingAtoms.map(atomToLayerId);
   const movingSet = new Set(movingIds);
   const sourceGroupIds = new Set<string>();
   for (const group of role.groups ?? []) {
     if (group.itemIds.some((id) => movingSet.has(id))) sourceGroupIds.add(group.id);
   }
-  const targetGroupId = groupIdForTarget(role, over);
+  const targetGroup = groupForTarget(role, over, options);
+  const targetGroupId = targetGroup?.id ?? null;
+  const canJoinTargetGroup = Boolean(targetGroup && !targetGroup.collapsed);
+  const anchorId = canJoinTargetGroup && over.kind === 'item' ? over.id : canJoinTargetGroup && over.kind === 'head' ? HEAD_LAYER_ID : undefined;
 
   role.groups = (role.groups ?? [])
     .map((group) => {
-      let itemIds = group.itemIds.filter((id) => !movingSet.has(id));
-      if (targetGroupId && group.id === targetGroupId) {
-        itemIds = [...itemIds, ...movingIds.filter((id) => !itemIds.includes(id))];
+      const itemIds = group.itemIds.filter((id) => !movingSet.has(id));
+      if (canJoinTargetGroup && group.id === targetGroupId) {
+        const idsToInsert = movingIds.filter((id) => !itemIds.includes(id));
+        const anchorIndex = anchorId ? itemIds.indexOf(anchorId) : -1;
+        const insertIndex = anchorIndex >= 0
+          ? anchorIndex + (options.placement === 'after' ? 1 : 0)
+          : itemIds.length;
+        return {
+          ...group,
+          itemIds: [...itemIds.slice(0, insertIndex), ...idsToInsert, ...itemIds.slice(insertIndex)]
+        };
       }
       return { ...group, itemIds };
     })
     .filter((group) => group.itemIds.length >= 2 || sourceGroupIds.has(group.id) === false);
 
-  role.groups = (role.groups ?? []).filter((group) => group.itemIds.length >= 2 || group.id === targetGroupId);
+  role.groups = (role.groups ?? []).filter((group) => group.itemIds.length >= 2 || (canJoinTargetGroup && group.id === targetGroupId));
 
-  if (!targetGroupId && active.kind === 'item' && over.kind === 'head' && movingAtoms.length === 1) {
+  if (!canJoinTargetGroup && active.kind === 'item' && over.kind === 'head' && movingAtoms.length === 1) {
     role.groups = (role.groups ?? [])
       .map((group) => ({ ...group, itemIds: group.itemIds.filter((id) => id !== active.id) }))
       .filter((group) => group.itemIds.length >= 2);
   }
 }
 
-export function reorderIncludingHead(role: RoleDocument, activeRowId: string, overRowId: string, selectedIds: string[]): RoleDocument | null {
+export function reorderIncludingHead(
+  role: RoleDocument,
+  activeRowId: string,
+  overRowId: string,
+  selectedIds: string[],
+  options: LayerReorderOptions = {}
+): RoleDocument | null {
   const active = parseLayerDragTarget(activeRowId);
   const over = parseLayerDragTarget(overRowId);
-  const activeAtoms = atomsForTarget(role, active);
-  const overAtoms = atomsForTarget(role, over);
-  const involvesHead = activeAtoms.includes(HEAD_ATOM) || overAtoms.includes(HEAD_ATOM);
-  const targetGroupId = groupIdForTarget(role, over);
-  const canMoveIntoGroup = Boolean(targetGroupId && activeAtoms.some((atom) => !overAtoms.includes(atom)));
-  if (!involvesHead && !canMoveIntoGroup) return null;
-
+  const joinTargetGroup = groupForTarget(role, over, options);
+  const overAtoms = options.intent === 'join-group' && joinTargetGroup && !joinTargetGroup.collapsed && over.kind !== 'group'
+    ? atomsForTarget(role, over)
+    : atomsForTarget(role, over);
   const movingAtoms = atomsForActive(role, active, selectedIds);
+  const involvesHead = movingAtoms.includes(HEAD_ATOM) || overAtoms.includes(HEAD_ATOM);
+  if (!involvesHead) return null;
+
   if (!movingAtoms.length || !overAtoms.length) return role;
 
   const originalAtoms = atomsForRole(role);
@@ -108,10 +134,18 @@ export function reorderIncludingHead(role: RoleDocument, activeRowId: string, ov
   const remainingOverIndexes = remainingAtoms.map((id, index) => (overSet.has(id) ? index : -1)).filter((index) => index >= 0);
   if (!remainingOverIndexes.length) return role;
 
-  const targetIndex = sourceStart < overStart ? Math.max(...remainingOverIndexes) + 1 : Math.min(...remainingOverIndexes);
+  const targetIndex = options.intent === 'join-group' && over.kind === 'group'
+    ? Math.min(...remainingOverIndexes)
+    : options.placement === 'before'
+      ? Math.min(...remainingOverIndexes)
+      : options.placement === 'after'
+        ? Math.max(...remainingOverIndexes) + 1
+        : sourceStart < overStart
+          ? Math.max(...remainingOverIndexes) + 1
+          : Math.min(...remainingOverIndexes);
   const nextAtoms = [...remainingAtoms.slice(0, targetIndex), ...movingAtoms, ...remainingAtoms.slice(targetIndex)];
   const nextRole = deriveRoleFromAtoms(role, nextAtoms);
-  syncGroupsForMovedAtoms(nextRole, active, over, movingAtoms);
+  syncGroupsForMovedAtoms(nextRole, active, over, movingAtoms, options);
   return nextRole;
 }
 

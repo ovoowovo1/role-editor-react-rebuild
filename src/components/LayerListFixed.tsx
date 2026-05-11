@@ -11,8 +11,9 @@ import {
   type UIEvent as ReactUIEvent
 } from 'react';
 import { t } from '../i18n';
-import { HEAD_LAYER_ID } from '../constants/layers';
+import { GROUP_ROW_PREFIX, HEAD_LAYER_ID, HEAD_ROW_ID, ITEM_ROW_PREFIX } from '../constants/layers';
 import type { DecorationGroup, DecorationLayer, HeadLayerTransform } from '../types/role';
+import type { LayerDropIntent, LayerDropPlacement, LayerReorderOptions } from '../lib/editorLayerDrag';
 import { GroupHeaderRow, HeadRow, LayerItemRow } from './layers/LayerRows';
 import { buildLayerRowModels, type LayerRowModel } from './layers/layerListModels';
 
@@ -40,6 +41,9 @@ interface DraggableTarget {
   rowId: string;
   index: number;
   center: number;
+  top: number;
+  bottom: number;
+  row: LayerRowModel;
 }
 
 interface VirtualLayout {
@@ -55,6 +59,9 @@ interface LayerDragState {
   activeRowId: string;
   overRowId: string;
   mode: 'pointer' | 'keyboard';
+  intent: LayerDropIntent;
+  placement?: LayerDropPlacement;
+  joinGroupId?: string;
 }
 
 function parseLayerNumberInput(value: string): number[] {
@@ -126,7 +133,10 @@ function buildVirtualItems(rows: VirtualLayerRow[], scrollTop: number, viewportH
       draggableTargets.push({
         rowId: row.rowId,
         index,
-        center: top + height / 2
+        center: top + height / 2,
+        top,
+        bottom: top + height,
+        row
       });
     }
   });
@@ -178,6 +188,62 @@ function closestDraggableRowId(targets: DraggableTarget[], virtualY: number): st
   return Math.abs(next.center - virtualY) < Math.abs(virtualY - previous.center) ? next.rowId : previous.rowId;
 }
 
+function closestDraggableTarget(targets: DraggableTarget[], virtualY: number): DraggableTarget | null {
+  const rowId = closestDraggableRowId(targets, virtualY);
+  return rowId ? targets.find((target) => target.rowId === rowId) ?? null : null;
+}
+
+function layerIdFromRowId(rowId: string): string | null {
+  if (rowId === HEAD_ROW_ID) return HEAD_LAYER_ID;
+  if (rowId.startsWith(ITEM_ROW_PREFIX)) return rowId.slice(ITEM_ROW_PREFIX.length);
+  if (rowId.startsWith(GROUP_ROW_PREFIX)) return null;
+  return rowId || null;
+}
+
+function canJoinTargetGroup(activeRowId: string, target: DraggableTarget): boolean {
+  if (!target.row.group || target.row.group.collapsed) return false;
+  if (target.row.type !== 'group' && !target.row.grouped) return false;
+  const activeLayerId = layerIdFromRowId(activeRowId);
+  return Boolean(activeLayerId && !target.row.group.itemIds.includes(activeLayerId));
+}
+
+function dropStateForTarget(
+  target: DraggableTarget,
+  virtualY: number,
+  mode: LayerDragState['mode'],
+  canJoinGroup: boolean
+): Pick<LayerDragState, 'overRowId' | 'intent' | 'placement' | 'joinGroupId'> {
+  if (mode === 'pointer' && target.row.group) {
+    const yInRow = virtualY - target.top;
+    const height = Math.max(1, target.bottom - target.top);
+    if (target.row.type === 'group' && canJoinGroup && yInRow >= height * 0.25 && yInRow <= height * 0.75) {
+      return {
+        overRowId: target.rowId,
+        intent: 'join-group',
+        joinGroupId: target.row.group.id
+      };
+    }
+    if (target.row.type !== 'group' && target.row.grouped && canJoinGroup) {
+      return {
+        overRowId: target.rowId,
+        intent: 'join-group',
+        placement: yInRow < height / 2 ? 'before' : 'after',
+        joinGroupId: target.row.group.id
+      };
+    }
+    return {
+      overRowId: target.rowId,
+      intent: 'sort',
+      placement: yInRow < height / 2 ? 'before' : 'after'
+    };
+  }
+
+  return {
+    overRowId: target.rowId,
+    intent: 'sort'
+  };
+}
+
 function nextDraggableRowId(rows: VirtualLayerRow[], startIndex: number, direction: 1 | -1): string | null {
   for (let index = startIndex + direction; index >= 0 && index < rows.length; index += direction) {
     const row = rows[index];
@@ -202,7 +268,7 @@ interface LayerListProps {
   onToggleGroupVisibility(groupId: string): void;
   onRenameGroup(groupId: string, name: string): void;
   onUngroup(groupId: string): void;
-  onReorder(activeId: string, overId: string): void;
+  onReorder(activeId: string, overId: string, options?: LayerReorderOptions): void;
   onToggleVisibility(id: string): void;
   onDelete(id: string): void;
   onClearSelection(): void;
@@ -356,11 +422,28 @@ export function LayerList({
       if (!scrollEl) return;
       const rect = scrollEl.getBoundingClientRect();
       const virtualY = clientY - rect.top + scrollEl.scrollTop;
-      const overRowId = closestDraggableRowId(draggableTargets, virtualY);
-      if (!overRowId) return;
+      const target = closestDraggableTarget(draggableTargets, virtualY);
+      if (!target) return;
+      const currentDrag = dragStateRef.current;
+      const dropState = dropStateForTarget(
+        target,
+        virtualY,
+        'pointer',
+        currentDrag ? canJoinTargetGroup(currentDrag.activeRowId, target) : false
+      );
       setDragState((current) => {
-        if (!current || current.overRowId === overRowId) return current;
-        const next = { ...current, overRowId };
+        if (
+          !current ||
+          (
+            current.overRowId === dropState.overRowId &&
+            current.intent === dropState.intent &&
+            current.placement === dropState.placement &&
+            current.joinGroupId === dropState.joinGroupId
+          )
+        ) {
+          return current;
+        }
+        const next = { ...current, ...dropState };
         dragStateRef.current = next;
         return next;
       });
@@ -419,7 +502,10 @@ export function LayerList({
       dragStateRef.current = null;
       setDragState(null);
       if (commit && current && current.activeRowId !== current.overRowId) {
-        onReorder(current.activeRowId, current.overRowId);
+        onReorder(current.activeRowId, current.overRowId, {
+          intent: current.intent,
+          placement: current.placement
+        });
       }
     },
     [onReorder, stopAutoScroll]
@@ -461,7 +547,7 @@ export function LayerList({
       dragPointerIdRef.current = event.pointerId;
       dragHandleRef.current = event.currentTarget;
       latestPointerYRef.current = event.clientY;
-      const next = { activeRowId: rowId, overRowId: rowId, mode: 'pointer' as const };
+      const next = { activeRowId: rowId, overRowId: rowId, mode: 'pointer' as const, intent: 'sort' as const };
       dragStateRef.current = next;
       setDragState(next);
     },
@@ -469,7 +555,7 @@ export function LayerList({
   );
 
   const startKeyboardDrag = useCallback((rowId: string) => {
-    const next = { activeRowId: rowId, overRowId: rowId, mode: 'keyboard' as const };
+    const next = { activeRowId: rowId, overRowId: rowId, mode: 'keyboard' as const, intent: 'sort' as const };
     dragStateRef.current = next;
     setDragState(next);
     scrollRowIntoView(rowId);
@@ -485,7 +571,10 @@ export function LayerList({
     dragStateRef.current = null;
     setDragState(null);
     if (current && current.activeRowId !== current.overRowId) {
-      onReorder(current.activeRowId, current.overRowId);
+      onReorder(current.activeRowId, current.overRowId, {
+        intent: current.intent,
+        placement: current.placement
+      });
     }
   }, [onReorder]);
 
@@ -496,7 +585,7 @@ export function LayerList({
       const currentIndex = rowIndexById.get(current.overRowId) ?? -1;
       const nextRowId = nextDraggableRowId(virtualRows, currentIndex, direction);
       if (!nextRowId) return;
-      const next = { ...current, overRowId: nextRowId };
+      const next = { ...current, overRowId: nextRowId, intent: 'sort' as const, placement: undefined, joinGroupId: undefined };
       dragStateRef.current = next;
       setDragState(next);
       scrollRowIntoView(nextRowId);
@@ -546,8 +635,13 @@ export function LayerList({
     if (overIndex < 0) return null;
     const overTop = offsets[overIndex];
     const overBottom = overTop + heights[overIndex];
+    if (dragState.intent === 'join-group' && !dragState.placement) return null;
+    if (dragState.placement === 'before') return overTop;
+    if (dragState.placement === 'after') return overBottom;
     return activeIndex >= 0 && activeIndex < overIndex ? overBottom : overTop;
   }, [dragState, heights, offsets, rowIndexById]);
+
+  const joinTargetGroupId = dragState?.intent === 'join-group' && !dragState.placement ? dragState.joinGroupId : undefined;
 
   useEffect(() => {
     if (dragState?.mode !== 'pointer') return;
@@ -635,6 +729,7 @@ export function LayerList({
                 <GroupHeaderRow
                   row={row}
                   isDragging={dragState?.activeRowId === row.rowId}
+                  isJoinTarget={joinTargetGroupId === row.group?.id}
                   dragHandleProps={dragHandlePropsForRow(row.rowId)}
                   onSelectGroup={onSelectGroup}
                   onToggleGroupCollapsed={onToggleGroupCollapsed}

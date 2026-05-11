@@ -137,6 +137,7 @@ export function HeadRow({
 export function GroupHeaderRow({
   row,
   isDragging = false,
+  isJoinTarget = false,
   dragHandleProps,
   onSelectGroup,
   onToggleGroupCollapsed,
@@ -146,6 +147,7 @@ export function GroupHeaderRow({
 }: {
   row: LayerRowModel;
   isDragging?: boolean;
+  isJoinTarget?: boolean;
   dragHandleProps?: DragHandleProps;
   onSelectGroup(groupId: string, additive: boolean): void;
   onToggleGroupCollapsed(groupId: string): void;
@@ -196,7 +198,7 @@ export function GroupHeaderRow({
 
   return (
     <div
-      className={`layer-group ${row.selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${group.visible === false ? 'muted' : ''}`}
+      className={`layer-group ${row.selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isJoinTarget ? 'join-target' : ''} ${group.visible === false ? 'muted' : ''}`}
       onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelectGroup(group.id, event.ctrlKey || event.metaKey)}
       data-group-id={group.id}
     >

@@ -33,6 +33,7 @@ import {
   ungroupInRole
 } from '../lib/editorGroupMutations';
 import { reorderBaseEditorLayersImmutable } from '../lib/editorLayerDrag';
+import type { LayerReorderOptions } from '../lib/editorLayerDrag';
 import {
   DEFAULT_INSERT_SETTINGS,
   insertDecorations,
@@ -120,27 +121,33 @@ function copyDecorationForInsert(item: DecorationLayer | EditorClipboardItem, of
   };
 }
 
-function reorderGroupWithoutUngrouping(role: RoleDocument, activeRowId: string, overRowId: string): RoleDocument | null {
+function reorderGroupWithoutUngrouping(role: RoleDocument, activeRowId: string, overRowId: string, options: LayerReorderOptions = {}): RoleDocument | null {
   if (!activeRowId.startsWith(GROUP_ROW_PREFIX)) return null;
   const movingAtoms = rowIdToAtoms(role, activeRowId);
   const overAtoms = rowIdToAtoms(role, overRowId);
-  if (!movingAtoms.length || !overAtoms.length) return role;
-  if (movingAtoms.some((atom) => overAtoms.includes(atom))) return role;
+  if (!movingAtoms.length || !overAtoms.length) return null;
+  if (movingAtoms.some((atom) => overAtoms.includes(atom))) return null;
 
   const originalAtoms = atomsForRole(role);
   const movingSet = new Set(movingAtoms);
   const overSet = new Set(overAtoms);
   const sourceIndexes = originalAtoms.map((atom, index) => (movingSet.has(atom) ? index : -1)).filter((index) => index >= 0);
   const overIndexes = originalAtoms.map((atom, index) => (overSet.has(atom) ? index : -1)).filter((index) => index >= 0);
-  if (!sourceIndexes.length || !overIndexes.length) return role;
+  if (!sourceIndexes.length || !overIndexes.length) return null;
 
   const sourceStart = Math.min(...sourceIndexes);
   const overStart = Math.min(...overIndexes);
   const remainingAtoms = originalAtoms.filter((atom) => !movingSet.has(atom));
   const remainingOverIndexes = remainingAtoms.map((atom, index) => (overSet.has(atom) ? index : -1)).filter((index) => index >= 0);
-  if (!remainingOverIndexes.length) return role;
+  if (!remainingOverIndexes.length) return null;
 
-  const targetIndex = sourceStart < overStart ? Math.max(...remainingOverIndexes) + 1 : Math.min(...remainingOverIndexes);
+  const targetIndex = options.placement === 'before'
+    ? Math.min(...remainingOverIndexes)
+    : options.placement === 'after'
+      ? Math.max(...remainingOverIndexes) + 1
+      : sourceStart < overStart
+        ? Math.max(...remainingOverIndexes) + 1
+        : Math.min(...remainingOverIndexes);
   const nextAtoms = [...remainingAtoms.slice(0, targetIndex), ...movingAtoms, ...remainingAtoms.slice(targetIndex)];
   return deriveRoleFromAtoms(role, nextAtoms);
 }
@@ -916,27 +923,27 @@ export function useRoleEditor() {
   // Layer reorder
   // ============================================================
   const reorderDecorations = useCallback(
-    (activeRowId: string, overRowId: string) => {
+    (activeRowId: string, overRowId: string, options: LayerReorderOptions = {}) => {
       if (activeRowId === overRowId) return;
       // Try stable group reorder first
-      const nextRole = reorderGroupWithoutUngrouping(roleRef.current, activeRowId, overRowId);
+      const nextRole = reorderGroupWithoutUngrouping(roleRef.current, activeRowId, overRowId, options);
       if (nextRole) {
-        history.reset(nextRole);
+        commitRole(nextRole);
         return;
       }
       // Try head-including reorder
-      const headNextRole = reorderIncludingHead(roleRef.current, activeRowId, overRowId, selectedLayerIds);
+      const headNextRole = reorderIncludingHead(roleRef.current, activeRowId, overRowId, selectedLayerIds, options);
       if (headNextRole) {
         commitRole(headNextRole);
         return;
       }
       // Fallback to base reorder
       setRole(
-        (current) => reorderBaseEditorLayersImmutable(current, activeRowId, overRowId, selectedDecorationIds) ?? current,
+        (current) => reorderBaseEditorLayersImmutable(current, activeRowId, overRowId, selectedDecorationIds, options) ?? current,
         'history'
       );
     },
-    [commitRole, history, selectedDecorationIds, selectedLayerIds, setRole]
+    [commitRole, selectedDecorationIds, selectedLayerIds, setRole]
   );
 
   const moveSelectedToBoundary = useCallback(
