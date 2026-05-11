@@ -1,5 +1,6 @@
 import { GROUP_ROW_PREFIX, HEAD_LAYER_ID, HEAD_ROW_ID, ITEM_ROW_PREFIX } from '../../constants/layers';
 import type { DecorationGroup, DecorationLayer } from '../../types/role';
+import { descendantLayerIdsForGroup, membersForGroup, topLevelGroupIds } from '../../lib/groupTree';
 
 interface VirtualLayerModel {
   id: string;
@@ -16,6 +17,7 @@ export interface LayerRowModel {
   group?: DecorationGroup;
   index?: number;
   grouped?: boolean;
+  depth: number;
   selected: boolean;
   itemCount?: number;
 }
@@ -68,21 +70,26 @@ export function buildLayerRowModels({
   }
 
   const groupById = new Map(groups.map((group) => [group.id, group]));
-  const groupByLayerId = new Map<string, DecorationGroup>();
-  groups.forEach((group) => group.itemIds.forEach((id) => groupByLayerId.set(id, group)));
-
-  const layersByGroupId = new Map<string, VirtualLayerModel[]>();
-  groups.forEach((group) => layersByGroupId.set(group.id, []));
-  virtualLayers.forEach((layer) => {
-    const group = groupByLayerId.get(layer.id);
-    if (group) layersByGroupId.get(group.id)?.push(layer);
+  const directGroupByLayerId = new Map<string, DecorationGroup>();
+  groups.forEach((group) => {
+    membersForGroup(group).forEach((member) => {
+      if (member.type === 'layer') directGroupByLayerId.set(member.id, group);
+    });
+  });
+  const virtualLayerById = new Map(virtualLayers.map((layer) => [layer.id, layer]));
+  const virtualLayerIndexById = new Map(virtualLayers.map((layer, index) => [layer.id, index]));
+  const topLevelGroups = topLevelGroupIds(groups);
+  const rootGroupByLayerId = new Map<string, DecorationGroup>();
+  groups.forEach((group) => {
+    if (!topLevelGroups.has(group.id)) return;
+    descendantLayerIdsForGroup(groups, group.id).forEach((id) => rootGroupByLayerId.set(id, group));
   });
 
   const models: LayerRowModel[] = [];
   const renderedGroupIds = new Set<string>();
   let layerIndex = 0;
 
-  const pushLayer = (layer: VirtualLayerModel, grouped = false, group?: DecorationGroup) => {
+  const pushLayer = (layer: VirtualLayerModel, grouped = false, group?: DecorationGroup, depth = 0) => {
     if (layer.type === 'head') {
       models.push({
         key: `${HEAD_ROW_ID}-${grouped ? 'grouped' : 'free'}`,
@@ -91,6 +98,7 @@ export function buildLayerRowModels({
         index: layerIndex++,
         grouped,
         group,
+        depth,
         selected: isSelected(HEAD_LAYER_ID)
       });
     } else if (layer.deco) {
@@ -102,35 +110,71 @@ export function buildLayerRowModels({
         index: layerIndex++,
         grouped,
         group,
+        depth,
         selected: isSelected(layer.deco.id)
       });
     }
   };
 
+  const pushGroup = (group: DecorationGroup, depth: number) => {
+    if (renderedGroupIds.has(group.id)) return;
+    renderedGroupIds.add(group.id);
+    const descendants = descendantLayerIdsForGroup(groups, group.id);
+    const selected = descendants.length > 0 && (isLargeSelection || descendants.every((id) => isSelected(id)));
+    models.push({
+      key: group.id,
+      rowId: groupRowId(group.id),
+      type: 'group',
+      group,
+      grouped: depth > 0,
+      depth,
+      selected,
+      itemCount: descendants.length
+    });
+
+    if (group.collapsed) return;
+    const orderedMembers = membersForGroup(group)
+      .map((member, index) => ({ member, index }))
+      .sort((left, right) => {
+        const firstIndex = (entry: typeof left): number => {
+          if (entry.member.type === 'layer') return virtualLayerIndexById.get(entry.member.id) ?? Number.MAX_SAFE_INTEGER;
+          const firstDescendant = descendantLayerIdsForGroup(groups, entry.member.id)
+            .map((id) => virtualLayerIndexById.get(id) ?? Number.MAX_SAFE_INTEGER)
+            .sort((a, b) => a - b)[0];
+          return firstDescendant ?? Number.MAX_SAFE_INTEGER;
+        };
+        const diff = firstIndex(left) - firstIndex(right);
+        return diff || left.index - right.index;
+      })
+      .map((entry) => entry.member);
+
+    orderedMembers.forEach((member) => {
+      if (member.type === 'group') {
+        const child = groupById.get(member.id);
+        if (child) pushGroup(child, depth + 1);
+        return;
+      }
+      const layer = virtualLayerById.get(member.id);
+      if (layer) pushLayer(layer, true, group, depth + 1);
+    });
+  };
+
   virtualLayers.forEach((layer) => {
-    const group = groupByLayerId.get(layer.id);
+    const group = directGroupByLayerId.get(layer.id);
     if (!group) {
-      pushLayer(layer, false);
+      const topGroup = rootGroupByLayerId.get(layer.id);
+      if (topGroup) {
+        pushGroup(topGroup, 0);
+      } else {
+        pushLayer(layer, false, undefined, 0);
+      }
       return;
     }
 
-    if (renderedGroupIds.has(group.id)) return;
-    renderedGroupIds.add(group.id);
-    const stableGroup = groupById.get(group.id) ?? group;
-    const groupLayers = layersByGroupId.get(group.id) ?? [];
-    const selected = groupLayers.length > 0 && (isLargeSelection || groupLayers.every((item) => isSelected(item.id)));
-    models.push({
-      key: stableGroup.id,
-      rowId: groupRowId(stableGroup.id),
-      type: 'group',
-      group: stableGroup,
-      selected,
-      itemCount: groupLayers.length
-    });
-
-    if (!stableGroup.collapsed) {
-      groupLayers.forEach((item) => pushLayer(item, true, stableGroup));
-    }
+    const rootGroup = topLevelGroups.has(group.id)
+      ? group
+      : rootGroupByLayerId.get(layer.id);
+    if (rootGroup) pushGroup(rootGroup, 0);
   });
 
   return models;

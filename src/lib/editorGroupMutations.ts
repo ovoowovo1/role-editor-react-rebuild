@@ -1,14 +1,23 @@
 import type { DecorationGroup, RoleDocument } from '../types/role';
 import { createId } from './math';
+import {
+  descendantLayerIdsForGroup,
+  directParentGroup,
+  groupForLayer,
+  membersForGroup,
+  withGroupMembers
+} from './groupTree';
 
 export function makeGroupMap(groups: DecorationGroup[]): Map<string, DecorationGroup> {
   const map = new Map<string, DecorationGroup>();
-  groups.forEach((group) => group.itemIds.forEach((id) => map.set(id, group)));
+  groups.forEach((group) => membersForGroup(group).forEach((member) => {
+    if (member.type === 'layer') map.set(member.id, group);
+  }));
   return map;
 }
 
 export function groupForItem(groups: DecorationGroup[], itemId: string): DecorationGroup | undefined {
-  return groups.find((group) => group.itemIds.includes(itemId));
+  return groupForLayer(groups, itemId);
 }
 
 export function ungroupedSelectedIds(role: RoleDocument, selectedIds: string[]): string[] {
@@ -41,6 +50,7 @@ export function createGroupFromSelection(current: RoleDocument, selectedIds: str
       id: createId('group'),
       name: `Group ${nextIndex}`,
       itemIds,
+      members: itemIds.map((id) => ({ type: 'layer', id })),
       visible: true,
       collapsed: false
     }
@@ -64,14 +74,40 @@ export function renameGroupInRole(current: RoleDocument, groupId: string, name: 
 export function setGroupVisibleInRole(current: RoleDocument, groupId: string, visible: boolean): void {
   const group = current.groups?.find((item) => item.id === groupId);
   if (!group) return;
-  const itemIds = new Set(group.itemIds);
-  current.groups = (current.groups ?? []).map((item) => (item.id === groupId ? { ...item, visible } : item));
+  const groups = current.groups ?? [];
+  const itemIds = new Set(descendantLayerIdsForGroup(groups, groupId));
+  const groupIds = new Set<string>([groupId]);
+  const collectGroups = (id: string) => {
+    const currentGroup = groups.find((item) => item.id === id);
+    if (!currentGroup) return;
+    for (const member of membersForGroup(currentGroup)) {
+      if (member.type === 'group' && !groupIds.has(member.id)) {
+        groupIds.add(member.id);
+        collectGroups(member.id);
+      }
+    }
+  };
+  collectGroups(groupId);
+  current.groups = groups.map((item) => (groupIds.has(item.id) ? { ...item, visible } : item));
   current.decorations = current.decorations.map((item) => (itemIds.has(item.id) ? { ...item, visible } : item));
 }
 
 export function ungroupInRole(current: RoleDocument, groupId: string): void {
-  const group = current.groups?.find((item) => item.id === groupId);
-  const itemIds = new Set(group?.itemIds ?? []);
-  current.groups = (current.groups ?? []).filter((item) => item.id !== groupId);
+  const groups = current.groups ?? [];
+  const group = groups.find((item) => item.id === groupId);
+  const itemIds = new Set(group ? descendantLayerIdsForGroup(groups, group.id) : []);
+  const groupMembers = group ? membersForGroup(group) : [];
+  const parent = group ? directParentGroup(groups, { type: 'group', id: groupId }) : undefined;
+  current.groups = groups
+    .filter((item) => item.id !== groupId)
+    .map((item) => {
+      if (parent && item.id === parent.id) {
+        const members = membersForGroup(item).flatMap((member) =>
+          member.type === 'group' && member.id === groupId ? groupMembers : [member]
+        );
+        return withGroupMembers(item, members, groups);
+      }
+      return item;
+    });
   current.decorations = current.decorations.map((item) => (itemIds.has(item.id) ? { ...item, visible: true } : item));
 }

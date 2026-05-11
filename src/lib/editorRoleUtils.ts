@@ -1,7 +1,7 @@
-import type { DecorationGroup, DecorationLayer, RoleDocument } from '../types/role';
-import { HEAD_LAYER_ID } from '../constants/layers';
+import type { DecorationLayer, RoleDocument } from '../types/role';
 import { clamp } from './math';
 import { getHeadLayerIndex } from './layerOrdering';
+import { cloneGroup, normalizeGroupsForRole } from './groupTree';
 
 export const ORIGINAL_DECO_MIN_SCALE = 0.001;
 export const ORIGINAL_DECO_MAX_SCALE = 5;
@@ -12,10 +12,7 @@ export function cloneRole(role: RoleDocument): RoleDocument {
   return {
     ...role,
     decorations: role.decorations.map((item) => ({ ...item })),
-    groups: (role.groups ?? []).map((group) => ({
-      ...group,
-      itemIds: [...group.itemIds]
-    })),
+    groups: (role.groups ?? []).map(cloneGroup),
     partFrames: { ...role.partFrames },
     partScales: { ...role.partScales },
     headLayer: { ...role.headLayer }
@@ -72,16 +69,7 @@ export function shiftHeadLayerForDeletedIndexes(role: RoleDocument, oldHeadIndex
 }
 
 export function syncGroups(role: RoleDocument): RoleDocument {
-  const existingIds = new Set(role.decorations.map((item) => item.id));
-  existingIds.add(HEAD_LAYER_ID);
-  const claimedIds = new Set<string>();
-  const groups = (role.groups ?? [])
-    .map((group) => {
-      const itemIds = group.itemIds.filter((id) => existingIds.has(id) && !claimedIds.has(id));
-      itemIds.forEach((id) => claimedIds.add(id));
-      return { ...group, itemIds } satisfies DecorationGroup;
-    })
-    .filter((group) => group.itemIds.length >= 2);
+  const groups = normalizeGroupsForRole(role);
   return { ...role, headLayerIndex: getHeadLayerIndex(role), groups };
 }
 

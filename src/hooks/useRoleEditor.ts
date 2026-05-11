@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { HEAD_LAYER_ID } from '../constants/layers';
+import { GROUP_ROW_PREFIX, HEAD_LAYER_ID, HEAD_ROW_ID, ITEM_ROW_PREFIX } from '../constants/layers';
 import { camps, createDefaultRole, filterPartOptionsByCamp, findOptionByCode, optionById, partOptions } from '../mock/options';
 import type { BodyPartTab, DecorationGroup, DecorationLayer, EditorClipboardItem, GenderCode, PartOption, PartTab, RoleDocument, TransformValues } from '../types/role';
 import { clamp, createId, normalizeDegrees, round } from '../lib/math';
@@ -48,12 +48,13 @@ import {
   decorationIdsFromLayerIds,
   nextGroupId,
   reorderIncludingHead,
+  groupContainsHeadLayer,
   setGroupVisibilityIncludingHead,
   toggleHeadVisibility,
   toggleLayerSelection,
   ungroupIncludingHead,
   ungroupedSelectedLayerIds,
-  hasUngroupedSelectedLayerIds
+  hasGroupableSelectedLayerIds
 } from '../lib/headLayerMutations';
 import { sameRole } from '../lib/editorLocalHistory';
 import {
@@ -73,8 +74,8 @@ import {
 } from '../lib/editorTransformHistory';
 import { useEditorGroupTransform } from './useEditorGroupTransform';
 import { useHistory } from './useHistory';
-import { GROUP_ROW_PREFIX } from '../constants/layers';
 import { atomsForRole, deriveRoleFromAtoms, layerIdsForRole, rowIdToAtoms } from '../lib/layerOrdering';
+import { descendantLayerIdsForGroup, directParentGroup, membersForGroup, withGroupMembers } from '../lib/groupTree';
 
 export type { InsertDraftPlacement, InsertDraftScopes, InsertDraftSettings };
 
@@ -121,8 +122,40 @@ function copyDecorationForInsert(item: DecorationLayer | EditorClipboardItem, of
   };
 }
 
+function remapImportedGroups(incoming: RoleDocument, idMap: Map<string, string>, fallbackName: (group: DecorationGroup) => string): DecorationGroup[] {
+  const groupIdMap = new Map((incoming.groups ?? []).map((group) => [group.id, nextGroupId()]));
+  return (incoming.groups ?? [])
+    .map((group): DecorationGroup | null => {
+      const members = membersForGroup(group)
+        .map((member) => {
+          if (member.type === 'group') {
+            const mappedGroupId = groupIdMap.get(member.id);
+            return mappedGroupId ? { type: 'group' as const, id: mappedGroupId } : null;
+          }
+          const mappedId = idMap.get(member.id);
+          return mappedId ? { type: 'layer' as const, id: mappedId } : null;
+        })
+        .filter((member): member is NonNullable<typeof member> => member !== null);
+      const itemIds = descendantLayerIdsForGroup(incoming.groups ?? [], group.id)
+        .map((id) => idMap.get(id))
+        .filter((id): id is string => Boolean(id));
+      if (itemIds.length < 2) return null;
+      return {
+        id: groupIdMap.get(group.id) ?? nextGroupId(),
+        name: group.name || fallbackName(group),
+        visible: group.visible !== false,
+        collapsed: group.collapsed === true,
+        itemIds,
+        members
+      };
+    })
+    .filter((group): group is DecorationGroup => group !== null);
+}
+
 function reorderGroupWithoutUngrouping(role: RoleDocument, activeRowId: string, overRowId: string, options: LayerReorderOptions = {}): RoleDocument | null {
+  if (options.intent === 'join-group') return null;
   if (!activeRowId.startsWith(GROUP_ROW_PREFIX)) return null;
+  const activeGroupId = activeRowId.slice(GROUP_ROW_PREFIX.length);
   const movingAtoms = rowIdToAtoms(role, activeRowId);
   const overAtoms = rowIdToAtoms(role, overRowId);
   if (!movingAtoms.length || !overAtoms.length) return null;
@@ -149,7 +182,25 @@ function reorderGroupWithoutUngrouping(role: RoleDocument, activeRowId: string, 
         ? Math.max(...remainingOverIndexes) + 1
         : Math.min(...remainingOverIndexes);
   const nextAtoms = [...remainingAtoms.slice(0, targetIndex), ...movingAtoms, ...remainingAtoms.slice(targetIndex)];
-  return deriveRoleFromAtoms(role, nextAtoms);
+  const nextRole = deriveRoleFromAtoms(role, nextAtoms);
+  const sourceParent = directParentGroup(role.groups ?? [], { type: 'group', id: activeGroupId });
+  const targetMember = overRowId.startsWith(GROUP_ROW_PREFIX)
+    ? { type: 'group' as const, id: overRowId.slice(GROUP_ROW_PREFIX.length) }
+    : overRowId === HEAD_ROW_ID
+      ? { type: 'layer' as const, id: HEAD_LAYER_ID }
+      : { type: 'layer' as const, id: overRowId.startsWith(ITEM_ROW_PREFIX) ? overRowId.slice(ITEM_ROW_PREFIX.length) : overRowId };
+  const targetParent = directParentGroup(role.groups ?? [], targetMember);
+  if (sourceParent && sourceParent.id !== targetParent?.id) {
+    nextRole.groups = (nextRole.groups ?? []).map((group) => {
+      if (group.id !== sourceParent.id) return group;
+      return withGroupMembers(
+        group,
+        membersForGroup(group).filter((member) => !(member.type === 'group' && member.id === activeGroupId)),
+        nextRole.groups ?? []
+      );
+    });
+  }
+  return syncGroups(nextRole);
 }
 
 function mergeImportedRoleIntoCurrent(role: RoleDocument, incoming: RoleDocument, settings: InsertDraftSettings): { role: RoleDocument; insertedIds: string[] } {
@@ -160,27 +211,13 @@ function mergeImportedRoleIntoCurrent(role: RoleDocument, incoming: RoleDocument
     return next;
   });
   const nextRole = insertDecorations(role, copied, settings);
-  const importedGroups = (incoming.groups ?? [])
-    .map((group): DecorationGroup | null => {
-      const itemIds = group.itemIds
-        .map((id) => idMap.get(id))
-        .filter((id): id is string => Boolean(id));
-      if (itemIds.length < 2) return null;
-      return {
-        id: nextGroupId(),
-        name: group.name || nextGroupName(nextRole),
-        visible: group.visible !== false,
-        collapsed: group.collapsed === true,
-        itemIds
-      };
-    })
-    .filter((group): group is DecorationGroup => group !== null);
+  const importedGroups = remapImportedGroups(incoming, idMap, () => nextGroupName(nextRole));
   return {
-    role: {
+    role: syncGroups({
       ...nextRole,
       groups: [...(nextRole.groups ?? []), ...importedGroups],
       updatedAt: new Date().toISOString()
-    },
+    }),
     insertedIds: copied.map((item) => item.id)
   };
 }
@@ -286,7 +323,7 @@ export function useRoleEditor() {
   );
   const groupMap = useMemo(() => makeGroupMap(role.groups ?? []), [role.groups]);
   const canGroupSelected = useMemo(
-    () => hasUngroupedSelectedLayerIds(role, selectedLayerIds),
+    () => hasGroupableSelectedLayerIds(role, selectedLayerIds),
     [role, selectedLayerIds]
   );
   const canMergeSelected = stableSelectedDecorations.length > 0;
@@ -600,7 +637,8 @@ export function useRoleEditor() {
     (groupId: string, additive = false) => {
       const group = role.groups?.find((item) => item.id === groupId);
       if (!group) return;
-      const ids = layerIdsForRole({ ...role, decorations: role.decorations.filter((d) => group.itemIds.includes(d.id)) });
+      const groupIds = descendantLayerIdsForGroup(role.groups ?? [], group.id);
+      const ids = layerIdsForRole({ ...role, decorations: role.decorations.filter((d) => groupIds.includes(d.id)) });
       setSelectedLayerIds((current) => toggleLayerSelection(current, ids, additive));
     },
     [role]
@@ -895,7 +933,7 @@ export function useRoleEditor() {
     (groupId: string) => {
       const group = role.groups?.find((item) => item.id === groupId);
       if (!group) return;
-      if (group.itemIds.includes(HEAD_LAYER_ID)) {
+      if (groupContainsHeadLayer(roleRef.current, groupId)) {
         commitRole(setGroupVisibilityIncludingHead(roleRef.current, groupId, group.visible === false));
         return;
       }
@@ -907,7 +945,7 @@ export function useRoleEditor() {
   const ungroup = useCallback(
     (groupId: string) => {
       const group = role.groups?.find((item) => item.id === groupId);
-      if (group?.itemIds.includes(HEAD_LAYER_ID)) {
+      if (group && groupContainsHeadLayer(roleRef.current, groupId)) {
         commitRole(ungroupIncludingHead(roleRef.current, groupId));
         return;
       }
@@ -989,27 +1027,13 @@ export function useRoleEditor() {
 
       const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
       const baseRole = insertDecorations(roleRef.current, copied, settings);
-      const importedGroups = (incoming.groups ?? [])
-        .map((group): DecorationGroup | null => {
-          const itemIds = group.itemIds
-            .map((id) => idMap.get(id))
-            .filter((id): id is string => Boolean(id));
-          if (itemIds.length < 2) return null;
-          return {
-            id: nextGroupId(),
-            name: group.name,
-            visible: group.visible !== false,
-            collapsed: group.collapsed === true,
-            itemIds
-          };
-        })
-        .filter((group): group is DecorationGroup => group !== null);
+      const importedGroups = remapImportedGroups(incoming, idMap, (group) => group.name);
 
-      const nextRole: RoleDocument = {
+      const nextRole: RoleDocument = syncGroups({
         ...baseRole,
         groups: [...(baseRole.groups ?? []), ...importedGroups],
         updatedAt: new Date().toISOString()
-      };
+      });
       commitRole(nextRole);
       restoreSelection(copied.map((item) => item.id));
     },

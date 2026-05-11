@@ -87,10 +87,17 @@ export interface DecorationLayer {
   opacity: number;
 }
 
+export type DecorationGroupMember =
+  | { type: 'layer'; id: string }
+  | { type: 'group'; id: string };
+
 export interface DecorationGroup {
   id: string;
   name: string;
+  /** Legacy flat layer ids. For nested groups this is kept as the flattened descendant layer list. */
   itemIds: string[];
+  /** Direct group contents. Older files may omit this and use itemIds only. */
+  members?: DecorationGroupMember[];
   visible: boolean;
   collapsed: boolean;
 }

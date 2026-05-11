@@ -6,6 +6,7 @@ import {
   ITEM_ROW_PREFIX
 } from '../constants/layers';
 import type { DecorationLayer, RoleDocument } from '../types/role';
+import { descendantLayerIdsForGroup } from './groupTree';
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -46,7 +47,7 @@ export function rowIdToAtoms(role: RoleDocument, rowId: string): string[] {
   if (rowId.startsWith(GROUP_ROW_PREFIX)) {
     const groupId = rowId.slice(GROUP_ROW_PREFIX.length);
     const group = role.groups?.find((item) => item.id === groupId);
-    return group ? orderedLayerIds(role, group.itemIds).map(layerIdToAtom) : [];
+    return group ? orderedLayerIds(role, descendantLayerIdsForGroup(role.groups ?? [], group.id)).map(layerIdToAtom) : [];
   }
   return [rowId];
 }
@@ -71,4 +72,3 @@ export function deriveRoleFromAtoms(
     updatedAt: new Date().toISOString()
   };
 }
-

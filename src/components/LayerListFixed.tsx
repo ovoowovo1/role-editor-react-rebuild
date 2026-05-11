@@ -14,6 +14,7 @@ import { t } from '../i18n';
 import { GROUP_ROW_PREFIX, HEAD_LAYER_ID, HEAD_ROW_ID, ITEM_ROW_PREFIX } from '../constants/layers';
 import type { DecorationGroup, DecorationLayer, HeadLayerTransform } from '../types/role';
 import type { LayerDropIntent, LayerDropPlacement, LayerReorderOptions } from '../lib/editorLayerDrag';
+import { directParentGroup, isGroupDescendant, membersForGroup } from '../lib/groupTree';
 import { GroupHeaderRow, HeadRow, LayerItemRow } from './layers/LayerRows';
 import { buildLayerRowModels, type LayerRowModel } from './layers/layerListModels';
 
@@ -62,6 +63,8 @@ interface LayerDragState {
   intent: LayerDropIntent;
   placement?: LayerDropPlacement;
   joinGroupId?: string;
+  parentGroupId?: string;
+  anchorGroupId?: string;
 }
 
 function parseLayerNumberInput(value: string): number[] {
@@ -200,22 +203,66 @@ function layerIdFromRowId(rowId: string): string | null {
   return rowId || null;
 }
 
-function canJoinTargetGroup(activeRowId: string, target: DraggableTarget): boolean {
+function groupIdFromRowId(rowId: string): string | null {
+  return rowId.startsWith(GROUP_ROW_PREFIX) ? rowId.slice(GROUP_ROW_PREFIX.length) : null;
+}
+
+function canJoinTargetGroup(activeRowId: string, target: DraggableTarget, groups: DecorationGroup[]): boolean {
   if (!target.row.group || target.row.group.collapsed) return false;
   if (target.row.type !== 'group' && !target.row.grouped) return false;
+  const activeGroupId = groupIdFromRowId(activeRowId);
+  if (activeGroupId) {
+    return target.row.group.id !== activeGroupId && !isGroupDescendant(groups, activeGroupId, target.row.group.id);
+  }
   const activeLayerId = layerIdFromRowId(activeRowId);
-  return Boolean(activeLayerId && !target.row.group.itemIds.includes(activeLayerId));
+  return Boolean(activeLayerId && !membersForGroup(target.row.group).some((member) => member.type === 'layer' && member.id === activeLayerId));
+}
+
+function canJoinGroupId(
+  activeRowId: string,
+  groupId: string,
+  groups: DecorationGroup[],
+  allowExistingLayer = false
+): boolean {
+  const targetGroup = groups.find((group) => group.id === groupId);
+  if (!targetGroup || targetGroup.collapsed) return false;
+  const activeGroupId = groupIdFromRowId(activeRowId);
+  if (activeGroupId) return targetGroup.id !== activeGroupId && !isGroupDescendant(groups, activeGroupId, targetGroup.id);
+  const activeLayerId = layerIdFromRowId(activeRowId);
+  return Boolean(
+    activeLayerId &&
+    (
+      allowExistingLayer ||
+      !membersForGroup(targetGroup).some((member) => member.type === 'layer' && member.id === activeLayerId)
+    )
+  );
 }
 
 function dropStateForTarget(
   target: DraggableTarget,
   virtualY: number,
   mode: LayerDragState['mode'],
-  canJoinGroup: boolean
-): Pick<LayerDragState, 'overRowId' | 'intent' | 'placement' | 'joinGroupId'> {
+  canJoinGroup: boolean,
+  activeRowId: string | undefined,
+  groups: DecorationGroup[]
+): Pick<LayerDragState, 'overRowId' | 'intent' | 'placement' | 'joinGroupId' | 'parentGroupId' | 'anchorGroupId'> {
   if (mode === 'pointer' && target.row.group) {
     const yInRow = virtualY - target.top;
     const height = Math.max(1, target.bottom - target.top);
+    if (target.row.type === 'group' && target.row.grouped && activeRowId) {
+      const parent = directParentGroup(groups, { type: 'group', id: target.row.group.id });
+      const placement = yInRow < height * 0.25 ? 'before' : yInRow > height * 0.75 ? 'after' : undefined;
+      if (parent && placement && canJoinGroupId(activeRowId, parent.id, groups, true)) {
+        return {
+          overRowId: target.rowId,
+          intent: 'join-group',
+          placement,
+          joinGroupId: parent.id,
+          parentGroupId: parent.id,
+          anchorGroupId: target.row.group.id
+        };
+      }
+    }
     if (target.row.type === 'group' && canJoinGroup && yInRow >= height * 0.25 && yInRow <= height * 0.75) {
       return {
         overRowId: target.rowId,
@@ -429,7 +476,9 @@ export function LayerList({
         target,
         virtualY,
         'pointer',
-        currentDrag ? canJoinTargetGroup(currentDrag.activeRowId, target) : false
+        currentDrag ? canJoinTargetGroup(currentDrag.activeRowId, target, groups) : false,
+        currentDrag?.activeRowId,
+        groups
       );
       setDragState((current) => {
         if (
@@ -438,17 +487,27 @@ export function LayerList({
             current.overRowId === dropState.overRowId &&
             current.intent === dropState.intent &&
             current.placement === dropState.placement &&
-            current.joinGroupId === dropState.joinGroupId
+            current.joinGroupId === dropState.joinGroupId &&
+            current.parentGroupId === dropState.parentGroupId &&
+            current.anchorGroupId === dropState.anchorGroupId
           )
         ) {
           return current;
         }
-        const next = { ...current, ...dropState };
+        const next = {
+          ...current,
+          overRowId: dropState.overRowId,
+          intent: dropState.intent,
+          placement: dropState.placement,
+          joinGroupId: dropState.joinGroupId,
+          parentGroupId: dropState.parentGroupId,
+          anchorGroupId: dropState.anchorGroupId
+        };
         dragStateRef.current = next;
         return next;
       });
     },
-    [draggableTargets]
+    [draggableTargets, groups]
   );
 
   const stopAutoScroll = useCallback(() => {
@@ -504,7 +563,9 @@ export function LayerList({
       if (commit && current && current.activeRowId !== current.overRowId) {
         onReorder(current.activeRowId, current.overRowId, {
           intent: current.intent,
-          placement: current.placement
+          placement: current.placement,
+          parentGroupId: current.parentGroupId,
+          anchorGroupId: current.anchorGroupId
         });
       }
     },
@@ -573,7 +634,9 @@ export function LayerList({
     if (current && current.activeRowId !== current.overRowId) {
       onReorder(current.activeRowId, current.overRowId, {
         intent: current.intent,
-        placement: current.placement
+        placement: current.placement,
+        parentGroupId: current.parentGroupId,
+        anchorGroupId: current.anchorGroupId
       });
     }
   }, [onReorder]);
@@ -585,7 +648,15 @@ export function LayerList({
       const currentIndex = rowIndexById.get(current.overRowId) ?? -1;
       const nextRowId = nextDraggableRowId(virtualRows, currentIndex, direction);
       if (!nextRowId) return;
-      const next = { ...current, overRowId: nextRowId, intent: 'sort' as const, placement: undefined, joinGroupId: undefined };
+      const next = {
+        ...current,
+        overRowId: nextRowId,
+        intent: 'sort' as const,
+        placement: undefined,
+        joinGroupId: undefined,
+        parentGroupId: undefined,
+        anchorGroupId: undefined
+      };
       dragStateRef.current = next;
       setDragState(next);
       scrollRowIntoView(nextRowId);

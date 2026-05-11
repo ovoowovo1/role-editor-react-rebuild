@@ -1,5 +1,6 @@
 import { HEAD_LAYER_ID } from '../constants/layers';
-import type { DecorationGroup, RoleDocument } from '../types/role';
+import type { DecorationGroup, DecorationGroupMember, RoleDocument } from '../types/role';
+import { descendantLayerIdsForGroup, membersForGroup, normalizeGroupsForRole } from './groupTree';
 import { getHeadLayerIndex } from './layerOrdering';
 
 export interface LegacyDecoGroup {
@@ -8,6 +9,7 @@ export interface LegacyDecoGroup {
   visible: boolean;
   collapsed: boolean;
   itemIndexes: number[];
+  members?: LegacyDecoGroupMember[];
 }
 
 interface LegacyDecoGroupInput {
@@ -18,7 +20,12 @@ interface LegacyDecoGroupInput {
   itemIndexes?: unknown;
   itemIds?: unknown;
   items?: unknown;
+  members?: unknown;
 }
+
+export type LegacyDecoGroupMember =
+  | { type: 'group'; id: string }
+  | { type: 'layer'; id: string; itemIndex?: number };
 
 function bottomToTopLayerIds(role: RoleDocument): string[] {
   const topFirst = role.decorations.map((item) => item.id);
@@ -53,13 +60,53 @@ function normalizeItemIdsFromLegacyGroup(group: LegacyDecoGroupInput, role: Role
   return [];
 }
 
+function normalizeMembersFromLegacyGroup(group: LegacyDecoGroupInput, role: RoleDocument): DecorationGroupMember[] {
+  if (Array.isArray(group.members)) {
+    const validLayers = new Set(role.decorations.map((item) => item.id));
+    validLayers.add(HEAD_LAYER_ID);
+    const byLegacyIndex = bottomToTopLayerIds(role);
+    return group.members
+      .map((raw): DecorationGroupMember | null => {
+        if (!raw || typeof raw !== 'object') return null;
+        const member = raw as { type?: unknown; id?: unknown; itemIndex?: unknown };
+        const id = typeof member.id === 'string' ? member.id : '';
+        if (member.type === 'group') return id ? { type: 'group', id } : null;
+        if (member.type !== 'layer') return null;
+        if (id && validLayers.has(id)) return { type: 'layer', id };
+        const itemIndex = Number(member.itemIndex);
+        if (Number.isInteger(itemIndex) && itemIndex >= 0 && itemIndex < byLegacyIndex.length) {
+          const indexedId = byLegacyIndex[itemIndex];
+          if (validLayers.has(indexedId)) return { type: 'layer', id: indexedId };
+        }
+        return null;
+      })
+      .filter((member): member is DecorationGroupMember => member !== null)
+      .filter((member, index, members) => members.findIndex((item) => item.type === member.type && item.id === member.id) === index);
+  }
+  return normalizeItemIdsFromLegacyGroup(group, role).map((id) => ({ type: 'layer', id }));
+}
+
+function legacyMembersForExport(group: DecorationGroup, indexByLayerId: Map<string, number>): LegacyDecoGroupMember[] {
+  return membersForGroup(group)
+    .map((member): LegacyDecoGroupMember | null => {
+      if (member.type === 'group') return { type: 'group', id: member.id };
+      const itemIndex = indexByLayerId.get(member.id);
+      return {
+        type: 'layer',
+        id: member.id,
+        ...(typeof itemIndex === 'number' ? { itemIndex } : {})
+      };
+    })
+    .filter((member): member is LegacyDecoGroupMember => member !== null);
+}
+
 export function exportLegacyDecoGroups(role: RoleDocument): LegacyDecoGroup[] {
   const indexByLayerId = new Map<string, number>();
   bottomToTopLayerIds(role).forEach((id, index) => indexByLayerId.set(id, index));
 
   return (role.groups ?? [])
     .map((group): LegacyDecoGroup | null => {
-      const itemIndexes = group.itemIds
+      const itemIndexes = descendantLayerIdsForGroup(role.groups ?? [], group.id)
         .map((id) => indexByLayerId.get(id))
         .filter((index): index is number => typeof index === 'number')
         .sort((a, b) => a - b);
@@ -69,6 +116,7 @@ export function exportLegacyDecoGroups(role: RoleDocument): LegacyDecoGroup[] {
         name: group.name,
         visible: group.visible !== false,
         collapsed: group.collapsed === true,
+        ...(group.members ? { members: legacyMembersForExport(group, indexByLayerId) } : {}),
         itemIndexes
       };
     })
@@ -79,20 +127,28 @@ export function normalizeLegacyDecoGroups(rawGroups: unknown, role: RoleDocument
   if (!Array.isArray(rawGroups)) return [];
   const claimedIds = new Set<string>();
 
-  return rawGroups
+  const groups = rawGroups
     .map((raw, index): DecorationGroup | null => {
       if (!raw || typeof raw !== 'object') return null;
       const group = raw as LegacyDecoGroupInput;
-      const itemIds = normalizeItemIdsFromLegacyGroup(group, role).filter((id) => !claimedIds.has(id));
-      if (itemIds.length < 2) return null;
-      itemIds.forEach((id) => claimedIds.add(id));
+      const members = normalizeMembersFromLegacyGroup(group, role);
+      const cleanMembers = members.filter((member) => {
+        if (member.type === 'group') return true;
+        if (claimedIds.has(member.id)) return false;
+        claimedIds.add(member.id);
+        return true;
+      });
+      if (!cleanMembers.length) return null;
+      const directItemIds = cleanMembers.flatMap((member) => member.type === 'layer' ? [member.id] : []);
       return {
         id: typeof group.id === 'string' && group.id ? group.id : `group_${Date.now()}_${index}`,
         name: typeof group.name === 'string' && group.name.trim() ? group.name : `Group ${index + 1}`,
         visible: group.visible !== false,
         collapsed: group.collapsed === true,
-        itemIds
+        itemIds: directItemIds,
+        members: cleanMembers
       };
     })
     .filter((group): group is DecorationGroup => group !== null);
+  return normalizeGroupsForRole({ ...role, groups });
 }

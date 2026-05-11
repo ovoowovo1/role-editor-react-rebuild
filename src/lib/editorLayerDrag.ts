@@ -3,6 +3,13 @@ import type { DecorationGroup, RoleDocument } from '../types/role';
 import { moveBlock } from './math';
 import { groupForItem } from './editorGroupMutations';
 import { syncGroups, touch } from './editorRoleUtils';
+import {
+  descendantLayerIdsForGroup,
+  isGroupDescendant,
+  membersForGroup,
+  removeMembersFromAllGroups,
+  withGroupMembers
+} from './groupTree';
 
 export type LayerDropIntent = 'sort' | 'join-group';
 export type LayerDropPlacement = 'before' | 'after';
@@ -10,6 +17,8 @@ export type LayerDropPlacement = 'before' | 'after';
 export interface LayerReorderOptions {
   intent?: LayerDropIntent;
   placement?: LayerDropPlacement;
+  parentGroupId?: string;
+  anchorGroupId?: string;
 }
 
 type LayerDragTarget =
@@ -25,6 +34,10 @@ function parseLayerDragTarget(rawId: string): LayerDragTarget {
 function orderedIds(role: RoleDocument, ids: string[]): string[] {
   const wanted = new Set(ids);
   return role.decorations.filter((item) => wanted.has(item.id)).map((item) => item.id);
+}
+
+function groupLayerIds(role: RoleDocument, group: DecorationGroup): string[] {
+  return orderedIds(role, descendantLayerIdsForGroup(role.groups ?? [], group.id));
 }
 
 function indexesForIds(role: RoleDocument, ids: string[]): number[] {
@@ -62,28 +75,73 @@ function moveLayerBlock(current: RoleDocument, movingIds: string[], overIds: str
   current.decorations = moveBlock(current.decorations, moving, targetIndex);
 }
 
+function hasMoveTarget(movingIds: string[], overIds: string[]): boolean {
+  const movingSet = new Set(movingIds);
+  return overIds.some((id) => !movingSet.has(id));
+}
+
 function removeMovingIdsFromGroups(groups: DecorationGroup[], movingIds: string[]): DecorationGroup[] {
   const movingSet = new Set(movingIds);
-  return groups.map((group) => ({ ...group, itemIds: group.itemIds.filter((id) => !movingSet.has(id)) }));
+  return groups.map((group) =>
+    withGroupMembers(
+      group,
+      membersForGroup(group).filter((member) => !(member.type === 'layer' && movingSet.has(member.id))),
+      groups
+    )
+  );
 }
 
 function ungroupedSelectedIds(current: RoleDocument, groups: DecorationGroup[], selectedDecorationIds: string[]): string[] {
   const selectedSet = new Set(selectedDecorationIds);
-  const groupedIds = new Set(groups.flatMap((group) => group.itemIds));
+  const groupedIds = new Set(groups.flatMap((group) => descendantLayerIdsForGroup(groups, group.id)));
   return current.decorations
     .filter((item) => selectedSet.has(item.id) && !groupedIds.has(item.id))
     .map((item) => item.id);
 }
 
-function insertIdsInGroup(group: DecorationGroup, movingIds: string[], anchorId?: string, placement?: LayerDropPlacement): string[] {
+function insertLayerIdsInGroup(
+  group: DecorationGroup,
+  groups: DecorationGroup[],
+  movingIds: string[],
+  anchorId?: string,
+  placement?: LayerDropPlacement,
+  anchorGroupId?: string
+): DecorationGroup {
   const movingSet = new Set(movingIds);
-  const itemIds = group.itemIds.filter((id) => !movingSet.has(id));
-  const idsToInsert = movingIds.filter((id) => !itemIds.includes(id));
-  const anchorIndex = anchorId ? itemIds.indexOf(anchorId) : -1;
+  const members = membersForGroup(group).filter((member) => !(member.type === 'layer' && movingSet.has(member.id)));
+  const idsToInsert = movingIds
+    .filter((id) => !members.some((member) => member.type === 'layer' && member.id === id))
+    .map((id) => ({ type: 'layer' as const, id }));
+  const anchorIndex = anchorGroupId
+    ? members.findIndex((member) => member.type === 'group' && member.id === anchorGroupId)
+    : anchorId
+      ? members.findIndex((member) => member.type === 'layer' && member.id === anchorId)
+      : -1;
   const insertIndex = anchorIndex >= 0
     ? anchorIndex + (placement === 'after' ? 1 : 0)
-    : itemIds.length;
-  return [...itemIds.slice(0, insertIndex), ...idsToInsert, ...itemIds.slice(insertIndex)];
+    : 0;
+  return withGroupMembers(group, [...members.slice(0, insertIndex), ...idsToInsert, ...members.slice(insertIndex)], groups);
+}
+
+function insertGroupInGroup(
+  group: DecorationGroup,
+  groups: DecorationGroup[],
+  movingGroupId: string,
+  anchorId?: string,
+  placement?: LayerDropPlacement,
+  anchorGroupId?: string
+): DecorationGroup {
+  const members = membersForGroup(group).filter((member) => !(member.type === 'group' && member.id === movingGroupId));
+  const movingMember = { type: 'group' as const, id: movingGroupId };
+  const anchorIndex = anchorGroupId
+    ? members.findIndex((member) => member.type === 'group' && member.id === anchorGroupId)
+    : anchorId
+      ? members.findIndex((member) => member.type === 'layer' && member.id === anchorId)
+      : -1;
+  const insertIndex = anchorIndex >= 0
+    ? anchorIndex + (placement === 'after' ? 1 : 0)
+    : 0;
+  return withGroupMembers(group, [...members.slice(0, insertIndex), movingMember, ...members.slice(insertIndex)], groups);
 }
 
 export function reorderBaseEditorLayers(
@@ -102,26 +160,43 @@ export function reorderBaseEditorLayers(
   const activeGroup = active.kind === 'group' ? groups.find((group) => group.id === active.id) : undefined;
   const overGroupFromHeader = over.kind === 'group' ? groups.find((group) => group.id === over.id) : undefined;
   const overGroupFromItem = over.kind === 'item' ? groupForItem(groups, over.id) : undefined;
-  const requestedJoinGroup = overGroupFromHeader ?? overGroupFromItem;
+  const parentGapGroup = options.parentGroupId ? groups.find((group) => group.id === options.parentGroupId) : undefined;
+  const requestedJoinGroup = parentGapGroup ?? overGroupFromHeader ?? overGroupFromItem;
   let joinTargetGroup = options.intent === 'join-group' && requestedJoinGroup && !requestedJoinGroup.collapsed
     ? requestedJoinGroup
     : undefined;
-  const joinAnchorId = joinTargetGroup && over.kind === 'item' && overGroupFromItem?.id === joinTargetGroup.id
+  const joinAnchorId = joinTargetGroup && !options.anchorGroupId && over.kind === 'item' && overGroupFromItem?.id === joinTargetGroup.id
     ? over.id
     : undefined;
+  const joinAnchorGroupId = joinTargetGroup && options.anchorGroupId ? options.anchorGroupId : undefined;
+  const joinAnchorGroup = joinAnchorGroupId ? groups.find((group) => group.id === joinAnchorGroupId) : undefined;
 
   let movingIds: string[] = [];
   let overIds: string[] = [];
 
   if (active.kind === 'group') {
     if (!activeGroup) return;
-    movingIds = orderedIds(current, activeGroup.itemIds);
+    movingIds = groupLayerIds(current, activeGroup);
+    const originalOverIds = overGroupFromHeader
+      ? groupLayerIds(current, overGroupFromHeader)
+      : over.kind === 'item'
+        ? overGroupFromItem ? groupLayerIds(current, overGroupFromItem) : [over.id]
+        : [];
+
+    if (joinTargetGroup) {
+      if (joinTargetGroup.id === activeGroup.id || isGroupDescendant(groups, activeGroup.id, joinTargetGroup.id)) return;
+      const baseGroups = removeMembersFromAllGroups(groups, [{ type: 'group', id: activeGroup.id }]);
+      current.groups = baseGroups.map((group) =>
+        group.id === joinTargetGroup.id
+          ? insertGroupInGroup(group, baseGroups, activeGroup.id, joinAnchorId, options.placement, joinAnchorGroupId)
+          : group
+      );
+    }
 
     if (overGroupFromHeader) {
-      overIds = orderedIds(current, overGroupFromHeader.itemIds);
+      overIds = originalOverIds;
     } else if (over.kind === 'item') {
-      const targetGroup = overGroupFromItem;
-      overIds = targetGroup ? orderedIds(current, targetGroup.itemIds) : [over.id];
+      overIds = originalOverIds;
     }
   } else {
     const activeItemExists = current.decorations.some((item) => item.id === active.id);
@@ -130,7 +205,7 @@ export function reorderBaseEditorLayers(
     const sourceGroup = groupForItem(groups, active.id);
     const draggingSingleGroupedItem = !!sourceGroup;
     const selectedSet = new Set(selectedDecorationIds);
-    if (joinTargetGroup && sourceGroup?.id === joinTargetGroup.id) {
+    if (joinTargetGroup && sourceGroup?.id === joinTargetGroup.id && !joinAnchorGroupId) {
       return;
     }
 
@@ -141,25 +216,30 @@ export function reorderBaseEditorLayers(
         : [active.id];
 
     if (joinTargetGroup) {
-      overIds = joinAnchorId ? [joinAnchorId] : orderedIds(current, joinTargetGroup.itemIds);
+      overIds = joinAnchorGroup
+        ? groupLayerIds(current, joinAnchorGroup)
+        : joinAnchorId
+          ? [joinAnchorId]
+          : groupLayerIds(current, joinTargetGroup);
     } else if (overGroupFromHeader) {
-      overIds = orderedIds(current, overGroupFromHeader.itemIds);
+      overIds = groupLayerIds(current, overGroupFromHeader);
     } else if (over.kind === 'item') {
       const sameGroupMove = sourceGroup && overGroupFromItem && sourceGroup.id === overGroupFromItem.id;
       overIds = overGroupFromItem && !sameGroupMove
-        ? orderedIds(current, overGroupFromItem.itemIds)
+        ? groupLayerIds(current, overGroupFromItem)
         : [over.id];
     }
 
-    if (!movingIds.length || !overIds.length || movingIds.some((id) => overIds.includes(id))) return;
+    if (!movingIds.length || !overIds.length || !hasMoveTarget(movingIds, overIds)) return;
 
     if (movingIds.length) {
       const sameGroupMove = movingIds.length === 1 && sourceGroup && overGroupFromItem && sourceGroup.id === overGroupFromItem.id;
       if (joinTargetGroup) {
         const joinTargetGroupId = joinTargetGroup.id;
-        current.groups = removeMovingIdsFromGroups(groups, movingIds).map((group) =>
+        const baseGroups = removeMovingIdsFromGroups(groups, movingIds);
+        current.groups = baseGroups.map((group) =>
           group.id === joinTargetGroupId
-            ? { ...group, itemIds: insertIdsInGroup(group, movingIds, joinAnchorId, options.placement) }
+            ? insertLayerIdsInGroup(group, baseGroups, movingIds, joinAnchorId, options.placement, joinAnchorGroupId)
             : group
         );
       } else if (!sameGroupMove) {
@@ -168,8 +248,8 @@ export function reorderBaseEditorLayers(
     }
   }
 
-  if (!movingIds.length || !overIds.length || movingIds.some((id) => overIds.includes(id))) return;
-  moveLayerBlock(current, movingIds, overIds, joinTargetGroup && !joinAnchorId ? 'before' : options.placement);
+  if (!movingIds.length || !overIds.length || !hasMoveTarget(movingIds, overIds)) return;
+  moveLayerBlock(current, movingIds, overIds, joinTargetGroup && !joinAnchorId && !joinAnchorGroup ? 'before' : options.placement);
 }
 
 function sameGroups(a: DecorationGroup[] | undefined, b: DecorationGroup[] | undefined): boolean {
@@ -184,12 +264,20 @@ function sameGroups(a: DecorationGroup[] | undefined, b: DecorationGroup[] | und
       leftGroup.name !== rightGroup.name ||
       leftGroup.collapsed !== rightGroup.collapsed ||
       leftGroup.visible !== rightGroup.visible ||
-      leftGroup.itemIds.length !== rightGroup.itemIds.length
+      leftGroup.itemIds.length !== rightGroup.itemIds.length ||
+      membersForGroup(leftGroup).length !== membersForGroup(rightGroup).length
     ) {
       return false;
     }
     for (let itemIndex = 0; itemIndex < leftGroup.itemIds.length; itemIndex += 1) {
       if (leftGroup.itemIds[itemIndex] !== rightGroup.itemIds[itemIndex]) return false;
+    }
+    const leftMembers = membersForGroup(leftGroup);
+    const rightMembers = membersForGroup(rightGroup);
+    for (let memberIndex = 0; memberIndex < leftMembers.length; memberIndex += 1) {
+      if (leftMembers[memberIndex].type !== rightMembers[memberIndex].type || leftMembers[memberIndex].id !== rightMembers[memberIndex].id) {
+        return false;
+      }
     }
   }
   return true;
@@ -209,7 +297,8 @@ export function reorderBaseEditorLayersImmutable(
     decorations: role.decorations,
     groups: (role.groups ?? []).map((group) => ({
       ...group,
-      itemIds: [...group.itemIds]
+      itemIds: [...group.itemIds],
+      members: membersForGroup(group)
     }))
   };
 

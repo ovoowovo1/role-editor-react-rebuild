@@ -2,6 +2,7 @@ import type { DecorationLayer, RoleDocument, TransformValues } from '../types/ro
 import { HEAD_LAYER_ID } from '../constants/layers';
 import { getHeadLayerIndex } from './layerOrdering';
 import { cloneRole } from './editorRoleUtils';
+import { membersForGroup, withGroupMembers } from './groupTree';
 
 export const LOCAL_HISTORY_LIMIT = 200;
 
@@ -164,10 +165,13 @@ export function removeSelectedDecos(role: RoleDocument, selectedIds: string[]): 
   const validIds = new Set(decorations.map((deco) => deco.id));
   validIds.add(HEAD_LAYER_ID);
   const groups = (role.groups ?? [])
-    .map((group) => ({
-      ...group,
-      itemIds: group.itemIds.filter((id) => validIds.has(id) && !selected.has(id))
-    }))
+    .map((group) =>
+      withGroupMembers(
+        group,
+        membersForGroup(group).filter((member) => member.type === 'group' || (validIds.has(member.id) && !selected.has(member.id))),
+        role.groups ?? []
+      )
+    )
     .filter((group) => group.itemIds.length >= 2);
 
   return {

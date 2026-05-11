@@ -3,6 +3,7 @@ import {
   useRef,
   useState,
   type ButtonHTMLAttributes,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react';
@@ -39,6 +40,7 @@ export function LayerItemRow({
   return (
     <div
       className={`layer-row ${row.grouped ? 'group-child' : ''} ${row.selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${!deco.visible ? 'muted' : ''}`}
+      style={{ '--layer-depth': row.depth } as CSSProperties}
       onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelect(deco.id, event.ctrlKey || event.metaKey)}
       data-layer-id={deco.id}
     >
@@ -101,6 +103,7 @@ export function HeadRow({
   return (
     <div
       className={`layer-row head-layer ${row.grouped ? 'group-child' : ''} ${row.selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${headLayer.visible === false ? 'muted' : ''}`}
+      style={{ '--layer-depth': row.depth } as CSSProperties}
       data-layer-id="head"
       title={t('layer.headTitle')}
       onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelect(HEAD_LAYER_ID, event.ctrlKey || event.metaKey)}
@@ -199,8 +202,10 @@ export function GroupHeaderRow({
   return (
     <div
       className={`layer-group ${row.selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isJoinTarget ? 'join-target' : ''} ${group.visible === false ? 'muted' : ''}`}
+      style={{ '--layer-depth': row.depth } as CSSProperties}
       onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelectGroup(group.id, event.ctrlKey || event.metaKey)}
       data-group-id={group.id}
+      data-depth={Math.min(row.depth, 4)}
     >
       <button className="group-drag-handle" type="button" {...dragHandleProps} title={t('layer.groupDrag')}>
         ⋮⋮

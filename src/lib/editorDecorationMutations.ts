@@ -2,6 +2,7 @@ import type { DecorationLayer, EditorClipboardItem, PartOption, RoleDocument } f
 import { getHeadLayerIndex } from './layerOrdering';
 import { createId, normalizeDegrees, round } from './math';
 import { shiftHeadLayerForDeletedIndexes, shiftHeadLayerForInsert } from './editorRoleUtils';
+import { membersForGroup, withGroupMembers } from './groupTree';
 
 export function insertAfterSelection(role: RoleDocument, selectedIds: string[]): number {
   const idToIndex = new Map(role.decorations.map((item, i) => [item.id, i]));
@@ -50,6 +51,9 @@ export function deleteDecorationFromRole(current: RoleDocument, id: string): voi
   const oldHeadIndex = getHeadLayerIndex(current);
   const deletedIndex = current.decorations.findIndex((item) => item.id === id);
   current.decorations = current.decorations.filter((item) => item.id !== id);
+  current.groups = (current.groups ?? []).map((group) =>
+    withGroupMembers(group, membersForGroup(group).filter((member) => member.type === 'group' || member.id !== id), current.groups ?? [])
+  );
   shiftHeadLayerForDeletedIndexes(current, oldHeadIndex, [deletedIndex]);
 }
 
@@ -60,6 +64,9 @@ export function deleteSelectedFromRole(current: RoleDocument, selectedIds: strin
     .map((item, index) => (selected.has(item.id) ? index : -1))
     .filter((index) => index >= 0);
   current.decorations = current.decorations.filter((item) => !selected.has(item.id));
+  current.groups = (current.groups ?? []).map((group) =>
+    withGroupMembers(group, membersForGroup(group).filter((member) => member.type === 'group' || !selected.has(member.id)), current.groups ?? [])
+  );
   shiftHeadLayerForDeletedIndexes(current, oldHeadIndex, deletedIndexes);
 }
 

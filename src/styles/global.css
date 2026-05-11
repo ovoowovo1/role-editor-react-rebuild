@@ -1175,11 +1175,47 @@ input[type='range']::-webkit-slider-thumb {
   cursor: pointer;
 }
 
-.layer-row.group-child {
-  margin-left: 16px;
+.layer-list-virtual-row .layer-row.group-child {
+  margin-left: calc(18px + max(0, var(--layer-depth, 0) - 1) * 22px);
   padding-left: 10px;
   border-left-color: rgba(64, 220, 243, 0.38);
   background: rgba(5, 20, 31, 0.5);
+}
+
+.layer-list-virtual-row .layer-group {
+  position: relative;
+  margin-left: calc(var(--layer-depth, 0) * 22px);
+}
+
+.layer-group[data-depth='1'],
+.layer-group[data-depth='2'],
+.layer-group[data-depth='3'],
+.layer-group[data-depth='4'] {
+  border-left-width: 4px;
+  background: linear-gradient(90deg, rgba(9, 59, 78, 0.95), rgba(4, 25, 38, 0.78));
+  box-shadow: inset 3px 0 0 rgba(174, 244, 255, 0.4);
+}
+
+.layer-group[data-depth='1']::before,
+.layer-group[data-depth='2']::before,
+.layer-group[data-depth='3']::before,
+.layer-group[data-depth='4']::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: -6px;
+  bottom: -6px;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(174, 244, 255, 0.42);
+}
+
+.layer-group[data-depth='2'],
+.layer-group[data-depth='3'],
+.layer-group[data-depth='4'] {
+  border-color: rgba(255, 211, 105, 0.52);
+  background: linear-gradient(90deg, rgba(77, 64, 18, 0.92), rgba(4, 25, 38, 0.78));
+  box-shadow: inset 3px 0 0 rgba(255, 211, 105, 0.68);
 }
 
 .layer-group.dragging {
