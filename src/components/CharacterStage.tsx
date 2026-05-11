@@ -68,6 +68,12 @@ interface StageSceneState {
   actorClip: ActorClip;
   disguiseRoot: Container;
   headLayerClip: GafMovieClip;
+  selectionDragController: Container;
+  selectionDragControllerGraphic: Graphics;
+  selectionDragControllerVisuals: Container;
+  selectionDragVisualKey: string;
+  selectionDragVisualsById: Map<string, Container>;
+  selectionDragTargetId: string | null;
   failedTextures: Set<string>;
   decoDisplays: Map<string, DecoDisplayRecord>;
   lastDisguiseChildOrder: Container[];
@@ -80,12 +86,20 @@ const DECO_GLOW_CAP = 80;
 const DEFER_STAGE_SYNC_DECO_COUNT = 2000;
 const LARGE_MULTI_DRAG_THRESHOLD = 5000;
 const SCROLL_SURFACE_PADDING = 160;
+const SELECTION_DRAG_HIT_SIZE = 50;
+const SELECTION_DRAG_HIT_PADDING = 4;
 
 let cachedGlowFilter: ReturnType<typeof createDecoSelectionGlowFilter> | null = null;
+let cachedControllerGlowFilter: ReturnType<typeof createDecoSelectionGlowFilter> | null = null;
 
 function getCachedGlowFilter(): ReturnType<typeof createDecoSelectionGlowFilter> {
   if (!cachedGlowFilter) cachedGlowFilter = createDecoSelectionGlowFilter();
   return cachedGlowFilter;
+}
+
+function getCachedControllerGlowFilter(): ReturnType<typeof createDecoSelectionGlowFilter> {
+  if (!cachedControllerGlowFilter) cachedControllerGlowFilter = createDecoSelectionGlowFilter({ knockout: true });
+  return cachedControllerGlowFilter;
 }
 
 function actorSceneKey(role: RoleDocument, bodyAnimationLabel: string): string {
@@ -219,12 +233,7 @@ function prepareDisguiseRoot(
   return { disguiseRoot, headLayerClip };
 }
 
-function createDisguiseEntryDisplay(
-  deco: DecorationLayer,
-  failedTextures: Set<string>,
-  disguiseRoot: Container,
-  decoOptions: DisguiseDecoOptions
-): Container | null {
+function createDecorationVisual(deco: DecorationLayer, failedTextures: Set<string>): Container | null {
   const option = optionById[deco.assetId];
   const missing = !option || isMissingDecoAssetId(deco.assetId);
   const wrapper = new Container();
@@ -233,8 +242,7 @@ function createDisguiseEntryDisplay(
   wrapper.scale.set(deco.scaleX, deco.scaleY);
   wrapper.alpha = clamp(deco.opacity, 0, 1);
   wrapper.visible = deco.visible !== false;
-  wrapper.eventMode = 'static';
-  wrapper.cursor = 'pointer';
+  wrapper.eventMode = 'none';
 
   if (missing) {
     wrapper.addChild(makeMissingDecoGraphic(28));
@@ -256,6 +264,20 @@ function createDisguiseEntryDisplay(
     applySpriteRegistration(sprite, option, 64, failedTextures);
     wrapper.addChild(sprite);
   }
+
+  return wrapper;
+}
+
+function createDisguiseEntryDisplay(
+  deco: DecorationLayer,
+  failedTextures: Set<string>,
+  disguiseRoot: Container,
+  decoOptions: DisguiseDecoOptions
+): Container | null {
+  const wrapper = createDecorationVisual(deco, failedTextures);
+  if (!wrapper) return null;
+  wrapper.eventMode = 'static';
+  wrapper.cursor = 'pointer';
 
   wrapper.on('pointerdown', (event: FederatedPointerEvent) => {
     decoOptions.onPointerDown(deco.id, event, disguiseRoot);
@@ -292,8 +314,9 @@ function applyHeadLayerDisplayTransform(headLayerClip: GafMovieClip, role: RoleD
 }
 
 function syncDecorationSelection(record: DecoDisplayRecord, selected: boolean, skipGlow: boolean): void {
-  if (record.selected === selected) return;
-  record.container.filters = selected && !skipGlow ? [getCachedGlowFilter()] : null;
+  const nextFilters = selected && !skipGlow ? [getCachedGlowFilter()] : null;
+  if (record.selected === selected && record.container.filters === nextFilters) return;
+  record.container.filters = nextFilters;
   record.selected = selected;
 }
 
@@ -342,6 +365,9 @@ function syncDisguiseChildOrder(scene: StageSceneState, role: RoleDocument, over
 
   // PIXI renders lower childIndex first, so convert top-first state to bottom-to-top display order.
   const orderedChildren = topFirstChildren.slice().reverse();
+  if (!overlay && scene.selectionDragController.visible) {
+    orderedChildren.push(scene.selectionDragController);
+  }
 
   if (sameChildOrder(scene.lastDisguiseChildOrder, orderedChildren)) return;
   replaceDisguiseChildren(scene.disguiseRoot, orderedChildren);
@@ -370,6 +396,196 @@ function createLargeMultiDragPreview(width: number, height: number): Container {
   return container;
 }
 
+interface LocalBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+function mergeBounds(a: LocalBounds | null, b: LocalBounds): LocalBounds {
+  if (!a) return b;
+  return {
+    minX: Math.min(a.minX, b.minX),
+    minY: Math.min(a.minY, b.minY),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxY: Math.max(a.maxY, b.maxY)
+  };
+}
+
+function pointBounds(x: number, y: number): LocalBounds {
+  const half = SELECTION_DRAG_HIT_SIZE / 2;
+  return { minX: x - half, minY: y - half, maxX: x + half, maxY: y + half };
+}
+
+function containerBoundsInRoot(container: Container, root: Container): LocalBounds {
+  const localBounds = container.getLocalBounds();
+  if (!Number.isFinite(localBounds.width) || !Number.isFinite(localBounds.height) || localBounds.width <= 0 || localBounds.height <= 0) {
+    const position = getDisplayRootPosition(container, root);
+    return pointBounds(position.x, position.y);
+  }
+
+  let bounds: LocalBounds | null = null;
+  const corners = [
+    { x: localBounds.x, y: localBounds.y },
+    { x: localBounds.x + localBounds.width, y: localBounds.y },
+    { x: localBounds.x + localBounds.width, y: localBounds.y + localBounds.height },
+    { x: localBounds.x, y: localBounds.y + localBounds.height }
+  ];
+  for (const corner of corners) {
+    const global = container.toGlobal(corner);
+    const local = root.toLocal(global);
+    bounds = mergeBounds(bounds, { minX: local.x, minY: local.y, maxX: local.x, maxY: local.y });
+  }
+  return bounds ?? pointBounds(container.x, container.y);
+}
+
+function hideSelectionDragController(scene: StageSceneState): void {
+  scene.selectionDragTargetId = null;
+  scene.selectionDragVisualKey = '';
+  scene.selectionDragVisualsById.clear();
+  scene.selectionDragController.visible = false;
+  scene.selectionDragController.eventMode = 'none';
+  scene.selectionDragController.hitArea = null;
+  scene.selectionDragController.filters = null;
+  scene.selectionDragControllerGraphic.clear();
+  scene.selectionDragControllerVisuals.removeChildren().forEach((child) => {
+    if (!child.destroyed) child.destroy({ children: true });
+  });
+}
+
+function selectionDragVisualKey(selectedDecorations: DecorationLayer[], centerX: number, centerY: number): string {
+  return [
+    centerX,
+    centerY,
+    selectedDecorations.map((deco) => `${deco.id}:${decorationDisplayKey(deco)}:${decorationTransformKey(deco)}`).join('|')
+  ].join('\u0000');
+}
+
+function syncSelectionDragControllerVisuals(
+  scene: StageSceneState,
+  selectedDecorations: DecorationLayer[],
+  centerX: number,
+  centerY: number
+): void {
+  const nextKey = selectionDragVisualKey(selectedDecorations, centerX, centerY);
+  if (scene.selectionDragVisualKey === nextKey) return;
+
+  scene.selectionDragVisualKey = nextKey;
+  scene.selectionDragVisualsById.clear();
+  scene.selectionDragControllerVisuals.removeChildren().forEach((child) => {
+    if (!child.destroyed) child.destroy({ children: true });
+  });
+
+  for (const deco of selectedDecorations) {
+    const visual = createDecorationVisual(deco, scene.failedTextures);
+    if (!visual) continue;
+    visual.eventMode = 'none';
+    visual.cursor = 'default';
+    visual.position.set(deco.x - centerX, deco.y - centerY);
+    scene.selectionDragControllerVisuals.addChild(visual);
+    scene.selectionDragVisualsById.set(deco.id, visual);
+  }
+}
+
+function syncSelectionDragControllerVisualTransforms(
+  scene: StageSceneState,
+  selectedDecorations: DecorationLayer[],
+  centerX: number,
+  centerY: number
+): void {
+  for (const deco of selectedDecorations) {
+    const visual = scene.selectionDragVisualsById.get(deco.id);
+    if (!visual) continue;
+    visual.position.set(deco.x - centerX, deco.y - centerY);
+    visual.rotation = (deco.rotation * Math.PI) / 180;
+    visual.scale.set(deco.scaleX, deco.scaleY);
+    visual.alpha = clamp(deco.opacity, 0, 1);
+    visual.visible = deco.visible !== false;
+  }
+}
+
+function selectionControllerPosition(selectedDecorations: DecorationLayer[]): { x: number; y: number } {
+  if (selectedDecorations.length === 1) {
+    const deco = selectedDecorations[0];
+    return { x: deco.x, y: deco.y };
+  }
+  const sum = selectedDecorations.reduce(
+    (acc, deco) => ({ x: acc.x + deco.x, y: acc.y + deco.y }),
+    { x: 0, y: 0 }
+  );
+  return {
+    x: sum.x / selectedDecorations.length,
+    y: sum.y / selectedDecorations.length
+  };
+}
+
+function selectionDragHitArea(bounds: LocalBounds, centerX: number, centerY: number): Rectangle {
+  const half = SELECTION_DRAG_HIT_SIZE / 2;
+  const minX = Math.min(-half, bounds.minX - centerX - SELECTION_DRAG_HIT_PADDING);
+  const minY = Math.min(-half, bounds.minY - centerY - SELECTION_DRAG_HIT_PADDING);
+  const maxX = Math.max(half, bounds.maxX - centerX + SELECTION_DRAG_HIT_PADDING);
+  const maxY = Math.max(half, bounds.maxY - centerY + SELECTION_DRAG_HIT_PADDING);
+  return new Rectangle(minX, minY, maxX - minX, maxY - minY);
+}
+
+function syncSelectionDragController(
+  scene: StageSceneState,
+  role: RoleDocument,
+  selectedIds: string[],
+  hasActiveOverlay: boolean
+): void {
+  if (hasActiveOverlay) {
+    hideSelectionDragController(scene);
+    return;
+  }
+
+  const selectedSet = new Set(selectedIds);
+  const selectedDecorations = role.decorations.filter((deco) => selectedSet.has(deco.id) && deco.visible !== false);
+  const target = selectedDecorations[0];
+  if (!target) {
+    hideSelectionDragController(scene);
+    return;
+  }
+
+  let bounds: LocalBounds | null = null;
+  if (selectedDecorations.length >= LARGE_MULTI_DRAG_THRESHOLD) {
+    for (const deco of selectedDecorations) {
+      bounds = mergeBounds(bounds, pointBounds(deco.x, deco.y));
+    }
+  } else {
+    for (const deco of selectedDecorations) {
+      const record = scene.decoDisplays.get(deco.id);
+      if (!record) continue;
+      bounds = mergeBounds(bounds, containerBoundsInRoot(record.container, scene.disguiseRoot));
+    }
+  }
+
+  if (!bounds) {
+    hideSelectionDragController(scene);
+    return;
+  }
+
+  const center = selectionControllerPosition(selectedDecorations);
+  const centerX = center.x;
+  const centerY = center.y;
+  const hitArea = selectionDragHitArea(bounds, centerX, centerY);
+
+  scene.selectionDragTargetId = target.id;
+  scene.selectionDragController.position.set(centerX, centerY);
+  scene.selectionDragController.visible = true;
+  scene.selectionDragController.eventMode = 'static';
+  scene.selectionDragController.cursor = 'pointer';
+  scene.selectionDragController.hitArea = hitArea;
+  scene.selectionDragController.filters = [getCachedControllerGlowFilter()];
+  syncSelectionDragControllerVisuals(scene, selectedDecorations, centerX, centerY);
+  syncSelectionDragControllerVisualTransforms(scene, selectedDecorations, centerX, centerY);
+  scene.selectionDragControllerGraphic.clear();
+  scene.selectionDragControllerGraphic.beginFill(0x000000, 0.001);
+  scene.selectionDragControllerGraphic.drawRect(hitArea.x, hitArea.y, hitArea.width, hitArea.height);
+  scene.selectionDragControllerGraphic.endFill();
+}
+
 function getDisplayRootPosition(container: Container, root: Container): { x: number; y: number } {
   const global = container.toGlobal({ x: 0, y: 0 });
   const local = root.toLocal(global);
@@ -396,7 +612,7 @@ function syncDecorationDisplays(
 ): void {
   const decorationsById = new Map(role.decorations.map((deco) => [deco.id, deco]));
   const selectedSet = new Set(selectedIds);
-  const skipGlow = selectedIds.length > DECO_GLOW_CAP;
+  const skipGlow = selectedIds.length > DECO_GLOW_CAP || selectedIds.length > 0;
 
   for (const [id, record] of scene.decoDisplays) {
     const deco = decorationsById.get(id);
@@ -433,6 +649,7 @@ function syncDecorationDisplays(
     syncDecorationSelection(record, selectedSet.has(deco.id), skipGlow);
   }
 
+  syncSelectionDragController(scene, role, selectedIds, !!activeOverlay);
   syncDisguiseChildOrder(scene, role, activeOverlay?.container, activeOverlay?.selectedSet);
 }
 
@@ -522,6 +739,11 @@ export function CharacterStage({
 
     const deco = currentRole.decorations.find((item) => item.id === id);
     if (!deco) return;
+
+    if (sceneRef.current) {
+      hideSelectionDragController(sceneRef.current);
+      syncDisguiseChildOrder(sceneRef.current, currentRole);
+    }
 
     const isMultiDrag = selectedIdsSnapshot.length > 1;
     if (isMultiDrag && sceneRef.current) {
@@ -835,6 +1057,19 @@ export function CharacterStage({
       const { disguiseRoot, headLayerClip } = prepareDisguiseRoot(buildRole, headFrame, failedTextures);
       actorClip.headClip.setDisguise(disguiseRoot);
       disguiseRoot.addChild(headLayerClip);
+      const selectionDragController = new Container();
+      const selectionDragControllerGraphic = new Graphics();
+      const selectionDragControllerVisuals = new Container();
+      selectionDragController.visible = false;
+      selectionDragController.eventMode = 'none';
+      selectionDragController.addChild(selectionDragControllerGraphic);
+      selectionDragController.addChild(selectionDragControllerVisuals);
+      selectionDragController.on('pointerdown', (event: FederatedPointerEvent) => {
+        const currentScene = sceneRef.current;
+        const targetId = currentScene?.selectionDragTargetId;
+        if (!currentScene || !targetId) return;
+        beginDecorationDragRef.current(targetId, event, currentScene.disguiseRoot);
+      });
 
       const updatePosition = () => {
         const hostEl = hostRef.current;
@@ -858,6 +1093,12 @@ export function CharacterStage({
         actorClip,
         disguiseRoot,
         headLayerClip,
+        selectionDragController,
+        selectionDragControllerGraphic,
+        selectionDragControllerVisuals,
+        selectionDragVisualKey: '',
+        selectionDragVisualsById: new Map(),
+        selectionDragTargetId: null,
         failedTextures,
         decoDisplays: new Map(),
         lastDisguiseChildOrder: [],
@@ -894,11 +1135,17 @@ export function CharacterStage({
         let ny = local.y - dragging.offsetY;
 
         if (dragging.overlay) {
+          const disc = clampToDisc(nx, ny, positionRange(roleRef.current));
+          nx = disc.x;
+          ny = disc.y;
           dragging.overlay.container.position.set(nx, ny);
           return;
         }
 
         if (dragging.preview) {
+          const disc = clampToDisc(nx, ny, positionRange(roleRef.current));
+          nx = disc.x;
+          ny = disc.y;
           dragging.preview.container.position.set(nx, ny);
           return;
         }

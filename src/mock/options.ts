@@ -242,7 +242,7 @@ export function createDefaultRole(camp = camps[0].code, gender: GenderCode = 'ma
     name: 'Mock Twilight Role',
     camp,
     gender,
-    positionRange: 9999,
+    positionRange: 60,
     parts: defaultParts(),
     partFrames: defaultPartFrames(),
     partScales: defaultPartScales(),

@@ -41,12 +41,16 @@ interface RangeControlProps {
   step: number;
   disabled: boolean;
   hint?: string;
+  numberMin?: number | null;
+  numberMax?: number | null;
   onBegin(): void;
   onCommit(): void;
   onChange(value: number, commit?: boolean): void;
 }
 
-function RangeControl({ label, value, min, max, step, disabled, hint, onBegin, onCommit, onChange }: RangeControlProps) {
+function RangeControl({ label, value, min, max, step, disabled, hint, numberMin = min, numberMax = max, onBegin, onCommit, onChange }: RangeControlProps) {
+  const inputMin = numberMin === null ? undefined : numberMin;
+  const inputMax = numberMax === null ? undefined : numberMax;
   return (
     <label className="range-box">
       <span className="range-label">{label}</span>
@@ -65,8 +69,8 @@ function RangeControl({ label, value, min, max, step, disabled, hint, onBegin, o
       <input
         className="number-box"
         type="number"
-        min={min}
-        max={max}
+        min={inputMin}
+        max={inputMax}
         step={step}
         value={Number.isFinite(value) ? value : 0}
         disabled={disabled}
@@ -278,6 +282,8 @@ export function EditControls({
             disabled={disabled}
             onBegin={onBeginTransient}
             onCommit={onCommitTransient}
+            numberMin={null}
+            numberMax={null}
             onChange={(posX, commit) => onTransformChange({ posX }, commit)}
           />
           <RangeControl
@@ -289,6 +295,8 @@ export function EditControls({
             disabled={disabled}
             onBegin={onBeginTransient}
             onCommit={onCommitTransient}
+            numberMin={null}
+            numberMax={null}
             onChange={(posY, commit) => onTransformChange({ posY }, commit)}
           />
         </div>

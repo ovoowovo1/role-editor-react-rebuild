@@ -34,6 +34,15 @@ const makeDefaultGroupTransform = (): DecoGroupParentTransform => ({
   dy: 0
 });
 
+function clampGroupParentPosition(parent: DecoGroupParentTransform, snapshot: DecoGroupSnapshot, range: number): DecoGroupParentTransform {
+  const disc = clampToDisc(snapshot.centroidX + parent.dx, snapshot.centroidY + parent.dy, range);
+  return {
+    ...parent,
+    dx: disc.x - snapshot.centroidX,
+    dy: disc.y - snapshot.centroidY
+  };
+}
+
 export function useEditorGroupTransform({
   role,
   roleRef,
@@ -230,32 +239,35 @@ export function useEditorGroupTransform({
         if (typeof patch.posY === 'number') {
           nextGroupTransform.dy += patch.posY - firstY;
         }
+        const shouldClampPosition = typeof patch.posX === 'number' || typeof patch.posY === 'number';
+        const boundedGroupTransform = shouldClampPosition
+          ? clampGroupParentPosition(nextGroupTransform, snapshot, positionRangeFromRole(currentRole))
+          : nextGroupTransform;
 
         const shouldPreserveFirstPosition =
           (typeof patch.rotate === 'number' || typeof patch.scale === 'number' || typeof patch.ratio === 'number') &&
           typeof patch.posX !== 'number' &&
           typeof patch.posY !== 'number';
         if (shouldPreserveFirstPosition) {
-          const nextFirstPos = deriveFirstItemPosition(nextGroupTransform, snapshot);
+          const nextFirstPos = deriveFirstItemPosition(boundedGroupTransform, snapshot);
           if (nextFirstPos) {
-            nextGroupTransform.dx += firstX - nextFirstPos.x;
-            nextGroupTransform.dy += firstY - nextFirstPos.y;
+            boundedGroupTransform.dx += firstX - nextFirstPos.x;
+            boundedGroupTransform.dy += firstY - nextFirstPos.y;
           }
         }
 
-        setCurrentGroupTransform(nextGroupTransform);
+        setCurrentGroupTransform(boundedGroupTransform);
 
         updateRole((current) => {
           const selected = new Set(selectedDecorationIds);
-          const range = positionRangeFromRole(current);
           current.decorations = current.decorations.map((item) => {
             if (!selected.has(item.id)) return item;
-            const derived = applyGroupParentToItem(nextGroupTransform, snapshot, item.id);
+            const derived = applyGroupParentToItem(boundedGroupTransform, snapshot, item.id);
             if (!derived) return item;
             return {
               ...item,
-              x: clamp(derived.x, -range, range),
-              y: clamp(derived.y, -range, range),
+              x: derived.x,
+              y: derived.y,
               scaleX: derived.scaleX,
               scaleY: derived.scaleY,
               rotation: normalizeDegrees(derived.rotation)
@@ -273,6 +285,7 @@ export function useEditorGroupTransform({
         const range = positionRangeFromRole(current);
         const deltaX = typeof patch.posX === 'number' ? patch.posX - first.x : 0;
         const deltaY = typeof patch.posY === 'number' ? patch.posY - first.y : 0;
+        const shouldClampPosition = typeof patch.posX === 'number' || typeof patch.posY === 'number';
         current.decorations = current.decorations.map((item) => {
           if (!selected.has(item.id)) return item;
           let next = { ...item };
@@ -287,8 +300,11 @@ export function useEditorGroupTransform({
           if (typeof patch.ratio === 'number') {
             next.scaleY = Math.abs(item.scaleX) * clampDecoRatio(patch.ratio);
           }
-          if (typeof patch.posX === 'number') next.x = clamp(item.x + deltaX, -range, range);
-          if (typeof patch.posY === 'number') next.y = clamp(item.y + deltaY, -range, range);
+          if (shouldClampPosition) {
+            const disc = clampToDisc(item.x + deltaX, item.y + deltaY, range);
+            next.x = disc.x;
+            next.y = disc.y;
+          }
           return next;
         });
         return current;
@@ -310,18 +326,17 @@ export function useEditorGroupTransform({
           dx: currentGroupTransform.dx + dx,
           dy: currentGroupTransform.dy + dy
         };
+        const boundedParent = clampGroupParentPosition(nextParent, snapshot, positionRangeFromRole(roleRef.current));
         const selected = new Set(selectedDecorationIds);
         updateRole((current) => {
-          const range = positionRangeFromRole(current);
           current.decorations = current.decorations.map((item) => {
             if (!selected.has(item.id)) return item;
-            const derived = applyGroupParentToItem(nextParent, snapshot, item.id);
+            const derived = applyGroupParentToItem(boundedParent, snapshot, item.id);
             if (!derived) return item;
-            const disc = clampToDisc(derived.x, derived.y, range);
             return {
               ...item,
-              x: disc.x,
-              y: disc.y,
+              x: derived.x,
+              y: derived.y,
               scaleX: derived.scaleX,
               scaleY: derived.scaleY,
               rotation: normalizeDegrees(derived.rotation)
@@ -329,7 +344,7 @@ export function useEditorGroupTransform({
           });
           return current;
         }, commit);
-        setCurrentGroupTransform(nextParent);
+        setCurrentGroupTransform(boundedParent);
         return;
       }
       updateRole((current) => {
@@ -403,7 +418,6 @@ export function useEditorGroupTransform({
         ...currentGroupTransform,
         scaleX: -currentGroupTransform.scaleX
       };
-      const range = positionRangeFromRole(roleRef.current);
       const selected = new Set(selectedDecorationIds);
       updateRole((current) => {
         current.decorations = current.decorations.map((item) => {
@@ -412,8 +426,8 @@ export function useEditorGroupTransform({
           if (!derived) return item;
           return {
             ...item,
-            x: clamp(derived.x, -range, range),
-            y: clamp(derived.y, -range, range),
+            x: derived.x,
+            y: derived.y,
             scaleX: derived.scaleX,
             scaleY: derived.scaleY,
             rotation: normalizeDegrees(derived.rotation)
@@ -442,7 +456,6 @@ export function useEditorGroupTransform({
         ...currentGroupTransform,
         scaleY: -currentGroupTransform.scaleY
       };
-      const range = positionRangeFromRole(roleRef.current);
       const selected = new Set(selectedDecorationIds);
       updateRole((current) => {
         current.decorations = current.decorations.map((item) => {
@@ -451,8 +464,8 @@ export function useEditorGroupTransform({
           if (!derived) return item;
           return {
             ...item,
-            x: clamp(derived.x, -range, range),
-            y: clamp(derived.y, -range, range),
+            x: derived.x,
+            y: derived.y,
             scaleX: derived.scaleX,
             scaleY: derived.scaleY,
             rotation: normalizeDegrees(derived.rotation)
