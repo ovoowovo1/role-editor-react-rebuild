@@ -1,6 +1,6 @@
 import type { DecorationLayer, EditorClipboardItem, PartOption, RoleDocument } from '../types/role';
 import { getHeadLayerIndex } from './layerOrdering';
-import { createId, round } from './math';
+import { createId, normalizeDegrees, round } from './math';
 import { shiftHeadLayerForDeletedIndexes, shiftHeadLayerForInsert } from './editorRoleUtils';
 
 export function insertAfterSelection(role: RoleDocument, selectedIds: string[]): number {
@@ -88,6 +88,7 @@ export function mirrorCopySelectedInRole(current: RoleDocument, selectedIds: str
   const mirrored = selected.map((item) => ({
     ...item,
     id: createId('deco'),
+    rotation: normalizeDegrees(-item.rotation),
     ...(axis === 'horizontal' ? { x: -item.x, scaleX: -item.scaleX } : { y: -item.y, scaleY: -item.scaleY })
   }));
   shiftHeadLayerForInsert(current, insertIndex, mirrored.length);

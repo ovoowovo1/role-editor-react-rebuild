@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HEAD_LAYER_ID } from '../constants/layers';
 import { camps, createDefaultRole, filterPartOptionsByCamp, findOptionByCode, optionById, partOptions } from '../mock/options';
 import type { BodyPartTab, DecorationGroup, DecorationLayer, EditorClipboardItem, GenderCode, PartOption, PartTab, RoleDocument, TransformValues } from '../types/role';
-import { clamp, createId, round } from '../lib/math';
+import { clamp, createId, normalizeDegrees, round } from '../lib/math';
 import { getPartFrame } from '../lib/twlibPartRuntime';
 import {
   cloneRole,
@@ -827,7 +827,7 @@ export function useRoleEditor() {
     if (!stableSelectedDecorations.length) return;
     const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.copy);
     const copied = stableSelectedDecorations.map((item) =>
-      copyDecoration(item, { x: roundPosition(-item.x), scaleX: -item.scaleX })
+      copyDecoration(item, { x: roundPosition(-item.x), scaleX: -item.scaleX, rotation: normalizeDegrees(-item.rotation) })
     );
     const nextRole = insertDecorations(roleRef.current, copied, settings);
     commitRole(nextRole);
@@ -838,7 +838,7 @@ export function useRoleEditor() {
     if (!stableSelectedDecorations.length) return;
     const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.copy);
     const copied = stableSelectedDecorations.map((item) =>
-      copyDecoration(item, { y: roundPosition(-item.y), scaleY: -item.scaleY })
+      copyDecoration(item, { y: roundPosition(-item.y), scaleY: -item.scaleY, rotation: normalizeDegrees(-item.rotation) })
     );
     const nextRole = insertDecorations(roleRef.current, copied, settings);
     commitRole(nextRole);
