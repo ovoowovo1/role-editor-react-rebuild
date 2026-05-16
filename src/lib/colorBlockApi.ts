@@ -1,6 +1,13 @@
 import type { ColorBlockPreset } from '../mock/colorBlocks';
 
 const DEFAULT_API_BASE = '/api';
+const SPECIFIC_CAMPS = new Set(['third', 'royal', 'skydow']);
+const ALL_PRESET_CAMPS = new Set(['civil', 'camp4', '無關陣營']);
+
+type ColorBlockPresetCacheKey = 'all' | 'third' | 'royal' | 'skydow';
+
+const presetCache = new Map<ColorBlockPresetCacheKey, ColorBlockPreset[]>();
+const pendingPresetRequests = new Map<ColorBlockPresetCacheKey, Promise<ColorBlockPreset[]>>();
 
 function getColorBlockApiBase(): string {
   const configured = import.meta.env.VITE_COLOR_BLOCK_API_BASE;
@@ -20,13 +27,19 @@ function isColorBlockPreset(value: unknown): value is ColorBlockPreset {
   );
 }
 
-export async function fetchColorBlockPresets(camp: string, signal?: AbortSignal): Promise<ColorBlockPreset[]> {
+function getColorBlockPresetCacheKey(camp: string): ColorBlockPresetCacheKey | null {
+  const normalizedCamp = camp.trim();
+  if (SPECIFIC_CAMPS.has(normalizedCamp)) return normalizedCamp as ColorBlockPresetCacheKey;
+  if (!normalizedCamp || ALL_PRESET_CAMPS.has(normalizedCamp)) return 'all';
+  return null;
+}
+
+async function requestColorBlockPresets(cacheKey: ColorBlockPresetCacheKey): Promise<ColorBlockPreset[]> {
   const base = getColorBlockApiBase();
   const url = new URL(`${base}/color-block-presets`, window.location.origin);
-  if (camp) url.searchParams.set('camp', camp);
+  if (cacheKey !== 'all') url.searchParams.set('camp', cacheKey);
 
   const response = await fetch(url, {
-    signal,
     headers: { Accept: 'application/json' }
   });
 
@@ -41,4 +54,27 @@ export async function fetchColorBlockPresets(camp: string, signal?: AbortSignal)
   }
 
   return data;
+}
+
+export async function fetchColorBlockPresets(camp: string): Promise<ColorBlockPreset[]> {
+  const cacheKey = getColorBlockPresetCacheKey(camp);
+  if (!cacheKey) return [];
+
+  const cachedPresets = presetCache.get(cacheKey);
+  if (cachedPresets) return cachedPresets;
+
+  const pendingRequest = pendingPresetRequests.get(cacheKey);
+  if (pendingRequest) return pendingRequest;
+
+  const request = requestColorBlockPresets(cacheKey)
+    .then((presets) => {
+      presetCache.set(cacheKey, presets);
+      return presets;
+    })
+    .finally(() => {
+      pendingPresetRequests.delete(cacheKey);
+    });
+
+  pendingPresetRequests.set(cacheKey, request);
+  return request;
 }

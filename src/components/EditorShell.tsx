@@ -162,17 +162,18 @@ export function EditorShell() {
   const [colorBlockError, setColorBlockError] = useState<string | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let isCurrentCamp = true;
     setColorBlockLoading(true);
     setColorBlockError(null);
 
-    fetchColorBlockPresets(editor.role.camp, controller.signal)
+    fetchColorBlockPresets(editor.role.camp)
       .then((presets) => {
+        if (!isCurrentCamp) return;
         setColorBlockPresets(presets);
         setColorBlockLoading(false);
       })
       .catch((error) => {
-        if (controller.signal.aborted) return;
+        if (!isCurrentCamp) return;
         const message = error instanceof Error ? error.message : String(error);
         setColorBlockPresets([]);
         setColorBlockError(t('colorBlock.loadFailed', { message }));
@@ -180,7 +181,9 @@ export function EditorShell() {
         setStatus(t('status.colorBlockLoadFailed', { message }));
       });
 
-    return () => controller.abort();
+    return () => {
+      isCurrentCamp = false;
+    };
   }, [editor.role.camp]);
 
   const selectedOptionId = useMemo(() => {
