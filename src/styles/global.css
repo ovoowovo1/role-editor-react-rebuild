@@ -289,6 +289,16 @@ input:disabled {
   min-height: 100%;
 }
 
+.choice-empty-state {
+  margin: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 182, 128, 0.45);
+  background: rgba(70, 31, 10, 0.35);
+  color: #ffd5b0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .choice-row {
   position: absolute;
   top: 0;

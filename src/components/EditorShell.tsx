@@ -1,4 +1,4 @@
-import { Suspense, lazy, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { t } from '../i18n';
 import { ChoiceGrid } from './ChoiceGrid';
 import { ColorBlockGrid } from './ColorBlockGrid';
@@ -10,8 +10,9 @@ import { TopMenu } from './TopMenu';
 import { ShortcutHelpModal } from './ShortcutHelpModal';
 import { WeaponAnimationModal } from './WeaponAnimationModal';
 import { tabLabels } from '../mock/options';
-import { colorBlockToRole, getVisibleColorBlocks } from '../mock/colorBlocks';
+import { colorBlockToRole, type ColorBlockPreset } from '../mock/colorBlocks';
 import { downloadBlob } from '../lib/math';
+import { fetchColorBlockPresets } from '../lib/colorBlockApi';
 import { createRoleJsonBlob, createTwroleBlob } from '../lib/legacyTwroleExport';
 import { parseRoleFileWithLegacyGroups, parseRoleFileInWorkerWithLegacyGroups } from '../lib/legacyGroupImport';
 import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../lib/actorBodyAnimation';
@@ -156,8 +157,31 @@ export function EditorShell() {
   const [bodyAnimationRestartKey, setBodyAnimationRestartKey] = useState(0);
   const [facingQuarterTurns, setFacingQuarterTurns] = useState(0);
   const [topBarMode, setTopBarMode] = useState<TopBarMode>(editor.selectedTab);
+  const [colorBlockPresets, setColorBlockPresets] = useState<ColorBlockPreset[]>([]);
+  const [colorBlockLoading, setColorBlockLoading] = useState(false);
+  const [colorBlockError, setColorBlockError] = useState<string | null>(null);
 
-  const colorBlockPresets = useMemo(() => getVisibleColorBlocks(editor.role.camp), [editor.role.camp]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setColorBlockLoading(true);
+    setColorBlockError(null);
+
+    fetchColorBlockPresets(editor.role.camp, controller.signal)
+      .then((presets) => {
+        setColorBlockPresets(presets);
+        setColorBlockLoading(false);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        const message = error instanceof Error ? error.message : String(error);
+        setColorBlockPresets([]);
+        setColorBlockError(t('colorBlock.loadFailed', { message }));
+        setColorBlockLoading(false);
+        setStatus(t('status.colorBlockLoadFailed', { message }));
+      });
+
+    return () => controller.abort();
+  }, [editor.role.camp]);
 
   const selectedOptionId = useMemo(() => {
     if (topBarMode === 'colorBlock') return undefined;
@@ -261,6 +285,8 @@ export function EditorShell() {
           {topBarMode === 'colorBlock' ? (
             <ColorBlockGrid
               presets={colorBlockPresets}
+              loading={colorBlockLoading}
+              error={colorBlockError}
               onPick={(preset) => {
                 editor.mergeImportedRole(colorBlockToRole(preset, editor.role));
                 setStatus(t('status.addedColorBlock', { label: preset.label }));

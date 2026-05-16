@@ -17,6 +17,7 @@ export const en: Record<string, string> = {
   'status.ungrouped': 'Ungrouped layer group',
   'status.previewWeapon': 'Preview weapon animation: {label}',
   'status.addedColorBlock': 'Added color block: {label}',
+  'status.colorBlockLoadFailed': 'Color block presets failed to load: {message}',
 
   // Insert Settings dialog
   'insert.title': 'Insert Settings',
@@ -102,6 +103,8 @@ export const en: Record<string, string> = {
   'colorBlock.title': 'Color Block',
   'colorBlock.count': '{count} blocks',
   'colorBlock.decoCount': '{count} decos',
+  'colorBlock.loading': 'Loading...',
+  'colorBlock.loadFailed': 'Failed to load color blocks: {message}',
 
   // LayerList
   'layers.title': 'Layers',

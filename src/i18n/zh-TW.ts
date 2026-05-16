@@ -17,6 +17,7 @@ export const zhTW: Record<string, string> = {
   'status.ungrouped': '已解散圖層群組',
   'status.previewWeapon': '預覽武器動畫：{label}',
   'status.addedColorBlock': '已新增色塊：{label}',
+  'status.colorBlockLoadFailed': '色塊預設載入失敗：{message}',
 
   // Insert Settings dialog
   'insert.title': '插入設定',
@@ -102,6 +103,8 @@ export const zhTW: Record<string, string> = {
   'colorBlock.title': '色塊',
   'colorBlock.count': '{count} 個色塊',
   'colorBlock.decoCount': '{count} 個裝飾',
+  'colorBlock.loading': '載入中...',
+  'colorBlock.loadFailed': '無法載入色塊：{message}',
 
   // LayerList
   'layers.title': '圖層',

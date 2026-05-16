@@ -6,10 +6,12 @@ import { AssetPreview } from './AssetPreview';
 
 interface ColorBlockGridProps {
   presets: ColorBlockPreset[];
+  loading?: boolean;
+  error?: string | null;
   onPick(preset: ColorBlockPreset): void;
 }
 
-export function ColorBlockGrid({ presets, onPick }: ColorBlockGridProps) {
+export function ColorBlockGrid({ presets, loading = false, error, onPick }: ColorBlockGridProps) {
   const previewOptionsByPreset = useMemo(
     () =>
       new Map(
@@ -28,8 +30,9 @@ export function ColorBlockGrid({ presets, onPick }: ColorBlockGridProps) {
     <section className="choice-list" aria-label={t('colorBlock.choices')}>
       <div className="choice-list-header">
         <strong>{t('colorBlock.title')}</strong>
-        <span>{t('colorBlock.count', { count: presets.length })}</span>
+        <span>{loading ? t('colorBlock.loading') : t('colorBlock.count', { count: presets.length })}</span>
       </div>
+      {error ? <div className="choice-empty-state">{error}</div> : null}
       <div className="choice-virtual-space" style={{ height: Math.max(520, presets.length * 118) }}>
         <div className="choice-row" style={{ transform: 'translateY(0)', height: Math.max(118, presets.length * 118), flexWrap: 'wrap' }}>
           {presets.map((preset) => {

@@ -1,0 +1,15 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "role-editor-color-block-api",
+	"main": "worker/src/index.ts",
+	"compatibility_date": "2026-05-16",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "1309bf2f6ba14fa3a7b2c9cb37ffbe2d"
+		}
+	]
+}
