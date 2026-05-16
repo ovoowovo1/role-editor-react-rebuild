@@ -1,6 +1,6 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
-	"name": "role-editor-color-block-api",
+	"name": "role-editor-react-rebuild",
 	"main": "worker/src/index.ts",
 	"compatibility_date": "2026-05-16",
 	"compatibility_flags": [
