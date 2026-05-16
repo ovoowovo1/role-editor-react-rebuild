@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "worker:dev": "wrangler dev",
     "worker:deploy": "wrangler deploy",
+    "worker:deploy:frontend": "wrangler deploy --config wrangler.frontend.jsonc --keep-vars",
     "typecheck:worker": "tsc -p tsconfig.worker.json",
     "db:generate": "drizzle-kit generate",
     "db:migrate:color-blocks": "node scripts/migrateColorBlockPresets.mjs",
