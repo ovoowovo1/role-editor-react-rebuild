@@ -11,6 +11,7 @@ export interface Env {
 const ALL_CAMPS = new Set(['civil', 'camp4', '無關陣營']);
 const PRESET_CAMPS = new Set(['skydow', 'royal', 'third']);
 const DEFAULT_ALLOWED_ORIGINS = [
+  'https://role-editor-react-rebuild.ovoowovo.workers.dev',
   'https://twilightwarscloudflarereact.pages.dev',
   'https://twilightwars.ovoowovo.com',
   'http://localhost:5173',
