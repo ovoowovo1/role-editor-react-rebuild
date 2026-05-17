@@ -1040,6 +1040,38 @@ export function useRoleEditor() {
     [commitRole, insertDraftSettings, restoreSelection]
   );
 
+  const insertDecorationBatch = useCallback(
+    (decorations: DecorationLayer[], groupName: string) => {
+      const copied = decorations.map((item) => copyDecoration(item));
+      if (!copied.length) return 0;
+
+      const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
+      const baseRole = insertDecorations(roleRef.current, copied, settings);
+      const copiedIds = copied.map((item) => item.id);
+      const groups: DecorationGroup[] = [...(baseRole.groups ?? [])];
+
+      if (copiedIds.length >= 2) {
+        groups.push({
+          id: createId('group'),
+          name: groupName.trim() || nextGroupName(baseRole),
+          itemIds: copiedIds,
+          members: copiedIds.map((id) => ({ type: 'layer', id })),
+          visible: true,
+          collapsed: false
+        });
+      }
+
+      commitRole(syncGroups({
+        ...baseRole,
+        groups,
+        updatedAt: new Date().toISOString()
+      }));
+      restoreSelection(copiedIds);
+      return copiedIds.length;
+    },
+    [commitRole, insertDraftSettings, restoreSelection]
+  );
+
   // ============================================================
   // Camp / Gender / Misc
   // ============================================================
@@ -1143,6 +1175,7 @@ export function useRoleEditor() {
     changeGender,
     newDesign,
     importRole,
-    mergeImportedRole
+    mergeImportedRole,
+    insertDecorationBatch
   };
 }

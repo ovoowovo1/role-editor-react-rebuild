@@ -9,6 +9,7 @@ import { TitleBar } from './TitleBar';
 import { TopMenu } from './TopMenu';
 import { ShortcutHelpModal } from './ShortcutHelpModal';
 import { WeaponAnimationModal } from './WeaponAnimationModal';
+import { ExtraPanel } from './ExtraPanel';
 import { tabLabels } from '../mock/options';
 import { colorBlockToRole, type ColorBlockPreset } from '../mock/colorBlocks';
 import { downloadBlob } from '../lib/math';
@@ -187,14 +188,14 @@ export function EditorShell() {
   }, [editor.role.camp]);
 
   const selectedOptionId = useMemo(() => {
-    if (topBarMode === 'colorBlock') return undefined;
+    if (topBarMode === 'colorBlock' || topBarMode === 'extra') return undefined;
     if (editor.selectedTab === 'deco') return editor.selectedDecorations[0]?.assetId;
     return editor.role.parts[editor.selectedTab as keyof typeof editor.role.parts];
   }, [editor.role.parts, editor.selectedDecorations, editor.selectedTab, topBarMode]);
 
   const handleTopBarChange = (mode: TopBarMode) => {
     setTopBarMode(mode);
-    if (mode !== 'colorBlock') {
+    if (mode !== 'colorBlock' && mode !== 'extra') {
       editor.setSelectedTab(mode as PartTab);
     }
   };
@@ -285,7 +286,13 @@ export function EditorShell() {
         <TabBar value={topBarMode} onChange={handleTopBarChange} />
 
         <main className="bottom-body">
-          {topBarMode === 'colorBlock' ? (
+          {topBarMode === 'extra' ? (
+            <ExtraPanel
+              decoOptions={editor.visibleOptionsByTab.deco}
+              onInsert={editor.insertDecorationBatch}
+              onStatus={setStatus}
+            />
+          ) : topBarMode === 'colorBlock' ? (
             <ColorBlockGrid
               presets={colorBlockPresets}
               loading={colorBlockLoading}

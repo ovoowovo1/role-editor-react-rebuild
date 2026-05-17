@@ -2,15 +2,16 @@ import { PART_TABS, type PartTab } from '../types/role';
 import { tabLabels } from '../mock/options';
 import { t } from '../i18n';
 
-export type TopBarMode = PartTab | 'colorBlock';
+export type TopBarMode = PartTab | 'colorBlock' | 'extra';
 
-const tabI18nKeys: Record<PartTab | 'colorBlock', string> = {
+const tabI18nKeys: Record<TopBarMode, string> = {
   deco: 'tabs.deco',
   head: 'tabs.head',
   hand: 'tabs.hand',
   foot: 'tabs.foot',
   cape: 'tabs.cape',
-  colorBlock: 'tabs.colorBlock'
+  colorBlock: 'tabs.colorBlock',
+  extra: 'tabs.extra'
 };
 
 interface TabBarProps {
@@ -38,6 +39,14 @@ export function TabBar({ value, onChange }: TabBarProps) {
         onClick={() => onChange('colorBlock')}
       >
         {t('tabs.colorBlock')}
+      </button>
+      <button
+        key="extra"
+        className={`top-bar-button ${value === 'extra' ? 'selected' : ''}`}
+        type="button"
+        onClick={() => onChange('extra')}
+      >
+        {t('tabs.extra')}
       </button>
     </nav>
   );
