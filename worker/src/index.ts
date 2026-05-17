@@ -2,6 +2,7 @@ import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Client } from 'pg';
 import { colorBlockPresets } from './db/schema';
+import { getCorsHeaders, jsonResponse } from './http';
 
 export interface Env {
   HYPERDRIVE: Hyperdrive;
@@ -10,44 +11,6 @@ export interface Env {
 
 const ALL_CAMPS = new Set(['civil', 'camp4', '無關陣營']);
 const PRESET_CAMPS = new Set(['skydow', 'royal', 'third']);
-const DEFAULT_ALLOWED_ORIGINS = [
-  'https://role-editor-react-rebuild.ovoowovo.workers.dev',
-  'https://twilightwarscloudflarereact.pages.dev',
-  'https://twilightwars.ovoowovo.com',
-  'http://localhost:5173',
-  'http://127.0.0.1:5173'
-];
-
-function getAllowedOrigins(env: Env) {
-  return (env.ALLOWED_ORIGINS ?? DEFAULT_ALLOWED_ORIGINS.join(','))
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-}
-
-function getCorsHeaders(request: Request, env: Env): HeadersInit | null {
-  const origin = request.headers.get('Origin');
-  if (!origin || !getAllowedOrigins(env).includes(origin)) return null;
-
-  return {
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    Vary: 'Origin'
-  };
-}
-
-function jsonResponse(request: Request, env: Env, body: unknown, init: ResponseInit = {}) {
-  const corsHeaders = getCorsHeaders(request, env);
-  return Response.json(body, {
-    ...init,
-    headers: {
-      ...(corsHeaders ?? {}),
-      ...init.headers
-    }
-  });
-}
-
 async function listColorBlockPresets(request: Request, env: Env) {
   const url = new URL(request.url);
   const camp = url.searchParams.get('camp')?.trim();

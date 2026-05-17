@@ -9,12 +9,12 @@ type ColorBlockPresetCacheKey = 'all' | 'third' | 'royal' | 'skydow';
 const presetCache = new Map<ColorBlockPresetCacheKey, ColorBlockPreset[]>();
 const pendingPresetRequests = new Map<ColorBlockPresetCacheKey, Promise<ColorBlockPreset[]>>();
 
-function getColorBlockApiBase(): string {
+export function getColorBlockApiBase(): string {
   const configured = import.meta.env.VITE_COLOR_BLOCK_API_BASE;
   return (configured?.trim() || DEFAULT_API_BASE).replace(/\/+$/, '');
 }
 
-function isColorBlockPreset(value: unknown): value is ColorBlockPreset {
+export function isColorBlockPreset(value: unknown): value is ColorBlockPreset {
   if (!value || typeof value !== 'object') return false;
   const preset = value as Partial<ColorBlockPreset>;
   return (
@@ -27,16 +27,20 @@ function isColorBlockPreset(value: unknown): value is ColorBlockPreset {
   );
 }
 
-function getColorBlockPresetCacheKey(camp: string): ColorBlockPresetCacheKey | null {
+export function getColorBlockPresetCacheKey(camp: string): ColorBlockPresetCacheKey | null {
   const normalizedCamp = camp.trim();
   if (SPECIFIC_CAMPS.has(normalizedCamp)) return normalizedCamp as ColorBlockPresetCacheKey;
   if (!normalizedCamp || ALL_PRESET_CAMPS.has(normalizedCamp)) return 'all';
   return null;
 }
 
+function getRequestOrigin(): string {
+  return globalThis.location?.origin ?? 'http://localhost';
+}
+
 async function requestColorBlockPresets(cacheKey: ColorBlockPresetCacheKey): Promise<ColorBlockPreset[]> {
   const base = getColorBlockApiBase();
-  const url = new URL(`${base}/color-block-presets`, window.location.origin);
+  const url = new URL(`${base}/color-block-presets`, getRequestOrigin());
   if (cacheKey !== 'all') url.searchParams.set('camp', cacheKey);
 
   const response = await fetch(url, {
@@ -54,6 +58,11 @@ async function requestColorBlockPresets(cacheKey: ColorBlockPresetCacheKey): Pro
   }
 
   return data;
+}
+
+export function clearColorBlockPresetCache(): void {
+  presetCache.clear();
+  pendingPresetRequests.clear();
 }
 
 export async function fetchColorBlockPresets(camp: string): Promise<ColorBlockPreset[]> {

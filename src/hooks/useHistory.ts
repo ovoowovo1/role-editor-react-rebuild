@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  appendHistoryFuture,
+  appendHistoryPast,
+  defaultHistorySerialize,
+  historyMeta,
+  resolveHistoryUpdater,
+  sameHistoryValue,
+  type HistoryCommitMode
+} from './historyCore';
 
 type Updater<T> = T | ((current: T) => T);
-
-type CommitMode = 'history' | 'silent';
 
 interface UseHistoryOptions<T> {
   limit?: number;
@@ -11,7 +18,7 @@ interface UseHistoryOptions<T> {
 
 export function useHistory<T>(initialValue: T, options: UseHistoryOptions<T> = {}) {
   const limit = options.limit ?? 200;
-  const serialize = options.serialize ?? ((value: T) => (value as any).updatedAt ?? JSON.stringify(value));
+  const serialize = options.serialize ?? defaultHistorySerialize;
   const [present, setPresentState] = useState<T>(initialValue);
   const [past, setPast] = useState<T[]>([]);
   const [future, setFuture] = useState<T[]>([]);
@@ -26,9 +33,8 @@ export function useHistory<T>(initialValue: T, options: UseHistoryOptions<T> = {
     (previous: T) => {
       setPast((items) => {
         const last = items[items.length - 1];
-        if (last && serialize(last) === serialize(previous)) return items;
-        const next = [...items, previous];
-        return next.length > limit ? next.slice(next.length - limit) : next;
+        if (last && sameHistoryValue(last, previous, serialize)) return items;
+        return appendHistoryPast(items, previous, { limit, serialize });
       });
       setFuture([]);
     },
@@ -36,10 +42,10 @@ export function useHistory<T>(initialValue: T, options: UseHistoryOptions<T> = {
   );
 
   const setPresent = useCallback(
-    (updater: Updater<T>, mode: CommitMode = 'history') => {
+    (updater: Updater<T>, mode: HistoryCommitMode = 'history') => {
       setPresentState((current) => {
-        const next = typeof updater === 'function' ? (updater as (value: T) => T)(current) : updater;
-        if (serialize(next) === serialize(current)) return current;
+        const next = resolveHistoryUpdater(current, updater);
+        if (sameHistoryValue(next, current, serialize)) return current;
         if (mode === 'history') commitPast(current);
         return next;
       });
@@ -55,7 +61,7 @@ export function useHistory<T>(initialValue: T, options: UseHistoryOptions<T> = {
     const before = transientStartRef.current;
     transientStartRef.current = null;
     const current = presentRef.current;
-    if (before && serialize(before) !== serialize(current)) {
+    if (before && !sameHistoryValue(before, current, serialize)) {
       commitPast(before);
     }
   }, [commitPast, serialize]);
@@ -68,11 +74,11 @@ export function useHistory<T>(initialValue: T, options: UseHistoryOptions<T> = {
     setPast((items) => {
       if (!items.length) return items;
       const previous = items[items.length - 1];
-      setFuture((futureItems) => [presentRef.current, ...futureItems]);
+      setFuture((futureItems) => appendHistoryFuture(futureItems, presentRef.current, limit));
       setPresentState(previous);
       return items.slice(0, -1);
     });
-  }, []);
+  }, [limit]);
 
   const redo = useCallback(() => {
     setFuture((items) => {
@@ -94,12 +100,7 @@ export function useHistory<T>(initialValue: T, options: UseHistoryOptions<T> = {
   }, []);
 
   const meta = useMemo(
-    () => ({
-      canUndo: past.length > 0,
-      canRedo: future.length > 0,
-      historyLength: past.length + 1,
-      futureLength: future.length
-    }),
+    () => historyMeta({ past, future }),
     [future.length, past.length]
   );
 

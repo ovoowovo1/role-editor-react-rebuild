@@ -1,5 +1,6 @@
 import type { DecorationLayer, RoleDocument } from '../types/role';
-import { atomsForRole, clamp, deriveRoleFromAtoms } from './layerOrdering';
+import { atomsForRole, deriveRoleFromAtoms } from './layerOrdering';
+import { clamp } from './math';
 
 export type InsertDraftPlacement = 'top' | 'bottom' | 'after_index';
 
@@ -62,4 +63,3 @@ export function insertDecorations(role: RoleDocument, decorations: DecorationLay
   const extras = new Map(decorations.map((item) => [item.id, item]));
   return deriveRoleFromAtoms(role, nextAtoms, extras);
 }
-

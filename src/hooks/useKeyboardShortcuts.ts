@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { clamp } from '../lib/math';
+import { resolveKeyboardShortcutCommand } from '../lib/keyboardShortcuts';
 import type { TransformValues } from '../types/role';
 
 interface ShortcutActions {
@@ -21,116 +21,56 @@ interface ShortcutActions {
   ratioBy(amount: number): void;
 }
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  const tag = target.tagName.toLowerCase();
-  if (tag === 'textarea' || tag === 'select') return true;
-  if (tag !== 'input') return false;
-  const input = target as HTMLInputElement;
-  return !['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'color', 'hidden'].includes(input.type);
-}
-
 export function useKeyboardShortcuts(actions: ShortcutActions) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const editable = isEditableTarget(event.target);
-      const ctrl = event.ctrlKey || event.metaKey;
-      const key = event.key.toLowerCase();
+      const command = resolveKeyboardShortcutCommand(event, {
+        hasSelection: actions.hasSelection,
+        canGroupSelected: actions.canGroupSelected
+      });
 
-      if (ctrl) {
-        if (editable) return;
-        if (event.shiftKey && (event.code === 'BracketLeft' || event.code === 'BracketRight')) {
-          event.preventDefault();
-          actions.moveSelectedToBoundary(event.code === 'BracketRight' ? 'top' : 'bottom');
+      if (!command) return;
+      if (command.preventDefault) event.preventDefault();
+
+      switch (command.action) {
+        case 'moveSelectedToBoundary':
+          actions.moveSelectedToBoundary(command.boundary);
           return;
-        }
-        switch (key) {
-          case 'z':
-            event.preventDefault();
-            if (event.shiftKey) actions.redo();
-            else actions.undo();
-            return;
-          case 'y':
-            event.preventDefault();
-            actions.redo();
-            return;
-          case 'c':
-            event.preventDefault();
-            actions.copy();
-            return;
-          case 'v':
-            event.preventDefault();
-            actions.paste();
-            return;
-          case 'a':
-            event.preventDefault();
-            actions.selectAll();
-            return;
-          case 'g':
-            if (actions.canGroupSelected) {
-              event.preventDefault();
-              actions.groupSelected();
-            }
-            return;
-          default:
-            return;
-        }
-      }
-
-      if (editable || !actions.hasSelection) return;
-
-      switch (key) {
-        case 'escape':
+        case 'undo':
+          actions.undo();
+          return;
+        case 'redo':
+          actions.redo();
+          return;
+        case 'copy':
+          actions.copy();
+          return;
+        case 'paste':
+          actions.paste();
+          return;
+        case 'selectAll':
+          actions.selectAll();
+          return;
+        case 'groupSelected':
+          actions.groupSelected();
+          return;
+        case 'clearSelection':
           actions.clearSelection();
           return;
-        case 'delete':
-        case 'backspace':
-          event.preventDefault();
+        case 'deleteSelected':
           actions.deleteSelected();
           return;
-        case 'arrowdown':
-        case 's':
-          event.preventDefault();
-          actions.nudge(0, 1);
+        case 'nudge':
+          actions.nudge(command.dx, command.dy);
           return;
-        case 'arrowup':
-        case 'w':
-          event.preventDefault();
-          actions.nudge(0, -1);
+        case 'rotateBy':
+          actions.rotateBy(command.degrees);
           return;
-        case 'arrowright':
-        case 'd':
-          event.preventDefault();
-          actions.nudge(1, 0);
+        case 'scaleBy':
+          actions.scaleBy(command.amount);
           return;
-        case 'arrowleft':
-        case 'a':
-          event.preventDefault();
-          actions.nudge(-1, 0);
-          return;
-        case 'c':
-          event.preventDefault();
-          actions.rotateBy(0.25);
-          return;
-        case 'v':
-          event.preventDefault();
-          actions.rotateBy(-0.25);
-          return;
-        case 'z':
-          event.preventDefault();
-          if (event.shiftKey) actions.ratioBy(0.01);
-          else actions.scaleBy(0.001);
-          return;
-        case 'x':
-          event.preventDefault();
-          if (event.shiftKey) actions.ratioBy(-0.01);
-          else actions.scaleBy(-0.001);
-          return;
-        case '+':
-        case '=':
-          event.preventDefault();
-          actions.scaleBy(clamp(0.002, 0.001, 0.1));
+        case 'ratioBy':
+          actions.ratioBy(command.amount);
           return;
         default:
           return;

@@ -7,10 +7,7 @@ import {
 } from '../constants/layers';
 import type { DecorationLayer, RoleDocument } from '../types/role';
 import { descendantLayerIdsForGroup } from './groupTree';
-
-export function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
+import { clamp } from './math';
 
 export function getHeadLayerIndex(role: RoleDocument): number {
   const raw = Number(role.headLayerIndex);

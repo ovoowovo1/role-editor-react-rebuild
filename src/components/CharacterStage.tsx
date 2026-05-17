@@ -20,6 +20,23 @@ import { ActorClip } from '../lib/actorClip';
 import { createActorGafClip, createGafClip, type GafMovieClip } from '../lib/gafMovieClip';
 import { isMissingDecoAssetId } from '../lib/roleSerialization';
 import type { BrushFillMask, BrushFillPoint } from '../lib/brushFillToDeco';
+import {
+  actorSceneKey,
+  appendBrushPoint,
+  clampedHeadLayerIndex,
+  decorationDisplayKey,
+  decorationTransformKey,
+  displayTransformPatchForDecoration,
+  displayTransformPatchForHeadLayer,
+  mergeBounds,
+  pointBounds,
+  positionRange,
+  sameChildOrder,
+  selectionControllerPosition,
+  selectionDragHitRect,
+  type DisplayTransformPatch,
+  type LocalBounds
+} from '../lib/characterStageHelpers';
 
 interface CharacterStageProps {
   role: RoleDocument;
@@ -97,9 +114,6 @@ const DECO_GLOW_CAP = 80;
 const DEFER_STAGE_SYNC_DECO_COUNT = 2000;
 const LARGE_MULTI_DRAG_THRESHOLD = 5000;
 const SCROLL_SURFACE_PADDING = 160;
-const SELECTION_DRAG_HIT_SIZE = 50;
-const SELECTION_DRAG_HIT_PADDING = 4;
-const BRUSH_FILL_POINT_SPACING_FACTOR = 0.35;
 
 let cachedGlowFilter: ReturnType<typeof createDecoSelectionGlowFilter> | null = null;
 let cachedControllerGlowFilter: ReturnType<typeof createDecoSelectionGlowFilter> | null = null;
@@ -112,39 +126,6 @@ function getCachedGlowFilter(): ReturnType<typeof createDecoSelectionGlowFilter>
 function getCachedControllerGlowFilter(): ReturnType<typeof createDecoSelectionGlowFilter> {
   if (!cachedControllerGlowFilter) cachedControllerGlowFilter = createDecoSelectionGlowFilter({ knockout: true });
   return cachedControllerGlowFilter;
-}
-
-function actorSceneKey(role: RoleDocument, bodyAnimationLabel: string): string {
-  return JSON.stringify({
-    camp: role.camp,
-    gender: role.gender,
-    parts: role.parts,
-    partFrames: role.partFrames,
-    partScales: role.partScales,
-    bodyAnimationLabel
-  });
-}
-
-function decorationDisplayKey(deco: DecorationLayer): string {
-  return `${deco.assetId}\u0000${deco.code}`;
-}
-
-function decorationTransformKey(deco: DecorationLayer): string {
-  return [
-    deco.x,
-    deco.y,
-    deco.rotation,
-    deco.scaleX,
-    deco.scaleY,
-    deco.opacity,
-    deco.visible !== false
-  ].join('\u0000');
-}
-
-function positionRange(role: RoleDocument): number {
-  const raw = role.positionRange;
-  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
-  return Number.isFinite(n) && n > 0 ? Math.min(n, 10000) : 60;
 }
 
 function makeOptionSprite(option: PartOption | undefined, failedTextures: Set<string>): Sprite | null {
@@ -233,14 +214,7 @@ function prepareDisguiseRoot(
     visible: true,
     opacity: 1
   };
-  headLayerClip.position.set(headLayer.x, headLayer.y);
-  headLayerClip.rotation = (headLayer.rotation * Math.PI) / 180;
-  headLayerClip.scale.set(headLayer.scaleX, headLayer.scaleY);
-  headLayerClip.alpha = clamp(headLayer.opacity, 0, 1);
-  headLayerClip.visible = headLayer.visible !== false;
-  if (isRuntimeEmptyFrame('head', headFrame)) {
-    headLayerClip.visible = false;
-  }
+  applyDisplayTransform(headLayerClip, displayTransformPatchForHeadLayer(headLayer, isRuntimeEmptyFrame('head', headFrame)));
 
   return { disguiseRoot, headLayerClip };
 }
@@ -297,12 +271,16 @@ function createDisguiseEntryDisplay(
   return wrapper;
 }
 
+function applyDisplayTransform(wrapper: Container, patch: DisplayTransformPatch): void {
+  wrapper.position.set(patch.x, patch.y);
+  wrapper.rotation = patch.rotationRadians;
+  wrapper.scale.set(patch.scaleX, patch.scaleY);
+  wrapper.alpha = patch.alpha;
+  wrapper.visible = patch.visible;
+}
+
 function applyDecorationDisplayTransform(wrapper: Container, deco: DecorationLayer): void {
-  wrapper.position.set(deco.x, deco.y);
-  wrapper.rotation = (deco.rotation * Math.PI) / 180;
-  wrapper.scale.set(deco.scaleX, deco.scaleY);
-  wrapper.alpha = clamp(deco.opacity, 0, 1);
-  wrapper.visible = deco.visible !== false;
+  applyDisplayTransform(wrapper, displayTransformPatchForDecoration(deco));
 }
 
 function applyHeadLayerDisplayTransform(headLayerClip: GafMovieClip, role: RoleDocument): void {
@@ -318,11 +296,7 @@ function applyHeadLayerDisplayTransform(headLayerClip: GafMovieClip, role: RoleD
   const headOption = getBodyPartOption('head', role.parts.head);
   const headFrame = getRolePartFrame(role, 'head', headOption);
 
-  headLayerClip.position.set(headLayer.x, headLayer.y);
-  headLayerClip.rotation = (headLayer.rotation * Math.PI) / 180;
-  headLayerClip.scale.set(headLayer.scaleX, headLayer.scaleY);
-  headLayerClip.alpha = clamp(headLayer.opacity, 0, 1);
-  headLayerClip.visible = headLayer.visible !== false && !isRuntimeEmptyFrame('head', headFrame);
+  applyDisplayTransform(headLayerClip, displayTransformPatchForHeadLayer(headLayer, isRuntimeEmptyFrame('head', headFrame)));
 }
 
 function syncDecorationSelection(record: DecoDisplayRecord, selected: boolean, skipGlow: boolean): void {
@@ -330,21 +304,6 @@ function syncDecorationSelection(record: DecoDisplayRecord, selected: boolean, s
   if (record.selected === selected && record.container.filters === nextFilters) return;
   record.container.filters = nextFilters;
   record.selected = selected;
-}
-
-function getClampedHeadLayerIndex(role: RoleDocument): number {
-  const raw = role.headLayerIndex;
-  const n = typeof raw === 'number' ? raw : Number(raw);
-  const index = Number.isFinite(n) ? Math.round(n) : role.decorations.length;
-  return Math.max(0, Math.min(role.decorations.length, index));
-}
-
-function sameChildOrder(a: Container[], b: Container[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let index = 0; index < a.length; index += 1) {
-    if (a[index] !== b[index]) return false;
-  }
-  return true;
 }
 
 function replaceDisguiseChildren(root: Container, children: Container[]): void {
@@ -372,7 +331,7 @@ function syncDisguiseChildOrder(scene: StageSceneState, role: RoleDocument, over
     }
   }
 
-  const headIndex = getClampedHeadLayerIndex(role);
+  const headIndex = clampedHeadLayerIndex(role);
   topFirstChildren.splice(headIndex, 0, scene.headLayerClip);
 
   // PIXI renders lower childIndex first, so convert top-first state to bottom-to-top display order.
@@ -405,29 +364,6 @@ function drawBrushFillOverlay(scene: StageSceneState, mask: BrushFillMask, draft
   scene.brushFillGraphic.endFill();
 }
 
-function appendBrushPoint(points: BrushFillPoint[], next: BrushFillPoint): BrushFillPoint[] {
-  const last = points[points.length - 1];
-  if (!last) return [next];
-
-  const dx = next.x - last.x;
-  const dy = next.y - last.y;
-  const distance = Math.hypot(dx, dy);
-  const spacing = Math.max(1, next.radius * BRUSH_FILL_POINT_SPACING_FACTOR);
-  if (distance <= spacing) return points;
-
-  const additions: BrushFillPoint[] = [];
-  const steps = Math.max(1, Math.floor(distance / spacing));
-  for (let index = 1; index <= steps; index += 1) {
-    const t = index / steps;
-    additions.push({
-      x: last.x + dx * t,
-      y: last.y + dy * t,
-      radius: next.radius
-    });
-  }
-  return [...points, ...additions];
-}
-
 function createLargeMultiDragPreview(width: number, height: number): Container {
   const container = new Container();
   const graphic = new Graphics();
@@ -448,28 +384,6 @@ function createLargeMultiDragPreview(width: number, height: number): Container {
   container.addChild(graphic);
   container.eventMode = 'none';
   return container;
-}
-
-interface LocalBounds {
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-}
-
-function mergeBounds(a: LocalBounds | null, b: LocalBounds): LocalBounds {
-  if (!a) return b;
-  return {
-    minX: Math.min(a.minX, b.minX),
-    minY: Math.min(a.minY, b.minY),
-    maxX: Math.max(a.maxX, b.maxX),
-    maxY: Math.max(a.maxY, b.maxY)
-  };
-}
-
-function pointBounds(x: number, y: number): LocalBounds {
-  const half = SELECTION_DRAG_HIT_SIZE / 2;
-  return { minX: x - half, minY: y - half, maxX: x + half, maxY: y + half };
 }
 
 function containerBoundsInRoot(container: Container, root: Container): LocalBounds {
@@ -559,28 +473,9 @@ function syncSelectionDragControllerVisualTransforms(
   }
 }
 
-function selectionControllerPosition(selectedDecorations: DecorationLayer[]): { x: number; y: number } {
-  if (selectedDecorations.length === 1) {
-    const deco = selectedDecorations[0];
-    return { x: deco.x, y: deco.y };
-  }
-  const sum = selectedDecorations.reduce(
-    (acc, deco) => ({ x: acc.x + deco.x, y: acc.y + deco.y }),
-    { x: 0, y: 0 }
-  );
-  return {
-    x: sum.x / selectedDecorations.length,
-    y: sum.y / selectedDecorations.length
-  };
-}
-
 function selectionDragHitArea(bounds: LocalBounds, centerX: number, centerY: number): Rectangle {
-  const half = SELECTION_DRAG_HIT_SIZE / 2;
-  const minX = Math.min(-half, bounds.minX - centerX - SELECTION_DRAG_HIT_PADDING);
-  const minY = Math.min(-half, bounds.minY - centerY - SELECTION_DRAG_HIT_PADDING);
-  const maxX = Math.max(half, bounds.maxX - centerX + SELECTION_DRAG_HIT_PADDING);
-  const maxY = Math.max(half, bounds.maxY - centerY + SELECTION_DRAG_HIT_PADDING);
-  return new Rectangle(minX, minY, maxX - minX, maxY - minY);
+  const rect = selectionDragHitRect(bounds, centerX, centerY);
+  return new Rectangle(rect.x, rect.y, rect.width, rect.height);
 }
 
 function syncSelectionDragController(

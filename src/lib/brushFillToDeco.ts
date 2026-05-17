@@ -37,9 +37,9 @@ interface Bounds {
   maxY: number;
 }
 
-const DEFAULT_FILL_COLOR = { r: 53, g: 208, b: 255 };
+export const DEFAULT_FILL_COLOR = { r: 53, g: 208, b: 255 };
 
-function brushMaskBounds(mask: BrushFillMask): Bounds | null {
+export function brushMaskBounds(mask: BrushFillMask): Bounds | null {
   if (!mask.points.length) return null;
   return mask.points.reduce<Bounds>(
     (bounds, point) => ({
@@ -57,7 +57,7 @@ function brushMaskBounds(mask: BrushFillMask): Bounds | null {
   );
 }
 
-function maskContainsPoint(mask: BrushFillMask, x: number, y: number): boolean {
+export function maskContainsPoint(mask: BrushFillMask, x: number, y: number): boolean {
   return mask.points.some((point) => {
     const dx = x - point.x;
     const dy = y - point.y;
@@ -65,7 +65,7 @@ function maskContainsPoint(mask: BrushFillMask, x: number, y: number): boolean {
   });
 }
 
-function parseHexColor(value: string): { r: number; g: number; b: number } {
+export function parseHexColor(value: string): { r: number; g: number; b: number } {
   const hex = value.trim().replace(/^#/, '');
   const normalized = hex.length === 3
     ? hex.split('').map((char) => `${char}${char}`).join('')

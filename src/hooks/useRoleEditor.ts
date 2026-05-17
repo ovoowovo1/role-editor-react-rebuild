@@ -1,35 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GROUP_ROW_PREFIX, HEAD_LAYER_ID, HEAD_ROW_ID, ITEM_ROW_PREFIX } from '../constants/layers';
+import { HEAD_LAYER_ID } from '../constants/layers';
 import { camps, createDefaultRole, filterPartOptionsByCamp, findOptionByCode, optionById, partOptions } from '../mock/options';
-import type { BodyPartTab, DecorationGroup, DecorationLayer, EditorClipboardItem, GenderCode, PartOption, PartTab, RoleDocument, TransformValues } from '../types/role';
-import { clamp, createId, normalizeDegrees, round } from '../lib/math';
-import { getPartFrame } from '../lib/twlibPartRuntime';
+import type { BodyPartTab, DecorationLayer, EditorClipboardItem, GenderCode, PartOption, PartTab, RoleDocument, TransformValues } from '../types/role';
+import { clamp } from '../lib/math';
 import {
   cloneRole,
   orderedSelectedDecorations,
   syncGroups,
-  touch,
-  shiftHeadLayerForInsert
+  touch
 } from '../lib/editorRoleUtils';
 import {
   copiedClipboardItems,
   deleteDecorationFromRole,
-  deleteSelectedFromRole,
   makeDecoration,
-  mirrorCopySelectedInRole,
   moveSelectedToBoundaryInRole,
   pasteClipboardIntoRole,
   setSelectedVisibleInRole,
   toggleDecorationVisibilityInRole
 } from '../lib/editorDecorationMutations';
 import {
-  createGroupFromSelection,
-  hasUngroupedSelected,
   makeGroupMap,
   renameGroupInRole,
   setGroupVisibleInRole,
   toggleGroupCollapsedInRole,
-  ungroupedSelectedIds,
   ungroupInRole
 } from '../lib/editorGroupMutations';
 import { reorderBaseEditorLayersImmutable } from '../lib/editorLayerDrag';
@@ -46,7 +39,6 @@ import {
 import {
   createGroupFromLayerSelection,
   decorationIdsFromLayerIds,
-  nextGroupId,
   reorderIncludingHead,
   groupContainsHeadLayer,
   setGroupVisibilityIncludingHead,
@@ -65,162 +57,35 @@ import {
   pushLocalFutureEntry,
   pushLocalHistoryEntry,
   removeSelectedDecos,
-  roundPosition,
   sameTransformTarget,
   transformValuesFromSingleDeco,
   validSelectionIds,
   type DecorationTransformTarget,
   type LocalHistoryEntry
 } from '../lib/editorTransformHistory';
+import {
+  insertDecorationBatchIntoRole,
+  makeCenteredDecoration,
+  mergeImportedDecorationsIntoRole
+} from '../lib/editorImportMerge';
+import { reorderGroupWithoutUngrouping } from '../lib/editorGroupReorder';
 import { useEditorGroupTransform } from './useEditorGroupTransform';
 import { useHistory } from './useHistory';
-import { atomsForRole, deriveRoleFromAtoms, layerIdsForRole, rowIdToAtoms } from '../lib/layerOrdering';
-import { descendantLayerIdsForGroup, directParentGroup, membersForGroup, withGroupMembers } from '../lib/groupTree';
+import { layerIdsForRole } from '../lib/layerOrdering';
+import { patchDecorationForSelectionDrag, selectedLayerIdsForGroup } from '../lib/editorSelectionCommands';
+import {
+  clipboardDecorationsFromSelection,
+  copyDecorationsForPaste,
+  mirroredCopiedDecorations,
+  roleWithChosenBodyPart,
+  roleWithDragDelta,
+  selectionIdsForCommand
+} from '../lib/editorRoleCommands';
 
 export type { InsertDraftPlacement, InsertDraftScopes, InsertDraftSettings };
 
 const STAGE_MIN_SCALE = 1;
 const STAGE_MAX_SCALE = 30;
-
-function nextGroupName(role: RoleDocument): string {
-  return `Group ${(role.groups ?? []).length + 1}`;
-}
-
-function makeCenteredDecoration(option: PartOption): DecorationLayer {
-  return {
-    id: createId('deco'),
-    code: option.code,
-    assetId: option.id,
-    name: option.label,
-    x: 0,
-    y: 0,
-    scaleX: 1,
-    scaleY: 1,
-    rotation: 0,
-    visible: true,
-    opacity: 1
-  };
-}
-
-function copyDecoration(item: DecorationLayer, patch: Partial<DecorationLayer> = {}): DecorationLayer {
-  return { ...item, id: createId('deco'), ...patch };
-}
-
-function copyDecorationForInsert(item: DecorationLayer | EditorClipboardItem, offset = 0): DecorationLayer {
-  return {
-    id: createId('deco'),
-    code: item.code,
-    assetId: item.assetId,
-    name: item.name,
-    x: (item.x ?? 0) + offset,
-    y: (item.y ?? 0) + offset,
-    scaleX: item.scaleX ?? 1,
-    scaleY: item.scaleY ?? 1,
-    rotation: item.rotation ?? 0,
-    visible: (item as DecorationLayer).visible ?? true,
-    opacity: (item as DecorationLayer).opacity ?? 1
-  };
-}
-
-function remapImportedGroups(incoming: RoleDocument, idMap: Map<string, string>, fallbackName: (group: DecorationGroup) => string): DecorationGroup[] {
-  const groupIdMap = new Map((incoming.groups ?? []).map((group) => [group.id, nextGroupId()]));
-  return (incoming.groups ?? [])
-    .map((group): DecorationGroup | null => {
-      const members = membersForGroup(group)
-        .map((member) => {
-          if (member.type === 'group') {
-            const mappedGroupId = groupIdMap.get(member.id);
-            return mappedGroupId ? { type: 'group' as const, id: mappedGroupId } : null;
-          }
-          const mappedId = idMap.get(member.id);
-          return mappedId ? { type: 'layer' as const, id: mappedId } : null;
-        })
-        .filter((member): member is NonNullable<typeof member> => member !== null);
-      const itemIds = descendantLayerIdsForGroup(incoming.groups ?? [], group.id)
-        .map((id) => idMap.get(id))
-        .filter((id): id is string => Boolean(id));
-      if (itemIds.length < 2) return null;
-      return {
-        id: groupIdMap.get(group.id) ?? nextGroupId(),
-        name: group.name || fallbackName(group),
-        visible: group.visible !== false,
-        collapsed: group.collapsed === true,
-        itemIds,
-        members
-      };
-    })
-    .filter((group): group is DecorationGroup => group !== null);
-}
-
-function reorderGroupWithoutUngrouping(role: RoleDocument, activeRowId: string, overRowId: string, options: LayerReorderOptions = {}): RoleDocument | null {
-  if (options.intent === 'join-group') return null;
-  if (!activeRowId.startsWith(GROUP_ROW_PREFIX)) return null;
-  const activeGroupId = activeRowId.slice(GROUP_ROW_PREFIX.length);
-  const movingAtoms = rowIdToAtoms(role, activeRowId);
-  const overAtoms = rowIdToAtoms(role, overRowId);
-  if (!movingAtoms.length || !overAtoms.length) return null;
-  if (movingAtoms.some((atom) => overAtoms.includes(atom))) return null;
-
-  const originalAtoms = atomsForRole(role);
-  const movingSet = new Set(movingAtoms);
-  const overSet = new Set(overAtoms);
-  const sourceIndexes = originalAtoms.map((atom, index) => (movingSet.has(atom) ? index : -1)).filter((index) => index >= 0);
-  const overIndexes = originalAtoms.map((atom, index) => (overSet.has(atom) ? index : -1)).filter((index) => index >= 0);
-  if (!sourceIndexes.length || !overIndexes.length) return null;
-
-  const sourceStart = Math.min(...sourceIndexes);
-  const overStart = Math.min(...overIndexes);
-  const remainingAtoms = originalAtoms.filter((atom) => !movingSet.has(atom));
-  const remainingOverIndexes = remainingAtoms.map((atom, index) => (overSet.has(atom) ? index : -1)).filter((index) => index >= 0);
-  if (!remainingOverIndexes.length) return null;
-
-  const targetIndex = options.placement === 'before'
-    ? Math.min(...remainingOverIndexes)
-    : options.placement === 'after'
-      ? Math.max(...remainingOverIndexes) + 1
-      : sourceStart < overStart
-        ? Math.max(...remainingOverIndexes) + 1
-        : Math.min(...remainingOverIndexes);
-  const nextAtoms = [...remainingAtoms.slice(0, targetIndex), ...movingAtoms, ...remainingAtoms.slice(targetIndex)];
-  const nextRole = deriveRoleFromAtoms(role, nextAtoms);
-  const sourceParent = directParentGroup(role.groups ?? [], { type: 'group', id: activeGroupId });
-  const targetMember = overRowId.startsWith(GROUP_ROW_PREFIX)
-    ? { type: 'group' as const, id: overRowId.slice(GROUP_ROW_PREFIX.length) }
-    : overRowId === HEAD_ROW_ID
-      ? { type: 'layer' as const, id: HEAD_LAYER_ID }
-      : { type: 'layer' as const, id: overRowId.startsWith(ITEM_ROW_PREFIX) ? overRowId.slice(ITEM_ROW_PREFIX.length) : overRowId };
-  const targetParent = directParentGroup(role.groups ?? [], targetMember);
-  if (sourceParent && sourceParent.id !== targetParent?.id) {
-    nextRole.groups = (nextRole.groups ?? []).map((group) => {
-      if (group.id !== sourceParent.id) return group;
-      return withGroupMembers(
-        group,
-        membersForGroup(group).filter((member) => !(member.type === 'group' && member.id === activeGroupId)),
-        nextRole.groups ?? []
-      );
-    });
-  }
-  return syncGroups(nextRole);
-}
-
-function mergeImportedRoleIntoCurrent(role: RoleDocument, incoming: RoleDocument, settings: InsertDraftSettings): { role: RoleDocument; insertedIds: string[] } {
-  const idMap = new Map<string, string>();
-  const copied = incoming.decorations.map((item, index) => {
-    const next = copyDecorationForInsert(item, index * 2);
-    idMap.set(item.id, next.id);
-    return next;
-  });
-  const nextRole = insertDecorations(role, copied, settings);
-  const importedGroups = remapImportedGroups(incoming, idMap, () => nextGroupName(nextRole));
-  return {
-    role: syncGroups({
-      ...nextRole,
-      groups: [...(nextRole.groups ?? []), ...importedGroups],
-      updatedAt: new Date().toISOString()
-    }),
-    insertedIds: copied.map((item) => item.id)
-  };
-}
 
 export function useRoleEditor() {
   // ============================================================
@@ -293,7 +158,7 @@ export function useRoleEditor() {
     const current = validSelectionIds(role, selectedLayerIds);
     if (current.length) return current;
     if (transientBeforeRef.current || transientTransformBeforeRef.current) {
-      const fallback = transientSelectionBeforeRef.current.length ? transientSelectionBeforeRef.current : selectedIdsRef.current;
+      const fallback = selectionIdsForCommand(transientSelectionBeforeRef.current, selectedIdsRef.current);
       return validSelectionIds(role, fallback);
     }
     return [];
@@ -441,7 +306,7 @@ export function useRoleEditor() {
 
   const withTransformHistory = useCallback(
     (action: () => void, restoreIds = selectedIdsRef.current) => {
-      const selectionIds = validSelectionIds(roleRef.current, restoreIds.length ? restoreIds : selectedIdsRef.current);
+      const selectionIds = validSelectionIds(roleRef.current, selectionIdsForCommand(restoreIds, selectedIdsRef.current));
       const beforeTarget = captureDecorationTransforms(roleRef.current, selectionIds);
       if (!beforeTarget.length) {
         action();
@@ -563,7 +428,7 @@ export function useRoleEditor() {
   // Transient
   // ============================================================
   const beginTransient = useCallback(() => {
-    const selectionBefore = stableSelectedIds.length ? [...stableSelectedIds] : [...selectedIdsRef.current];
+    const selectionBefore = selectionIdsForCommand(stableSelectedIds, selectedIdsRef.current);
     const transformBefore = captureDecorationTransforms(roleRef.current, selectionBefore);
     transientSelectionBeforeRef.current = selectionBefore;
 
@@ -597,7 +462,7 @@ export function useRoleEditor() {
     if (before && !sameRole(before, roleRef.current)) {
       setLocalPast((items) => pushLocalHistoryEntry(items, makeSnapshotEntry(before)));
     }
-    restoreSelection(selectionBefore.length ? selectionBefore : selectedIdsRef.current);
+    restoreSelection(selectionIdsForCommand(selectionBefore, selectedIdsRef.current));
   }, [history, restoreSelection, schedulePendingTransformFinalize]);
 
   // ============================================================
@@ -635,10 +500,8 @@ export function useRoleEditor() {
 
   const selectGroup = useCallback(
     (groupId: string, additive = false) => {
-      const group = role.groups?.find((item) => item.id === groupId);
-      if (!group) return;
-      const groupIds = descendantLayerIdsForGroup(role.groups ?? [], group.id);
-      const ids = layerIdsForRole({ ...role, decorations: role.decorations.filter((d) => groupIds.includes(d.id)) });
+      const ids = selectedLayerIdsForGroup(role, groupId);
+      if (!ids.length) return;
       setSelectedLayerIds((current) => toggleLayerSelection(current, ids, additive));
     },
     [role]
@@ -658,61 +521,18 @@ export function useRoleEditor() {
         return;
       }
       // Body part
-      updateRole((current) => {
-        const bodyTab = tab as BodyPartTab;
-        current.parts[bodyTab] = option.id;
-        current.partFrames = { ...current.partFrames, [bodyTab]: getPartFrame(option) ?? current.partFrames?.[bodyTab] ?? 1 };
-        current.partScales = { ...current.partScales, [bodyTab]: current.partScales?.[bodyTab] ?? 1 };
-        return current;
-      });
+      updateRole((current) => roleWithChosenBodyPart(current, tab as BodyPartTab, option));
     },
     [commitRole, insertDraftSettings, restoreSelection, updateRole]
   );
 
   const updateDecoration = useCallback(
     (id: string, patch: Partial<DecorationLayer>, commit?: boolean) => {
-      const selectionBefore = stableSelectedIds.length ? [...stableSelectedIds] : [...selectedIdsRef.current];
+      const selectionBefore = selectionIdsForCommand(stableSelectedIds, selectedIdsRef.current);
 
       const runUpdate = () => {
-        const selectedDecoIds = (selectionBefore.length ? selectionBefore : selectedIdsRef.current).filter((itemId) => itemId !== HEAD_LAYER_ID);
-        const shouldMoveSelection =
-          selectedDecoIds.length > 1 &&
-          selectedDecoIds.includes(id) &&
-          (typeof patch.x === 'number' || typeof patch.y === 'number');
-
-        if (!shouldMoveSelection) {
-          updateRole((current) => {
-            current.decorations = current.decorations.map((item) => (item.id === id ? { ...item, ...patch } : item));
-            return current;
-          }, commit);
-          return;
-        }
-
-        const dragged = roleRef.current.decorations.find((deco) => deco.id === id);
-        if (!dragged) {
-          updateRole((current) => {
-            current.decorations = current.decorations.map((item) => (item.id === id ? { ...item, ...patch } : item));
-            return current;
-          }, commit);
-          return;
-        }
-
-        const dx = typeof patch.x === 'number' ? patch.x - dragged.x : 0;
-        const dy = typeof patch.y === 'number' ? patch.y - dragged.y : 0;
-        const hasDx = Math.abs(dx) > Number.EPSILON;
-        const hasDy = Math.abs(dy) > Number.EPSILON;
-
-        updateRole((current) => {
-          current.decorations = current.decorations.map((item) => {
-            if (!selectedDecoIds.includes(item.id)) return item;
-            if (item.id === id) return { ...item, ...patch };
-            const nextPatch: Partial<DecorationLayer> = {};
-            if (hasDx) nextPatch.x = roundPosition(item.x + dx);
-            if (hasDy) nextPatch.y = roundPosition(item.y + dy);
-            return { ...item, ...nextPatch };
-          });
-          return current;
-        }, commit);
+        const selectedIds = selectionIdsForCommand(selectionBefore, selectedIdsRef.current);
+        updateRole((current) => patchDecorationForSelectionDrag(current, id, patch, selectedIds), commit);
       };
 
       if (commit) withImmediateHistory(runUpdate, selectionBefore);
@@ -723,7 +543,7 @@ export function useRoleEditor() {
 
   const updateSelectedTransform = useCallback(
     (patch: Partial<TransformValues>, commit?: boolean) => {
-      const selectionBefore = stableSelectedIds.length ? [...stableSelectedIds] : [...selectedIdsRef.current];
+      const selectionBefore = selectionIdsForCommand(stableSelectedIds, selectedIdsRef.current);
       if (commit) withTransformHistory(() => updateSelectedTransformRaw(patch, false), selectionBefore);
       else updateSelectedTransformRaw(patch, commit);
     },
@@ -763,7 +583,7 @@ export function useRoleEditor() {
   const commitDragDeltaToSelected = useCallback(
     (dx: number, dy: number) => {
       if (Math.abs(dx) <= Number.EPSILON && Math.abs(dy) <= Number.EPSILON) return;
-      const selectionIds = [...(stableSelectedIds.length ? stableSelectedIds : selectedIdsRef.current)];
+      const selectionIds = selectionIdsForCommand(stableSelectedIds, selectedIdsRef.current);
       const ids = validSelectionIds(roleRef.current, selectionIds).filter((id) => id !== HEAD_LAYER_ID);
       if (!ids.length) return;
 
@@ -782,15 +602,7 @@ export function useRoleEditor() {
 
   const applyDragDeltaToSelected = useCallback(
     (dx: number, dy: number) => {
-      const selectedSet = new Set(selectedDecorationIds);
-      setRole((current) => ({
-        ...current,
-        decorations: current.decorations.map((item) => {
-          if (!selectedSet.has(item.id)) return item;
-          return { ...item, x: item.x + dx, y: item.y + dy };
-        }),
-        updatedAt: new Date().toISOString()
-      }), 'silent');
+      setRole((current) => roleWithDragDelta(current, selectedDecorationIds, dx, dy), 'silent');
     },
     [selectedDecorationIds, setRole]
   );
@@ -831,7 +643,7 @@ export function useRoleEditor() {
   );
 
   const deleteSelected = useCallback(() => {
-    const nextRole = removeSelectedDecos(roleRef.current, stableSelectedIds.length ? stableSelectedIds : selectedIdsRef.current);
+    const nextRole = removeSelectedDecos(roleRef.current, selectionIdsForCommand(stableSelectedIds, selectedIdsRef.current));
     if (!nextRole) return;
     commitRole(nextRole);
     clearSelection();
@@ -842,7 +654,7 @@ export function useRoleEditor() {
   // ============================================================
   const copySelected = useCallback(() => {
     if (stableSelectedDecorations.length) {
-      setLocalClipboard(stableSelectedDecorations.map((item) => cloneRole({ ...roleRef.current, decorations: [item] }).decorations[0]));
+      setLocalClipboard(clipboardDecorationsFromSelection(stableSelectedDecorations));
     }
     setBaseClipboard(copiedClipboardItems(baseSelectedDecorations));
     pasteCountRef.current = 0;
@@ -862,7 +674,7 @@ export function useRoleEditor() {
       return;
     }
     const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.copy);
-    const copied = localClipboard.map((item) => copyDecoration(item));
+    const copied = copyDecorationsForPaste(localClipboard);
     const nextRole = insertDecorations(roleRef.current, copied, settings);
     commitRole(nextRole);
     restoreSelection(copied.map((item) => item.id));
@@ -871,9 +683,7 @@ export function useRoleEditor() {
   const mirrorCopyHorizontalSelected = useCallback(() => {
     if (!stableSelectedDecorations.length) return;
     const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.copy);
-    const copied = stableSelectedDecorations.map((item) =>
-      copyDecoration(item, { x: roundPosition(-item.x), scaleX: -item.scaleX, rotation: normalizeDegrees(-item.rotation) })
-    );
+    const copied = mirroredCopiedDecorations(stableSelectedDecorations, 'horizontal');
     const nextRole = insertDecorations(roleRef.current, copied, settings);
     commitRole(nextRole);
     restoreSelection(copied.map((item) => item.id));
@@ -882,9 +692,7 @@ export function useRoleEditor() {
   const mirrorCopyVerticalSelected = useCallback(() => {
     if (!stableSelectedDecorations.length) return;
     const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.copy);
-    const copied = stableSelectedDecorations.map((item) =>
-      copyDecoration(item, { y: roundPosition(-item.y), scaleY: -item.scaleY, rotation: normalizeDegrees(-item.rotation) })
-    );
+    const copied = mirroredCopiedDecorations(stableSelectedDecorations, 'vertical');
     const nextRole = insertDecorations(roleRef.current, copied, settings);
     commitRole(nextRole);
     restoreSelection(copied.map((item) => item.id));
@@ -1016,58 +824,23 @@ export function useRoleEditor() {
     (incoming: RoleDocument) => {
       pendingMergeBeforeIdsRef.current = new Set(roleRef.current.decorations.map((item) => item.id));
 
-      // Merge using insert settings
-      const idMap = new Map<string, string>();
-      const copied = incoming.decorations.map((item) => {
-        const next = copyDecoration(item);
-        idMap.set(item.id, next.id);
-        return next;
-      });
-      if (!copied.length) return;
-
       const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
-      const baseRole = insertDecorations(roleRef.current, copied, settings);
-      const importedGroups = remapImportedGroups(incoming, idMap, (group) => group.name);
-
-      const nextRole: RoleDocument = syncGroups({
-        ...baseRole,
-        groups: [...(baseRole.groups ?? []), ...importedGroups],
-        updatedAt: new Date().toISOString()
-      });
-      commitRole(nextRole);
-      restoreSelection(copied.map((item) => item.id));
+      const result = mergeImportedDecorationsIntoRole(roleRef.current, incoming, settings);
+      if (!result) return;
+      commitRole(result.role);
+      restoreSelection(result.copiedIds);
     },
     [commitRole, insertDraftSettings, restoreSelection]
   );
 
   const insertDecorationBatch = useCallback(
     (decorations: DecorationLayer[], groupName: string) => {
-      const copied = decorations.map((item) => copyDecoration(item));
-      if (!copied.length) return 0;
-
       const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
-      const baseRole = insertDecorations(roleRef.current, copied, settings);
-      const copiedIds = copied.map((item) => item.id);
-      const groups: DecorationGroup[] = [...(baseRole.groups ?? [])];
-
-      if (copiedIds.length >= 2) {
-        groups.push({
-          id: createId('group'),
-          name: groupName.trim() || nextGroupName(baseRole),
-          itemIds: copiedIds,
-          members: copiedIds.map((id) => ({ type: 'layer', id })),
-          visible: true,
-          collapsed: false
-        });
-      }
-
-      commitRole(syncGroups({
-        ...baseRole,
-        groups,
-        updatedAt: new Date().toISOString()
-      }));
-      restoreSelection(copiedIds);
-      return copiedIds.length;
+      const result = insertDecorationBatchIntoRole(roleRef.current, decorations, groupName, settings);
+      if (!result) return 0;
+      commitRole(result.role);
+      restoreSelection(result.copiedIds);
+      return result.copiedIds.length;
     },
     [commitRole, insertDraftSettings, restoreSelection]
   );

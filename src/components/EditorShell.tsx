@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useMemo, useState } from 'react';
 import { t } from '../i18n';
 import { ChoiceGrid } from './ChoiceGrid';
 import { ColorBlockGrid } from './ColorBlockGrid';
@@ -11,13 +11,13 @@ import { ShortcutHelpModal } from './ShortcutHelpModal';
 import { WeaponAnimationModal } from './WeaponAnimationModal';
 import { ExtraPanel } from './ExtraPanel';
 import { tabLabels } from '../mock/options';
-import { colorBlockToRole, type ColorBlockPreset } from '../mock/colorBlocks';
+import { colorBlockToRole } from '../mock/colorBlocks';
 import { downloadBlob } from '../lib/math';
-import { fetchColorBlockPresets } from '../lib/colorBlockApi';
 import { createRoleJsonBlob, createTwroleBlob } from '../lib/legacyTwroleExport';
 import { parseRoleFileWithLegacyGroups, parseRoleFileInWorkerWithLegacyGroups } from '../lib/legacyGroupImport';
 import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../lib/actorBodyAnimation';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { useColorBlockPresets } from '../hooks/useColorBlockPresets';
 import { useRoleEditor, type InsertDraftSettings } from '../hooks/useRoleEditor';
 import type { PartTab } from '../types/role';
 import type { BrushFillMask } from '../lib/brushFillToDeco';
@@ -159,37 +159,10 @@ export function EditorShell() {
   const [bodyAnimationRestartKey, setBodyAnimationRestartKey] = useState(0);
   const [facingQuarterTurns, setFacingQuarterTurns] = useState(0);
   const [topBarMode, setTopBarMode] = useState<TopBarMode>(editor.selectedTab);
-  const [colorBlockPresets, setColorBlockPresets] = useState<ColorBlockPreset[]>([]);
-  const [colorBlockLoading, setColorBlockLoading] = useState(false);
-  const [colorBlockError, setColorBlockError] = useState<string | null>(null);
   const [brushFillActive, setBrushFillActive] = useState(false);
   const [brushFillBrushSize, setBrushFillBrushSize] = useState(18);
   const [brushFillMask, setBrushFillMask] = useState<BrushFillMask>({ points: [] });
-
-  useEffect(() => {
-    let isCurrentCamp = true;
-    setColorBlockLoading(true);
-    setColorBlockError(null);
-
-    fetchColorBlockPresets(editor.role.camp)
-      .then((presets) => {
-        if (!isCurrentCamp) return;
-        setColorBlockPresets(presets);
-        setColorBlockLoading(false);
-      })
-      .catch((error) => {
-        if (!isCurrentCamp) return;
-        const message = error instanceof Error ? error.message : String(error);
-        setColorBlockPresets([]);
-        setColorBlockError(t('colorBlock.loadFailed', { message }));
-        setColorBlockLoading(false);
-        setStatus(t('status.colorBlockLoadFailed', { message }));
-      });
-
-    return () => {
-      isCurrentCamp = false;
-    };
-  }, [editor.role.camp]);
+  const colorBlockPresets = useColorBlockPresets(editor.role.camp, setStatus);
 
   const selectedOptionId = useMemo(() => {
     if (topBarMode === 'colorBlock' || topBarMode === 'extra') return undefined;
@@ -305,9 +278,9 @@ export function EditorShell() {
             />
           ) : topBarMode === 'colorBlock' ? (
             <ColorBlockGrid
-              presets={colorBlockPresets}
-              loading={colorBlockLoading}
-              error={colorBlockError}
+              presets={colorBlockPresets.presets}
+              loading={colorBlockPresets.loading}
+              error={colorBlockPresets.error}
               onPick={(preset) => {
                 editor.mergeImportedRole(colorBlockToRole(preset, editor.role));
                 setStatus(t('status.addedColorBlock', { label: preset.label }));
