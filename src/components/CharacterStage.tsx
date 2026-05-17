@@ -19,6 +19,7 @@ import { createDecoSelectionGlowFilter } from '../lib/decoSelectionFilter';
 import { ActorClip } from '../lib/actorClip';
 import { createActorGafClip, createGafClip, type GafMovieClip } from '../lib/gafMovieClip';
 import { isMissingDecoAssetId } from '../lib/roleSerialization';
+import type { BrushFillMask, BrushFillPoint } from '../lib/brushFillToDeco';
 
 interface CharacterStageProps {
   role: RoleDocument;
@@ -33,6 +34,10 @@ interface CharacterStageProps {
   onCommitDragDelta(dx: number, dy: number): void;
   onBeginTransient(): void;
   onCommitTransient(): void;
+  brushFillActive?: boolean;
+  brushFillBrushSize?: number;
+  brushFillMask?: BrushFillMask;
+  onBrushFillMaskChange?(mask: BrushFillMask): void;
 }
 
 interface DragState {
@@ -50,6 +55,10 @@ interface DragState {
     startX: number;
     startY: number;
   };
+}
+
+interface BrushDrawState {
+  points: BrushFillPoint[];
 }
 
 interface DisguiseDecoOptions {
@@ -71,6 +80,8 @@ interface StageSceneState {
   selectionDragController: Container;
   selectionDragControllerGraphic: Graphics;
   selectionDragControllerVisuals: Container;
+  brushFillOverlay: Container;
+  brushFillGraphic: Graphics;
   selectionDragVisualKey: string;
   selectionDragVisualsById: Map<string, Container>;
   selectionDragTargetId: string | null;
@@ -88,6 +99,7 @@ const LARGE_MULTI_DRAG_THRESHOLD = 5000;
 const SCROLL_SURFACE_PADDING = 160;
 const SELECTION_DRAG_HIT_SIZE = 50;
 const SELECTION_DRAG_HIT_PADDING = 4;
+const BRUSH_FILL_POINT_SPACING_FACTOR = 0.35;
 
 let cachedGlowFilter: ReturnType<typeof createDecoSelectionGlowFilter> | null = null;
 let cachedControllerGlowFilter: ReturnType<typeof createDecoSelectionGlowFilter> | null = null;
@@ -368,10 +380,52 @@ function syncDisguiseChildOrder(scene: StageSceneState, role: RoleDocument, over
   if (!overlay && scene.selectionDragController.visible) {
     orderedChildren.push(scene.selectionDragController);
   }
+  if (scene.brushFillOverlay.visible) {
+    orderedChildren.push(scene.brushFillOverlay);
+  }
 
   if (sameChildOrder(scene.lastDisguiseChildOrder, orderedChildren)) return;
   replaceDisguiseChildren(scene.disguiseRoot, orderedChildren);
   scene.lastDisguiseChildOrder = orderedChildren;
+}
+
+function drawBrushFillOverlay(scene: StageSceneState, mask: BrushFillMask, draftPoints: BrushFillPoint[] = []): void {
+  const points = draftPoints.length ? [...mask.points, ...draftPoints] : mask.points;
+  scene.brushFillGraphic.clear();
+  scene.brushFillOverlay.visible = points.length > 0;
+  scene.brushFillOverlay.eventMode = 'none';
+
+  if (!points.length) return;
+
+  scene.brushFillGraphic.beginFill(0x35d0ff, 0.18);
+  scene.brushFillGraphic.lineStyle({ width: 1, color: 0x9cffb2, alpha: 0.36 });
+  for (const point of points) {
+    scene.brushFillGraphic.drawCircle(point.x, point.y, point.radius);
+  }
+  scene.brushFillGraphic.endFill();
+}
+
+function appendBrushPoint(points: BrushFillPoint[], next: BrushFillPoint): BrushFillPoint[] {
+  const last = points[points.length - 1];
+  if (!last) return [next];
+
+  const dx = next.x - last.x;
+  const dy = next.y - last.y;
+  const distance = Math.hypot(dx, dy);
+  const spacing = Math.max(1, next.radius * BRUSH_FILL_POINT_SPACING_FACTOR);
+  if (distance <= spacing) return points;
+
+  const additions: BrushFillPoint[] = [];
+  const steps = Math.max(1, Math.floor(distance / spacing));
+  for (let index = 1; index <= steps; index += 1) {
+    const t = index / steps;
+    additions.push({
+      x: last.x + dx * t,
+      y: last.y + dy * t,
+      radius: next.radius
+    });
+  }
+  return [...points, ...additions];
 }
 
 function createLargeMultiDragPreview(width: number, height: number): Container {
@@ -704,13 +758,18 @@ export function CharacterStage({
   onApplyDragDelta,
   onCommitDragDelta,
   onBeginTransient,
-  onCommitTransient
+  onCommitTransient,
+  brushFillActive = false,
+  brushFillBrushSize = 18,
+  brushFillMask = { points: [] },
+  onBrushFillMaskChange
 }: CharacterStageProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const stageBgRef = useRef<HTMLDivElement | null>(null);
   const appRef = useRef<Application | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const brushDrawRef = useRef<BrushDrawState | null>(null);
   const beginDecorationDragRef = useRef<(id: string, event: FederatedPointerEvent, root: Container) => void>(() => undefined);
   const sceneRef = useRef<StageSceneState | null>(null);
   const roleRef = useRef(role);
@@ -720,7 +779,13 @@ export function CharacterStage({
     onApplyDragDelta,
     onCommitDragDelta,
     onBeginTransient,
-    onCommitTransient
+    onCommitTransient,
+    onBrushFillMaskChange
+  });
+  const brushFillRef = useRef({
+    active: brushFillActive,
+    brushSize: brushFillBrushSize,
+    mask: brushFillMask
   });
   const stageBuildGenerationRef = useRef(0);
   const stageTeardownRef = useRef<(() => void) | null>(null);
@@ -732,6 +797,7 @@ export function CharacterStage({
   const [viewportSize, setViewportSize] = useState({ width: 1, height: 1 });
 
   beginDecorationDragRef.current = (id, event, root) => {
+    if (brushFillRef.current.active) return;
     const currentRole = roleRef.current;
     const selectedIdsSnapshot = selectedIdsRef.current;
     const selectedSet = new Set(selectedIdsSnapshot);
@@ -974,9 +1040,21 @@ export function CharacterStage({
       onApplyDragDelta,
       onCommitDragDelta,
       onBeginTransient,
-      onCommitTransient
+      onCommitTransient,
+      onBrushFillMaskChange
     };
-  }, [onApplyDragDelta, onBeginTransient, onCommitDragDelta, onCommitTransient, onUpdateDecoration]);
+  }, [onApplyDragDelta, onBeginTransient, onBrushFillMaskChange, onCommitDragDelta, onCommitTransient, onUpdateDecoration]);
+
+  useEffect(() => {
+    brushFillRef.current = {
+      active: brushFillActive,
+      brushSize: brushFillBrushSize,
+      mask: brushFillMask
+    };
+    if (!brushFillActive) {
+      brushDrawRef.current = null;
+    }
+  }, [brushFillActive, brushFillBrushSize, brushFillMask]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -1070,6 +1148,11 @@ export function CharacterStage({
         if (!currentScene || !targetId) return;
         beginDecorationDragRef.current(targetId, event, currentScene.disguiseRoot);
       });
+      const brushFillOverlay = new Container();
+      const brushFillGraphic = new Graphics();
+      brushFillOverlay.visible = false;
+      brushFillOverlay.eventMode = 'none';
+      brushFillOverlay.addChild(brushFillGraphic);
 
       const updatePosition = () => {
         const hostEl = hostRef.current;
@@ -1096,6 +1179,8 @@ export function CharacterStage({
         selectionDragController,
         selectionDragControllerGraphic,
         selectionDragControllerVisuals,
+        brushFillOverlay,
+        brushFillGraphic,
         selectionDragVisualKey: '',
         selectionDragVisualsById: new Map(),
         selectionDragTargetId: null,
@@ -1115,6 +1200,7 @@ export function CharacterStage({
 
       const currentRole = roleRef.current;
       applyHeadLayerDisplayTransform(headLayerClip, currentRole);
+      drawBrushFillOverlay(scene, brushFillRef.current.mask);
       syncDecorationDisplays(scene, currentRole, selectedIdsRef.current, decoOptions);
 
       updatePosition();
@@ -1126,7 +1212,46 @@ export function CharacterStage({
         positionObserver.observe(stageBgRef.current);
       }
 
+      const addBrushPoint = (event: FederatedPointerEvent) => {
+        const currentScene = sceneRef.current;
+        const drawing = brushDrawRef.current;
+        if (!currentScene || !drawing || !brushFillRef.current.active) return;
+        const local = currentScene.disguiseRoot.toLocal(event.global);
+        const nextPoint: BrushFillPoint = {
+          x: local.x,
+          y: local.y,
+          radius: Math.max(1, brushFillRef.current.brushSize / 2)
+        };
+        const nextPoints = appendBrushPoint(drawing.points, nextPoint);
+        if (nextPoints === drawing.points) return;
+        drawing.points = nextPoints;
+        drawBrushFillOverlay(currentScene, brushFillRef.current.mask, drawing.points);
+        syncDisguiseChildOrder(currentScene, roleRef.current);
+      };
+
+      const handleBrushDown = (event: FederatedPointerEvent) => {
+        if (!brushFillRef.current.active) return;
+        const currentScene = sceneRef.current;
+        if (!currentScene) return;
+        dragRef.current = null;
+        const local = currentScene.disguiseRoot.toLocal(event.global);
+        brushDrawRef.current = {
+          points: [{
+            x: local.x,
+            y: local.y,
+            radius: Math.max(1, brushFillRef.current.brushSize / 2)
+          }]
+        };
+        drawBrushFillOverlay(currentScene, brushFillRef.current.mask, brushDrawRef.current.points);
+        syncDisguiseChildOrder(currentScene, roleRef.current);
+      };
+
       const handleMove = (event: FederatedPointerEvent) => {
+        if (brushDrawRef.current) {
+          addBrushPoint(event);
+          return;
+        }
+
         const dragging = dragRef.current;
         const currentScene = sceneRef.current;
         if (!dragging || !currentScene) return;
@@ -1170,6 +1295,22 @@ export function CharacterStage({
       };
 
       const handleUp = () => {
+        const drawing = brushDrawRef.current;
+        if (drawing) {
+          const currentScene = sceneRef.current;
+          const nextMask = {
+            points: [...brushFillRef.current.mask.points, ...drawing.points]
+          };
+          brushDrawRef.current = null;
+          brushFillRef.current = { ...brushFillRef.current, mask: nextMask };
+          if (currentScene) {
+            drawBrushFillOverlay(currentScene, nextMask);
+            syncDisguiseChildOrder(currentScene, roleRef.current);
+          }
+          callbacksRef.current.onBrushFillMaskChange?.(nextMask);
+          return;
+        }
+
         if (!dragRef.current) return;
         const dragging = dragRef.current;
 
@@ -1218,6 +1359,7 @@ export function CharacterStage({
         callbacksRef.current.onCommitTransient();
       };
 
+      stage.on('pointerdown', handleBrushDown);
       stage.on('pointermove', handleMove);
       stage.on('pointerup', handleUp);
       stage.on('pointerupoutside', handleUp);
@@ -1227,6 +1369,7 @@ export function CharacterStage({
         cancelAnimationFrame(rafId);
         positionObserver.disconnect();
         if (stage.destroyed) return;
+        stage.off('pointerdown', handleBrushDown);
         stage.off('pointermove', handleMove);
         stage.off('pointerup', handleUp);
         stage.off('pointerupoutside', handleUp);
@@ -1280,6 +1423,19 @@ export function CharacterStage({
     cancelDeferredStageSync();
     syncStage();
   }, [role, selectedIds]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    if (!brushDrawRef.current) {
+      drawBrushFillOverlay(scene, brushFillMask);
+    }
+    syncDisguiseChildOrder(scene, roleRef.current);
+    const canvas = appRef.current?.view as HTMLCanvasElement | undefined;
+    if (canvas) {
+      canvas.style.cursor = brushFillActive ? 'crosshair' : '';
+    }
+  }, [brushFillActive, brushFillMask, sceneVersion]);
 
   useEffect(() => {
     const scene = sceneRef.current;
@@ -1393,7 +1549,7 @@ export function CharacterStage({
           />
         </div>
       </div>
-      <div className="stage-help">{t('stage.help')}</div>
+      <div className="stage-help">{t(brushFillActive ? 'stage.brushHelp' : 'stage.help')}</div>
     </section>
   );
 }

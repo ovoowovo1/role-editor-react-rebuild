@@ -21,6 +21,9 @@ export const en: Record<string, string> = {
   'status.extraConverted': 'Converted image into {count} deco layers',
   'status.extraInserted': 'Inserted {count} generated deco layers',
   'status.extraFailed': 'Image conversion failed: {message}',
+  'status.brushFillInserted': 'Filled brush range with {count} deco layers',
+  'status.brushFillFailed': 'Brush fill failed: {message}',
+  'status.brushFillEmpty': 'Brush fill created no layers',
 
   // Insert Settings dialog
   'insert.title': 'Insert Settings',
@@ -98,6 +101,9 @@ export const en: Record<string, string> = {
 
   // Extra panel
   'extra.title': 'Image to TWRole',
+  'extra.mode': 'Extra mode',
+  'extra.mode.image': 'Image',
+  'extra.mode.brush': 'Brush Fill',
   'extra.upload': 'Drop image',
   'extra.chooseImage': 'Choose image',
   'extra.replace': 'Replace',
@@ -110,6 +116,8 @@ export const en: Record<string, string> = {
   'extra.alpha': 'Alpha',
   'extra.gap': 'Gap',
   'extra.overlap': 'Overlap',
+  'extra.scale': 'Scale 縮放',
+  'extra.ratio': 'Ratio 比例',
   'extra.maxLayers': 'Max layers',
   'extra.minSource': 'Min source',
   'extra.algorithm': 'Algorithm',
@@ -134,6 +142,23 @@ export const en: Record<string, string> = {
   'extra.stat.visible': 'Visible px',
   'extra.groupName': 'Group name',
   'extra.error.fileType': 'Please choose a PNG, JPG, or WebP image.',
+  'extra.brush.ready': 'Range ready',
+  'extra.brush.empty': 'Draw a range',
+  'extra.brush.count': '{count} brush points',
+  'extra.brush.draw': 'Draw Range',
+  'extra.brush.stopDraw': 'Stop Drawing',
+  'extra.brush.clear': 'Clear Range',
+  'extra.brush.size': 'Brush size',
+  'extra.brush.source': 'Source',
+  'extra.brush.source.color': 'Color',
+  'extra.brush.source.deco': 'Deco',
+  'extra.brush.color': 'Color',
+  'extra.brush.deco': 'Deco',
+  'extra.brush.fill': 'Fill',
+  'extra.brush.filling': 'Filling...',
+  'extra.brush.samples': 'Samples',
+  'extra.brush.points': 'Points',
+  'extra.brush.groupName': 'Brush Fill',
 
   // ChoiceGrid
   'choices.choices': '{tab} choices',
@@ -225,6 +250,7 @@ export const en: Record<string, string> = {
 
   // CharacterStage
   'stage.help': 'Drag selected Deco on canvas',
+  'stage.brushHelp': 'Draw brush range on canvas',
 
   // AssetPreview
   'asset.missingTexture': 'Atlas PNG missing or failed to load',

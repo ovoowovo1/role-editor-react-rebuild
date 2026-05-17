@@ -20,6 +20,7 @@ import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../lib/actorBodyAnimation';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useRoleEditor, type InsertDraftSettings } from '../hooks/useRoleEditor';
 import type { PartTab } from '../types/role';
+import type { BrushFillMask } from '../lib/brushFillToDeco';
 
 const CharacterStage = lazy(async () => import('./CharacterStage').then((module) => ({ default: module.CharacterStage })));
 
@@ -161,6 +162,9 @@ export function EditorShell() {
   const [colorBlockPresets, setColorBlockPresets] = useState<ColorBlockPreset[]>([]);
   const [colorBlockLoading, setColorBlockLoading] = useState(false);
   const [colorBlockError, setColorBlockError] = useState<string | null>(null);
+  const [brushFillActive, setBrushFillActive] = useState(false);
+  const [brushFillBrushSize, setBrushFillBrushSize] = useState(18);
+  const [brushFillMask, setBrushFillMask] = useState<BrushFillMask>({ points: [] });
 
   useEffect(() => {
     let isCurrentCamp = true;
@@ -195,6 +199,7 @@ export function EditorShell() {
 
   const handleTopBarChange = (mode: TopBarMode) => {
     setTopBarMode(mode);
+    if (mode !== 'extra') setBrushFillActive(false);
     if (mode !== 'colorBlock' && mode !== 'extra') {
       editor.setSelectedTab(mode as PartTab);
     }
@@ -289,6 +294,12 @@ export function EditorShell() {
           {topBarMode === 'extra' ? (
             <ExtraPanel
               decoOptions={editor.visibleOptionsByTab.deco}
+              brushFillActive={brushFillActive}
+              brushFillBrushSize={brushFillBrushSize}
+              brushFillMask={brushFillMask}
+              onBrushFillActiveChange={setBrushFillActive}
+              onBrushFillBrushSizeChange={setBrushFillBrushSize}
+              onBrushFillClear={() => setBrushFillMask({ points: [] })}
               onInsert={editor.insertDecorationBatch}
               onStatus={setStatus}
             />
@@ -329,6 +340,10 @@ export function EditorShell() {
                 onCommitDragDelta={editor.commitDragDeltaToSelected}
                 onBeginTransient={editor.beginTransient}
                 onCommitTransient={editor.commitTransient}
+                brushFillActive={brushFillActive}
+                brushFillBrushSize={brushFillBrushSize}
+                brushFillMask={brushFillMask}
+                onBrushFillMaskChange={setBrushFillMask}
               />
             </Suspense>
             <EditControls

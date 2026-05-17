@@ -154,6 +154,10 @@ function isCampTaggedLinkage(linkage: string, camp: PlayerCampCode): boolean {
   return token.test(lower);
 }
 
+function isAllCampDeco(code: string): boolean {
+  return code.startsWith('xmas_deco_');
+}
+
 function collectActorFrameCampMap(tab: BodyPartTab): Map<number, Set<PlayerCampCode>> | null {
   const runtime = actorRuntimeManifest;
   if (!runtime) return null;
@@ -192,13 +196,15 @@ export function filterPartOptionsByCamp(tab: PartTab, campRaw: string): PartOpti
   if (!normalizedCamp) return partOptions[tab];
   if (normalizedCamp === 'civil') {
     if (tab === 'deco') {
-      return partOptions.deco.filter((option) => playerCampCodes.some((camp) => option.code.startsWith(`${camp}_`)));
+      return partOptions.deco.filter((option) =>
+        isAllCampDeco(option.code) || playerCampCodes.some((camp) => option.code.startsWith(`${camp}_`))
+      );
     }
     return partOptions[tab];
   }
 
   if (tab === 'deco') {
-    return partOptions.deco.filter((option) => option.code.startsWith(`${normalizedCamp}_`));
+    return partOptions.deco.filter((option) => isAllCampDeco(option.code) || option.code.startsWith(`${normalizedCamp}_`));
   }
 
   const frameCampMap = actorFrameCampMapByTab[tab as BodyPartTab];

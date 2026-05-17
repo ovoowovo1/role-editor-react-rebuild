@@ -10,12 +10,27 @@ import {
   type ImageToDecoProgress,
   type ImageToDecoQuality
 } from '../lib/imageToDeco';
+import {
+  convertBrushFillToDecos,
+  type BrushFillConversionResult,
+  type BrushFillMask,
+  type BrushFillSource
+} from '../lib/brushFillToDeco';
 
 interface ExtraPanelProps {
   decoOptions: PartOption[];
+  brushFillActive: boolean;
+  brushFillBrushSize: number;
+  brushFillMask: BrushFillMask;
+  onBrushFillActiveChange(active: boolean): void;
+  onBrushFillBrushSizeChange(size: number): void;
+  onBrushFillClear(): void;
   onInsert(decorations: DecorationLayer[], groupName: string): number;
   onStatus(message: string): void;
 }
+
+type ExtraToolMode = 'image' | 'brush';
+type BrushFillSourceMode = BrushFillSource['type'];
 
 const qualityModes: ImageToDecoQuality[] = ['performance', 'balanced', 'detail', 'custom'];
 const colorAlgorithms: ColorMatchAlgorithm[] = [
@@ -46,16 +61,32 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-US').format(Math.round(value));
 }
 
-export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps) {
+export function ExtraPanel({
+  decoOptions,
+  brushFillActive,
+  brushFillBrushSize,
+  brushFillMask,
+  onBrushFillActiveChange,
+  onBrushFillBrushSizeChange,
+  onBrushFillClear,
+  onInsert,
+  onStatus
+}: ExtraPanelProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [toolMode, setToolMode] = useState<ExtraToolMode>('image');
   const [quality, setQuality] = useState<ImageToDecoQuality>('balanced');
   const [options, setOptions] = useState<ImageToDecoConversionOptions>(IMAGE_TO_DECO_PRESETS.balanced);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [groupName, setGroupName] = useState('Image Build');
   const [result, setResult] = useState<ImageToDecoConversionResult | null>(null);
+  const [brushResult, setBrushResult] = useState<BrushFillConversionResult | null>(null);
+  const [brushSourceMode, setBrushSourceMode] = useState<BrushFillSourceMode>('color');
+  const [brushColor, setBrushColor] = useState('#35d0ff');
+  const [brushDecoId, setBrushDecoId] = useState('');
   const [progress, setProgress] = useState<ImageToDecoProgress | null>(null);
   const [converting, setConverting] = useState(false);
+  const [brushFilling, setBrushFilling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inserted, setInserted] = useState(false);
 
@@ -75,10 +106,28 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
+  useEffect(() => {
+    if (toolMode !== 'brush' && brushFillActive) {
+      onBrushFillActiveChange(false);
+    }
+    if (toolMode === 'brush' && groupName === 'Image Build') {
+      setGroupName(t('extra.brush.groupName'));
+    }
+  }, [brushFillActive, groupName, onBrushFillActiveChange, toolMode]);
+
+  useEffect(() => () => onBrushFillActiveChange(false), [onBrushFillActiveChange]);
+
+  useEffect(() => {
+    if (brushDecoId && decoOptions.some((option) => option.id === brushDecoId)) return;
+    setBrushDecoId(decoOptions[0]?.id ?? '');
+  }, [brushDecoId, decoOptions]);
+
   const visiblePreview = result?.previewDataUrl ?? previewUrl;
   const progressValue = progressPercent(progress);
   const canConvert = Boolean(file && !converting && decoOptions.length);
   const canInsert = Boolean(result?.decorations.length && !inserted);
+  const hasBrushRange = brushFillMask.points.length > 0;
+  const canBrushFill = Boolean(hasBrushRange && !brushFilling && decoOptions.length && (brushSourceMode === 'color' || brushDecoId));
 
   const summary = useMemo(() => {
     if (!result) return null;
@@ -90,6 +139,16 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
     ];
   }, [result]);
 
+  const brushSummary = useMemo(() => {
+    if (!brushResult) return null;
+    return [
+      { label: t('extra.stat.layers'), value: formatNumber(brushResult.generatedPixels) },
+      { label: t('extra.brush.samples'), value: formatNumber(brushResult.sampledPixels) },
+      { label: t('extra.stat.palette'), value: formatNumber(brushResult.paletteSize) },
+      { label: t('extra.brush.points'), value: formatNumber(brushFillMask.points.length) }
+    ];
+  }, [brushFillMask.points.length, brushResult]);
+
   const setPreset = (mode: ImageToDecoQuality) => {
     setQuality(mode);
     if (mode !== 'custom') setOptions(IMAGE_TO_DECO_PRESETS[mode]);
@@ -99,6 +158,7 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
     setOptions((current) => ({ ...current, ...patch }));
     setQuality('custom');
     setResult(null);
+    setBrushResult(null);
     setInserted(false);
   };
 
@@ -141,6 +201,32 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
     onStatus(t('status.extraInserted', { count: insertedCount }));
   };
 
+  const fillBrushRange = async () => {
+    setBrushFilling(true);
+    setError(null);
+    setBrushResult(null);
+
+    try {
+      const source: BrushFillSource = brushSourceMode === 'color'
+        ? { type: 'color', color: brushColor }
+        : { type: 'deco', assetId: brushDecoId };
+      const converted = await convertBrushFillToDecos(brushFillMask, source, decoOptions, options);
+      setBrushResult(converted);
+      if (!converted.decorations.length) {
+        onStatus(t('status.brushFillEmpty'));
+        return;
+      }
+      const insertedCount = onInsert(converted.decorations, groupName.trim() || t('extra.brush.groupName'));
+      onStatus(t('status.brushFillInserted', { count: insertedCount }));
+    } catch (brushError) {
+      const message = brushError instanceof Error ? brushError.message : String(brushError);
+      setError(message);
+      onStatus(t('status.brushFillFailed', { message }));
+    } finally {
+      setBrushFilling(false);
+    }
+  };
+
   return (
     <section className="choice-list extra-panel" aria-label={t('extra.title')}>
       <header className="choice-list-header extra-panel-header">
@@ -149,7 +235,23 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
       </header>
 
       <div className="extra-scroll">
-        <div
+        <div className="extra-section extra-section-first">
+          <div className="extra-segmented extra-mode-switch" role="group" aria-label={t('extra.mode')}>
+            {(['image', 'brush'] as ExtraToolMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={toolMode === mode ? 'selected' : ''}
+                onClick={() => setToolMode(mode)}
+              >
+                {t(`extra.mode.${mode}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {toolMode === 'image' ? (
+          <div
           className={`extra-dropzone ${file ? 'has-file' : ''}`}
           onDragOver={(event) => event.preventDefault()}
           onDrop={(event) => {
@@ -175,7 +277,35 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
           <button type="button" className="extra-upload-button" onClick={() => inputRef.current?.click()}>
             {file ? t('extra.replace') : t('extra.chooseImage')}
           </button>
-        </div>
+          </div>
+        ) : (
+          <div className="extra-brush-panel">
+            <div>
+              <strong>{hasBrushRange ? t('extra.brush.ready') : t('extra.brush.empty')}</strong>
+              <span>{t('extra.brush.count', { count: brushFillMask.points.length })}</span>
+            </div>
+            <div className="extra-actions extra-brush-actions">
+              <button
+                type="button"
+                className={`primary-button ${brushFillActive ? 'save' : ''}`}
+                onClick={() => onBrushFillActiveChange(!brushFillActive)}
+              >
+                {brushFillActive ? t('extra.brush.stopDraw') : t('extra.brush.draw')}
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={!hasBrushRange}
+                onClick={() => {
+                  onBrushFillClear();
+                  setBrushResult(null);
+                }}
+              >
+                {t('extra.brush.clear')}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="extra-section">
           <div className="extra-section-title">{t('extra.quality')}</div>
@@ -193,8 +323,70 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
           </div>
         </div>
 
+        {toolMode === 'brush' ? (
+          <div className="extra-section extra-controls">
+            <label>
+              <span>{t('extra.brush.size')}</span>
+              <input
+                type="range"
+                min={4}
+                max={64}
+                step={1}
+                value={brushFillBrushSize}
+                onChange={(event) => onBrushFillBrushSizeChange(Number(event.target.value))}
+              />
+              <output>{brushFillBrushSize}px</output>
+            </label>
+            <label className="extra-select-row">
+              <span>{t('extra.brush.source')}</span>
+              <select
+                value={brushSourceMode}
+                onChange={(event) => {
+                  setBrushSourceMode(event.target.value as BrushFillSourceMode);
+                  setBrushResult(null);
+                }}
+              >
+                <option value="color">{t('extra.brush.source.color')}</option>
+                <option value="deco">{t('extra.brush.source.deco')}</option>
+              </select>
+            </label>
+            {brushSourceMode === 'color' ? (
+              <label className="extra-color-row">
+                <span>{t('extra.brush.color')}</span>
+                <input
+                  type="color"
+                  value={brushColor}
+                  onChange={(event) => {
+                    setBrushColor(event.target.value);
+                    setBrushResult(null);
+                  }}
+                />
+                <output>{brushColor.toUpperCase()}</output>
+              </label>
+            ) : (
+              <label className="extra-select-row">
+                <span>{t('extra.brush.deco')}</span>
+                <select
+                  value={brushDecoId}
+                  onChange={(event) => {
+                    setBrushDecoId(event.target.value);
+                    setBrushResult(null);
+                  }}
+                >
+                  {decoOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+        ) : null}
+
         <div className="extra-section extra-controls">
-          <label>
+          {toolMode === 'image' ? (
+            <label>
             <span>{t('extra.maxSize')}</span>
             <input
               type="range"
@@ -205,8 +397,10 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
               onChange={(event) => patchOptions({ maxSize: Number(event.target.value) })}
             />
             <output>{options.maxSize}px</output>
-          </label>
-          <label>
+            </label>
+          ) : null}
+          {toolMode === 'image' ? (
+            <label>
             <span>{t('extra.alpha')}</span>
             <input
               type="range"
@@ -217,7 +411,8 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
               onChange={(event) => patchOptions({ alphaThreshold: Number(event.target.value) })}
             />
             <output>{options.alphaThreshold}</output>
-          </label>
+            </label>
+          ) : null}
           <label>
             <span>{t('extra.gap')}</span>
             <input
@@ -231,7 +426,7 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
             <output>{options.gapFactor.toFixed(2)}</output>
           </label>
           <label>
-            <span>{t('extra.overlap')}</span>
+            <span>{t('extra.scale')}</span>
             <input
               type="range"
               min={1}
@@ -241,6 +436,18 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
               onChange={(event) => patchOptions({ targetScaleMultiplier: Number(event.target.value) })}
             />
             <output>{options.targetScaleMultiplier.toFixed(2)}</output>
+          </label>
+          <label>
+            <span>{t('extra.ratio')}</span>
+            <input
+              type="range"
+              min={0.25}
+              max={4}
+              step={0.01}
+              value={options.targetRatio}
+              onChange={(event) => patchOptions({ targetRatio: Number(event.target.value) })}
+            />
+            <output>{options.targetRatio.toFixed(2)}</output>
           </label>
           <label>
             <span>{t('extra.maxLayers')}</span>
@@ -254,7 +461,8 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
             />
             <output>{formatNumber(options.maxLayers)}</output>
           </label>
-          <label>
+          {toolMode === 'image' ? (
+            <label>
             <span>{t('extra.minSource')}</span>
             <input
               type="range"
@@ -265,8 +473,10 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
               onChange={(event) => patchOptions({ minSourceOpaquePixels: Number(event.target.value) })}
             />
             <output>{formatNumber(options.minSourceOpaquePixels)}</output>
-          </label>
-          <label className="extra-select-row">
+            </label>
+          ) : null}
+          {toolMode === 'image' || brushSourceMode === 'color' ? (
+            <label className="extra-select-row">
             <span>{t('extra.algorithm')}</span>
             <select
               value={options.colorAlgorithm}
@@ -278,17 +488,26 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
                 </option>
               ))}
             </select>
-          </label>
+            </label>
+          ) : null}
         </div>
 
-        <div className="extra-actions">
-          <button type="button" className="primary-button save" disabled={!canConvert} onClick={convert}>
-            {converting ? t('extra.converting') : t('extra.convert')}
-          </button>
-          <button type="button" className="primary-button" disabled={!canInsert} onClick={insert}>
-            {inserted ? t('extra.inserted') : t('extra.insert')}
-          </button>
-        </div>
+        {toolMode === 'image' ? (
+          <div className="extra-actions">
+            <button type="button" className="primary-button save" disabled={!canConvert} onClick={convert}>
+              {converting ? t('extra.converting') : t('extra.convert')}
+            </button>
+            <button type="button" className="primary-button" disabled={!canInsert} onClick={insert}>
+              {inserted ? t('extra.inserted') : t('extra.insert')}
+            </button>
+          </div>
+        ) : (
+          <div className="extra-actions">
+            <button type="button" className="primary-button save" disabled={!canBrushFill} onClick={fillBrushRange}>
+              {brushFilling ? t('extra.brush.filling') : t('extra.brush.fill')}
+            </button>
+          </div>
+        )}
 
         {(converting || progress) && (
           <div className="extra-progress" aria-live="polite">
@@ -300,9 +519,20 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
           </div>
         )}
 
-        {summary && (
+        {toolMode === 'image' && summary && (
           <div className="extra-stats">
             {summary.map((item) => (
+              <div key={item.label}>
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {toolMode === 'brush' && brushSummary && (
+          <div className="extra-stats">
+            {brushSummary.map((item) => (
               <div key={item.label}>
                 <span>{item.label}</span>
                 <strong>{item.value}</strong>
@@ -316,9 +546,17 @@ export function ExtraPanel({ decoOptions, onInsert, onStatus }: ExtraPanelProps)
           <input value={groupName} onChange={(event) => setGroupName(event.target.value)} />
         </label>
 
-        {result?.warnings.length ? (
+        {toolMode === 'image' && result?.warnings.length ? (
           <div className="extra-message warning">
             {result.warnings.map((warning) => (
+              <p key={warning}>{warning}</p>
+            ))}
+          </div>
+        ) : null}
+
+        {toolMode === 'brush' && brushResult?.warnings.length ? (
+          <div className="extra-message warning">
+            {brushResult.warnings.map((warning) => (
               <p key={warning}>{warning}</p>
             ))}
           </div>

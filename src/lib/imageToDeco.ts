@@ -16,6 +16,7 @@ export interface ImageToDecoConversionOptions {
   alphaThreshold: number;
   gapFactor: number;
   targetScaleMultiplier: number;
+  targetRatio: number;
   colorAlgorithm: ColorMatchAlgorithm;
   maxLayers: number;
   minSourceOpaquePixels: number;
@@ -60,7 +61,7 @@ interface HslColor {
   l: number;
 }
 
-interface DecoPaletteEntry {
+export interface DecoPaletteEntry {
   option: PartOption;
   r: number;
   g: number;
@@ -86,6 +87,7 @@ export const IMAGE_TO_DECO_PRESETS: Record<Exclude<ImageToDecoQuality, 'custom'>
     alphaThreshold: 170,
     gapFactor: 2,
     targetScaleMultiplier: 2.1,
+    targetRatio: 1,
     colorAlgorithm: 'weighted-rgb',
     maxLayers: 2500,
     minSourceOpaquePixels: 20
@@ -95,6 +97,7 @@ export const IMAGE_TO_DECO_PRESETS: Record<Exclude<ImageToDecoQuality, 'custom'>
     alphaThreshold: 150,
     gapFactor: 2,
     targetScaleMultiplier: 2.26,
+    targetRatio: 1,
     colorAlgorithm: 'cielab',
     maxLayers: 6000,
     minSourceOpaquePixels: 20
@@ -104,6 +107,7 @@ export const IMAGE_TO_DECO_PRESETS: Record<Exclude<ImageToDecoQuality, 'custom'>
     alphaThreshold: 120,
     gapFactor: 1.75,
     targetScaleMultiplier: 2.35,
+    targetRatio: 1,
     colorAlgorithm: 'cielab',
     maxLayers: 10000,
     minSourceOpaquePixels: 8
@@ -286,7 +290,7 @@ function colorDistance(
   return (r - entry.r) ** 2 + (g - entry.g) ** 2 + (b - entry.b) ** 2;
 }
 
-function visualWidthForOption(option: PartOption): number {
+export function visualWidthForOption(option: PartOption): number {
   const atlas = option.atlas;
   return Math.max(1, atlas?.runtimeDisplayWidth ?? atlas?.width ?? 50);
 }
@@ -348,7 +352,7 @@ async function optionToPaletteEntry(
   };
 }
 
-async function buildPalette(
+export async function buildDecoPalette(
   options: PartOption[],
   conversionOptions: ImageToDecoConversionOptions,
   onProgress?: (progress: ImageToDecoProgress) => void
@@ -375,7 +379,7 @@ async function buildPalette(
   return palette;
 }
 
-function bestPaletteMatch(
+export function bestPaletteMatch(
   r: number,
   g: number,
   b: number,
@@ -412,7 +416,7 @@ export async function convertImageFileToDecos(
     throw new Error('No deco assets are available for this camp.');
   }
 
-  const palette = await buildPalette(decoOptions, conversionOptions, onProgress);
+  const palette = await buildDecoPalette(decoOptions, conversionOptions, onProgress);
   if (!palette.length) {
     throw new Error('No usable deco colors were found in the current asset palette.');
   }
@@ -473,7 +477,7 @@ export async function convertImageFileToDecos(
         x: round((x - centerX) * conversionOptions.gapFactor, 3),
         y: round((y - centerY) * conversionOptions.gapFactor, 3),
         scaleX: itemScale,
-        scaleY: itemScale,
+        scaleY: itemScale * conversionOptions.targetRatio,
         rotation: 0,
         visible: true,
         opacity: 1

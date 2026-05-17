@@ -386,6 +386,16 @@ input:disabled {
   padding: 12px;
 }
 
+.extra-section-first {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  border-top: 0 !important;
+}
+
+.extra-mode-switch {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
 .extra-dropzone {
   position: relative;
   min-height: 210px;
@@ -433,6 +443,39 @@ input:disabled {
   color: #fff;
   cursor: pointer;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
+}
+
+.extra-brush-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(156, 255, 178, 0.28);
+  border-radius: 8px;
+  background: rgba(2, 20, 31, 0.58);
+}
+
+.extra-brush-panel > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.extra-brush-panel strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #fff;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extra-brush-panel span {
+  color: #a6dce8;
+  font-size: 12px;
+}
+
+.extra-brush-actions {
+  margin-top: 0 !important;
 }
 
 .extra-section {
@@ -509,7 +552,8 @@ input:disabled {
 }
 
 .extra-select-row select,
-.extra-group-name input {
+.extra-group-name input,
+.extra-color-row input[type="color"] {
   min-width: 0;
   height: 34px;
   padding: 0 10px;
@@ -519,8 +563,17 @@ input:disabled {
   color: #fff;
 }
 
+.extra-color-row input[type="color"] {
+  padding: 3px;
+  cursor: pointer;
+}
+
 .extra-select-row {
   grid-template-columns: 104px minmax(0, 1fr) !important;
+}
+
+.extra-color-row {
+  grid-template-columns: 104px minmax(0, 1fr) 82px !important;
 }
 
 .extra-actions {
