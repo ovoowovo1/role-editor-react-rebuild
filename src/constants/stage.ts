@@ -1,0 +1,5 @@
+export const BODY_ANIMATION_FRAME_MS = 1000 / 12;
+export const DECO_GLOW_CAP = 80;
+export const DEFER_STAGE_SYNC_DECO_COUNT = 2000;
+export const LARGE_MULTI_DRAG_THRESHOLD = 5000;
+export const SCROLL_SURFACE_PADDING = 160;

@@ -6,12 +6,12 @@ import {
   snapshotKeyFromIds,
   type DecoGroupParentTransform,
   type DecoGroupSnapshot
-} from '../lib/decoGroupTransform';
+} from '../lib/editor/decoGroupTransform';
 import {
   getFirstSelected,
   orderedSelectedDecorations,
   positionRangeFromRole
-} from '../lib/editorRoleUtils';
+} from '../lib/editor/editorRoleUtils';
 import {
   applyGroupTransformToSelectedRole,
   applySingleTransformPatchToSelectedRole,
@@ -27,7 +27,7 @@ import {
   selectionRatioBounds,
   selectionScaleBounds,
   syncGroupTransformToActualFirstPosition
-} from '../lib/editorGroupTransformCommands';
+} from '../lib/editor/editorGroupTransformCommands';
 
 type UpdateRole = (updater: (current: RoleDocument) => RoleDocument, commit?: boolean) => void;
 

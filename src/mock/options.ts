@@ -9,7 +9,7 @@ import {
   type GafAtlasFrame
 } from './gafManifest';
 import type { BodyPartTab, CampOption, GenderCode, PartOption, PartTab, RoleDocument, RoleParts } from '../types/role';
-import { actorPartRuntime, defaultPartFrames, defaultPartScales, findFrameOption, parsePartFrameCode } from '../lib/twlibPartRuntime';
+import { actorPartRuntime, defaultPartFrames, defaultPartScales, findFrameOption, parsePartFrameCode } from '../lib/runtime/twlibPartRuntime';
 
 const palette = [
   ['#2dd4ff', '#0b4768'],

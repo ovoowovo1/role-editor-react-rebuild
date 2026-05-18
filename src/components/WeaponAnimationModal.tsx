@@ -3,7 +3,7 @@ import { t } from '../i18n';
 import {
   DEFAULT_ACTOR_BODY_ANIMATION_LABEL,
   getActorBodyAnimationOptions
-} from '../lib/actorBodyAnimation';
+} from '../lib/runtime/actorBodyAnimation';
 
 interface WeaponAnimationModalProps {
   open: boolean;

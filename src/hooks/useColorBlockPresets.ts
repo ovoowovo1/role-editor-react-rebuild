@@ -1,7 +1,7 @@
 import { useEffect, useReducer } from 'react';
 import { t } from '../i18n';
 import type { ColorBlockPreset } from '../mock/colorBlocks';
-import { fetchColorBlockPresets } from '../lib/colorBlockApi';
+import { fetchColorBlockPresets } from '../lib/api/colorBlockApi';
 
 export interface ColorBlockPresetState {
   presets: ColorBlockPreset[];

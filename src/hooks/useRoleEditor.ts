@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HEAD_LAYER_ID } from '../constants/layers';
+import { EDITOR_BASE_HISTORY_LIMIT, EDITOR_STAGE_MAX_SCALE, EDITOR_STAGE_MIN_SCALE } from '../constants/editor';
 import { camps, createDefaultRole, filterPartOptionsByCamp, findOptionByCode, optionById, partOptions } from '../mock/options';
 import type { BodyPartTab, DecorationLayer, EditorClipboardItem, GenderCode, PartOption, PartTab, RoleDocument, TransformValues } from '../types/role';
 import { clamp } from '../lib/math';
@@ -8,7 +9,7 @@ import {
   orderedSelectedDecorations,
   syncGroups,
   touch
-} from '../lib/editorRoleUtils';
+} from '../lib/editor/editorRoleUtils';
 import {
   copiedClipboardItems,
   deleteDecorationFromRole,
@@ -17,16 +18,16 @@ import {
   pasteClipboardIntoRole,
   setSelectedVisibleInRole,
   toggleDecorationVisibilityInRole
-} from '../lib/editorDecorationMutations';
+} from '../lib/editor/editorDecorationMutations';
 import {
   makeGroupMap,
   renameGroupInRole,
   setGroupVisibleInRole,
   toggleGroupCollapsedInRole,
   ungroupInRole
-} from '../lib/editorGroupMutations';
-import { reorderBaseEditorLayersImmutable } from '../lib/editorLayerDrag';
-import type { LayerReorderOptions } from '../lib/editorLayerDrag';
+} from '../lib/editor/editorGroupMutations';
+import { reorderBaseEditorLayersImmutable } from '../lib/editor/editorLayerDrag';
+import type { LayerReorderOptions } from '../lib/editor/editorLayerDrag';
 import {
   DEFAULT_INSERT_SETTINGS,
   insertDecorations,
@@ -35,7 +36,7 @@ import {
   type InsertDraftPlacement,
   type InsertDraftScopes,
   type InsertDraftSettings
-} from '../lib/editorInsertSettings';
+} from '../lib/editor/editorInsertSettings';
 import {
   createGroupFromLayerSelection,
   decorationIdsFromLayerIds,
@@ -47,51 +48,51 @@ import {
   ungroupIncludingHead,
   ungroupedSelectedLayerIds,
   hasGroupableSelectedLayerIds
-} from '../lib/headLayerMutations';
-import { sameRole } from '../lib/editorLocalHistory';
+} from '../lib/editor/headLayerMutations';
+import { resolveLocalRedo, resolveLocalUndo } from '../lib/editor/editorHistoryCommands';
 import {
-  applyDecorationTransformTarget,
   applyTranslateDelta,
   captureDecorationTransforms,
   makeSnapshotEntry,
-  pushLocalFutureEntry,
   pushLocalHistoryEntry,
   removeSelectedDecos,
+  sameRole,
   sameTransformTarget,
   transformValuesFromSingleDeco,
   validSelectionIds,
   type DecorationTransformTarget,
   type LocalHistoryEntry
-} from '../lib/editorTransformHistory';
+} from '../lib/editor/editorTransformHistory';
 import {
   insertDecorationBatchIntoRole,
   makeCenteredDecoration,
   mergeImportedDecorationsIntoRole
-} from '../lib/editorImportMerge';
-import { reorderGroupWithoutUngrouping } from '../lib/editorGroupReorder';
+} from '../lib/editor/editorImportMerge';
+import { reorderGroupWithoutUngrouping } from '../lib/editor/editorGroupReorder';
 import { useEditorGroupTransform } from './useEditorGroupTransform';
 import { useHistory } from './useHistory';
-import { layerIdsForRole } from '../lib/layerOrdering';
-import { patchDecorationForSelectionDrag, selectedLayerIdsForGroup } from '../lib/editorSelectionCommands';
+import { layerIdsForRole } from '../lib/editor/layerOrdering';
+import { patchDecorationForSelectionDrag, selectedLayerIdsForGroup } from '../lib/editor/editorSelectionCommands';
 import {
+  beginTransientSession,
   clipboardDecorationsFromSelection,
+  commandSelectionIdsForRole,
+  commitTransientSession,
   copyDecorationsForPaste,
   mirroredCopiedDecorations,
   roleWithChosenBodyPart,
   roleWithDragDelta,
-  selectionIdsForCommand
-} from '../lib/editorRoleCommands';
+  selectionIdsForCommand,
+  stableSelectionIdsForRole
+} from '../lib/editor/editorRoleCommands';
 
 export type { InsertDraftPlacement, InsertDraftScopes, InsertDraftSettings };
-
-const STAGE_MIN_SCALE = 1;
-const STAGE_MAX_SCALE = 30;
 
 export function useRoleEditor() {
   // ============================================================
   // Base history (fallback for coarse-grained undo/redo)
   // ============================================================
-  const history = useHistory<RoleDocument>(createDefaultRole(), { limit: 50 });
+  const history = useHistory<RoleDocument>(createDefaultRole(), { limit: EDITOR_BASE_HISTORY_LIMIT });
   const { present: role, setPresent: setRole } = history;
 
   // ============================================================
@@ -117,7 +118,7 @@ export function useRoleEditor() {
   const [selectedTab, setSelectedTab] = useState<PartTab>('deco');
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [baseClipboard, setBaseClipboard] = useState<EditorClipboardItem[]>([]);
-  const [stageScale, setStageScaleState] = useState(STAGE_MIN_SCALE);
+  const [stageScale, setStageScaleState] = useState(EDITOR_STAGE_MIN_SCALE);
   const [insertDraftSettings, setInsertDraftSettingsState] = useState<InsertDraftSettings>(DEFAULT_INSERT_SETTINGS);
   const [localClipboard, setLocalClipboard] = useState<DecorationLayer[]>([]);
   const [localPasteCount, setLocalPasteCount] = useState(0);
@@ -155,13 +156,13 @@ export function useRoleEditor() {
   }, [selectedLayerIds]);
 
   const stableSelectedIds = useMemo(() => {
-    const current = validSelectionIds(role, selectedLayerIds);
-    if (current.length) return current;
-    if (transientBeforeRef.current || transientTransformBeforeRef.current) {
-      const fallback = selectionIdsForCommand(transientSelectionBeforeRef.current, selectedIdsRef.current);
-      return validSelectionIds(role, fallback);
-    }
-    return [];
+    return stableSelectionIdsForRole(
+      role,
+      selectedLayerIds,
+      Boolean(transientBeforeRef.current || transientTransformBeforeRef.current),
+      transientSelectionBeforeRef.current,
+      selectedIdsRef.current
+    );
   }, [role, selectedLayerIds]);
 
   const stableSelectedDecorations = useMemo(() => {
@@ -306,7 +307,7 @@ export function useRoleEditor() {
 
   const withTransformHistory = useCallback(
     (action: () => void, restoreIds = selectedIdsRef.current) => {
-      const selectionIds = validSelectionIds(roleRef.current, selectionIdsForCommand(restoreIds, selectedIdsRef.current));
+      const selectionIds = commandSelectionIdsForRole(roleRef.current, restoreIds, selectedIdsRef.current);
       const beforeTarget = captureDecorationTransforms(roleRef.current, selectionIds);
       if (!beforeTarget.length) {
         action();
@@ -357,90 +358,53 @@ export function useRoleEditor() {
   // Undo / Redo (unified: typed local history first, then base)
   // ============================================================
   const undo = useCallback(() => {
-    if (localPast.length) {
-      const previous = localPast[localPast.length - 1];
-      setLocalPast((items) => items.slice(0, -1));
-
-      if (previous.kind === 'translate') {
-        setLocalFuture((items) => pushLocalFutureEntry(items, previous));
-        const nextRole = applyTranslateDelta(roleRef.current, previous.ids, -previous.dx, -previous.dy);
-        history.reset(nextRole);
-        restoreSelection(previous.selectionIds);
-        return;
+    const result = resolveLocalUndo(roleRef.current, localPast, localFuture);
+    if (result) {
+      setLocalPast(result.localPast);
+      setLocalFuture(result.localFuture);
+      if (result.clearSelection) {
+        selectedIdsRef.current = [];
+        setSelectedLayerIds([]);
       }
-
-      if (previous.kind === 'transform') {
-        const currentTarget = captureDecorationTransforms(roleRef.current, previous.selectionIds);
-        if (currentTarget.length) {
-          setLocalFuture((items) => pushLocalFutureEntry(items, { kind: 'transform', target: currentTarget, selectionIds: previous.selectionIds }));
-        }
-        const nextRole = applyDecorationTransformTarget(roleRef.current, previous.target);
-        history.reset(nextRole);
-        restoreSelection(previous.selectionIds);
-        return;
-      }
-
-      // snapshot
-      setLocalFuture((items) => pushLocalFutureEntry(items, makeSnapshotEntry(roleRef.current)));
-      selectedIdsRef.current = [];
-      history.reset(previous.role);
-      setSelectedLayerIds([]);
+      history.reset(result.nextRole);
+      restoreSelection(result.restoreSelectionIds);
       return;
     }
     history.undo();
-  }, [history, localPast, restoreSelection]);
+  }, [history, localFuture, localPast, restoreSelection]);
 
   const redo = useCallback(() => {
-    if (localFuture.length) {
-      const next = localFuture[0];
-      setLocalFuture((items) => items.slice(1));
-
-      if (next.kind === 'translate') {
-        setLocalPast((items) => pushLocalHistoryEntry(items, next));
-        const nextRole = applyTranslateDelta(roleRef.current, next.ids, next.dx, next.dy);
-        history.reset(nextRole);
-        restoreSelection(next.selectionIds);
-        return;
+    const result = resolveLocalRedo(roleRef.current, localPast, localFuture);
+    if (result) {
+      setLocalPast(result.localPast);
+      setLocalFuture(result.localFuture);
+      if (result.clearSelection) {
+        selectedIdsRef.current = [];
+        setSelectedLayerIds([]);
       }
-
-      if (next.kind === 'transform') {
-        const currentTarget = captureDecorationTransforms(roleRef.current, next.selectionIds);
-        if (currentTarget.length) {
-          setLocalPast((items) => pushLocalHistoryEntry(items, { kind: 'transform', target: currentTarget, selectionIds: next.selectionIds }));
-        }
-        const nextRole = applyDecorationTransformTarget(roleRef.current, next.target);
-        history.reset(nextRole);
-        restoreSelection(next.selectionIds);
-        return;
-      }
-
-      // snapshot
-      setLocalPast((items) => pushLocalHistoryEntry(items, makeSnapshotEntry(roleRef.current)));
-      selectedIdsRef.current = [];
-      history.reset(next.role);
-      setSelectedLayerIds([]);
+      history.reset(result.nextRole);
+      restoreSelection(result.restoreSelectionIds);
       return;
     }
     history.redo();
-  }, [history, localFuture, restoreSelection]);
+  }, [history, localFuture, localPast, restoreSelection]);
 
   // ============================================================
   // Transient
   // ============================================================
   const beginTransient = useCallback(() => {
-    const selectionBefore = selectionIdsForCommand(stableSelectedIds, selectedIdsRef.current);
-    const transformBefore = captureDecorationTransforms(roleRef.current, selectionBefore);
-    transientSelectionBeforeRef.current = selectionBefore;
+    const session = beginTransientSession(roleRef.current, stableSelectedIds, selectedIdsRef.current);
+    transientSelectionBeforeRef.current = session.selectionIds;
 
-    if (transformBefore.length) {
+    if (session.transformBefore) {
       transientBeforeRef.current = null;
-      transientTransformBeforeRef.current = transformBefore;
+      transientTransformBeforeRef.current = session.transformBefore;
       history.cancelTransient();
       return;
     }
 
     transientTransformBeforeRef.current = null;
-    transientBeforeRef.current = cloneRole(roleRef.current);
+    transientBeforeRef.current = session.roleBefore;
     history.beginTransient();
   }, [history, stableSelectedIds]);
 
@@ -452,17 +416,19 @@ export function useRoleEditor() {
     transientTransformBeforeRef.current = null;
     transientSelectionBeforeRef.current = [];
 
-    if (transformBefore) {
-      pendingTransformHistoryRef.current ??= { target: transformBefore, selectionIds: selectionBefore };
+    const session = commitTransientSession(before, transformBefore, selectionBefore, roleRef.current, selectedIdsRef.current);
+
+    if (session.pendingTransform) {
+      pendingTransformHistoryRef.current ??= session.pendingTransform;
       schedulePendingTransformFinalize();
       return;
     }
 
-    history.commitTransient();
-    if (before && !sameRole(before, roleRef.current)) {
-      setLocalPast((items) => pushLocalHistoryEntry(items, makeSnapshotEntry(before)));
+    if (session.commitBaseTransient) history.commitTransient();
+    if (session.snapshotEntry) {
+      setLocalPast((items) => pushLocalHistoryEntry(items, session.snapshotEntry!));
     }
-    restoreSelection(selectionIdsForCommand(selectionBefore, selectedIdsRef.current));
+    restoreSelection(session.restoreSelectionIds);
   }, [history, restoreSelection, schedulePendingTransformFinalize]);
 
   // ============================================================
@@ -583,8 +549,8 @@ export function useRoleEditor() {
   const commitDragDeltaToSelected = useCallback(
     (dx: number, dy: number) => {
       if (Math.abs(dx) <= Number.EPSILON && Math.abs(dy) <= Number.EPSILON) return;
-      const selectionIds = selectionIdsForCommand(stableSelectedIds, selectedIdsRef.current);
-      const ids = validSelectionIds(roleRef.current, selectionIds).filter((id) => id !== HEAD_LAYER_ID);
+      const selectionIds = commandSelectionIdsForRole(roleRef.current, stableSelectedIds, selectedIdsRef.current);
+      const ids = selectionIds.filter((id) => id !== HEAD_LAYER_ID);
       if (!ids.length) return;
 
       const nextRole = applyTranslateDelta(roleRef.current, ids, dx, dy);
@@ -849,7 +815,7 @@ export function useRoleEditor() {
   // Camp / Gender / Misc
   // ============================================================
   const setStageScale = useCallback((value: number) => {
-    setStageScaleState(clamp(Math.round(value), STAGE_MIN_SCALE, STAGE_MAX_SCALE));
+    setStageScaleState(clamp(Math.round(value), EDITOR_STAGE_MIN_SCALE, EDITOR_STAGE_MAX_SCALE));
   }, []);
 
   const changeCamp = useCallback(
@@ -901,8 +867,8 @@ export function useRoleEditor() {
     clipboardCount: baseClipboard.length,
     stageScale,
     setStageScale,
-    stageMinScale: STAGE_MIN_SCALE,
-    stageMaxScale: STAGE_MAX_SCALE,
+    stageMinScale: EDITOR_STAGE_MIN_SCALE,
+    stageMaxScale: EDITOR_STAGE_MAX_SCALE,
     canUndo: localPast.length > 0 || history.canUndo,
     canRedo: localFuture.length > 0 || history.canRedo,
     beginTransient,

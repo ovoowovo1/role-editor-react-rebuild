@@ -3,14 +3,13 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { Client } from 'pg';
 import { colorBlockPresets } from './db/schema';
 import { getCorsHeaders, jsonResponse } from './http';
+import { COLOR_BLOCK_ALL_CAMPS, COLOR_BLOCK_SPECIFIC_CAMPS } from '../../src/constants/colorBlocks';
 
 export interface Env {
   HYPERDRIVE: Hyperdrive;
   ALLOWED_ORIGINS?: string;
 }
 
-const ALL_CAMPS = new Set(['civil', 'camp4', '無關陣營']);
-const PRESET_CAMPS = new Set(['skydow', 'royal', 'third']);
 async function listColorBlockPresets(request: Request, env: Env) {
   const url = new URL(request.url);
   const camp = url.searchParams.get('camp')?.trim();
@@ -28,12 +27,12 @@ async function listColorBlockPresets(request: Request, env: Env) {
       deco: colorBlockPresets.deco
     };
 
-    if (!camp || ALL_CAMPS.has(camp)) {
+    if (!camp || COLOR_BLOCK_ALL_CAMPS.has(camp)) {
       const rows = await db.select(columns).from(colorBlockPresets).orderBy(asc(colorBlockPresets.sortOrder), asc(colorBlockPresets.id));
       return jsonResponse(request, env, rows);
     }
 
-    if (!PRESET_CAMPS.has(camp)) {
+    if (!COLOR_BLOCK_SPECIFIC_CAMPS.has(camp)) {
       return jsonResponse(request, env, []);
     }
 

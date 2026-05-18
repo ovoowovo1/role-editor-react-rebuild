@@ -1,4 +1,4 @@
-import { parseRoleBytes } from '../lib/roleSerialization';
+import { parseRoleBytes } from '../lib/serialization/roleSerialization';
 
 type WorkerRequest = { type: 'parse-role'; bytes: ArrayBuffer };
 type WorkerSuccess = { type: 'parse-role-ok'; result: ReturnType<typeof parseRoleBytes> };

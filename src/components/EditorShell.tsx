@@ -1,26 +1,25 @@
 import { Suspense, lazy, useMemo, useState } from 'react';
 import { t } from '../i18n';
+import { DEFAULT_POSITION_RANGE } from '../constants/editor';
 import { ChoiceGrid } from './ChoiceGrid';
 import { ColorBlockGrid } from './ColorBlockGrid';
 import { EditControls } from './EditControls';
-import { LayerList } from './LayerList';
+import { LayerList } from './layers/LayerListFixed';
 import { TabBar, type TopBarMode } from './TabBar';
-import { TitleBar } from './TitleBar';
 import { TopMenu } from './TopMenu';
 import { ShortcutHelpModal } from './ShortcutHelpModal';
 import { WeaponAnimationModal } from './WeaponAnimationModal';
-import { ExtraPanel } from './ExtraPanel';
-import { tabLabels } from '../mock/options';
+import { ExtraPanel } from './extra/ExtraPanel';
 import { colorBlockToRole } from '../mock/colorBlocks';
 import { downloadBlob } from '../lib/math';
-import { createRoleJsonBlob, createTwroleBlob } from '../lib/legacyTwroleExport';
-import { parseRoleFileWithLegacyGroups, parseRoleFileInWorkerWithLegacyGroups } from '../lib/legacyGroupImport';
-import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../lib/actorBodyAnimation';
+import { createRoleJsonBlob, createTwroleBlob } from '../lib/serialization/legacyTwroleExport';
+import { parseRoleFileWithLegacyGroups, parseRoleFileInWorkerWithLegacyGroups } from '../lib/serialization/legacyGroupImport';
+import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../lib/runtime/actorBodyAnimation';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useColorBlockPresets } from '../hooks/useColorBlockPresets';
 import { useRoleEditor, type InsertDraftSettings } from '../hooks/useRoleEditor';
 import type { PartTab } from '../types/role';
-import type { BrushFillMask } from '../lib/brushFillToDeco';
+import type { BrushFillMask } from '../lib/conversion/brushFillToDeco';
 
 const CharacterStage = lazy(async () => import('./CharacterStage').then((module) => ({ default: module.CharacterStage })));
 
@@ -243,7 +242,6 @@ export function EditorShell() {
   return (
     <div className="role-editor-page">
       <div className="editor-window">
-        <TitleBar />
         <TopMenu
           camp={editor.role.camp}
           gender={editor.role.gender}
@@ -327,7 +325,7 @@ export function EditorShell() {
               bodyAnimationPlaying={bodyAnimationPlaying}
               editValues={editor.editValues}
               stageScale={editor.stageScale}
-              positionRange={editor.role.positionRange ?? 60}
+              positionRange={editor.role.positionRange ?? DEFAULT_POSITION_RANGE}
               stageMinScale={editor.stageMinScale}
               stageMaxScale={editor.stageMaxScale}
               selectionScaleMin={editor.selectionScaleMin}

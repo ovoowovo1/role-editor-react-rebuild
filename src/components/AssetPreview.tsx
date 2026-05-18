@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { PartOption } from '../types/role';
-import { probeAtlasTextureUrl } from '../lib/atlasTextureAvailability';
+import { probeAtlasTextureUrl } from '../lib/runtime/atlasTextureAvailability';
 
 interface AssetPreviewProps {
   option?: PartOption;

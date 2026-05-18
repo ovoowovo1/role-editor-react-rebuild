@@ -1,7 +1,7 @@
 import { GROUP_ROW_PREFIX, HEAD_LAYER_ID, HEAD_ROW_ID, ITEM_ROW_PREFIX } from '../../constants/layers';
 import type { DecorationGroup } from '../../types/role';
-import type { LayerDropIntent, LayerDropPlacement } from '../../lib/editorLayerDrag';
-import { directParentGroup, isGroupDescendant, membersForGroup } from '../../lib/groupTree';
+import type { LayerDropIntent, LayerDropPlacement } from '../../lib/editor/editorLayerDrag';
+import { directParentGroup, isGroupDescendant, membersForGroup } from '../../lib/editor/groupTree';
 import type { LayerRowModel } from './layerListModels';
 
 export const ITEM_ROW_HEIGHT = 77;

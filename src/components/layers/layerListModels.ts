@@ -1,6 +1,6 @@
 import { GROUP_ROW_PREFIX, HEAD_LAYER_ID, HEAD_ROW_ID, ITEM_ROW_PREFIX } from '../../constants/layers';
 import type { DecorationGroup, DecorationLayer } from '../../types/role';
-import { descendantLayerIdsForGroup, membersForGroup, topLevelGroupIds } from '../../lib/groupTree';
+import { descendantLayerIdsForGroup, membersForGroup, topLevelGroupIds } from '../../lib/editor/groupTree';
 
 interface VirtualLayerModel {
   id: string;

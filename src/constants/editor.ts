@@ -1,0 +1,16 @@
+export const EDITOR_BASE_HISTORY_LIMIT = 50;
+export const EDITOR_LOCAL_HISTORY_LIMIT = 200;
+
+export const EDITOR_STAGE_MIN_SCALE = 1;
+export const EDITOR_STAGE_MAX_SCALE = 30;
+
+export const DEFAULT_POSITION_RANGE = 60;
+export const MAX_POSITION_RANGE = 10000;
+
+export const ORIGINAL_DECO_MIN_SCALE = 0.001;
+export const ORIGINAL_DECO_MAX_SCALE = 5;
+export const ORIGINAL_DECO_MIN_RATIO = 0.001;
+export const ORIGINAL_DECO_MAX_RATIO = 5;
+
+export const HEAD_DECO_MIN_SCALE = 1;
+export const HEAD_DECO_MAX_SCALE = 2;

@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Application, Container, FederatedPointerEvent, Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
 import { t } from '../i18n';
+import {
+  BODY_ANIMATION_FRAME_MS,
+  DECO_GLOW_CAP,
+  DEFER_STAGE_SYNC_DECO_COUNT,
+  LARGE_MULTI_DRAG_THRESHOLD,
+  SCROLL_SURFACE_PADDING
+} from '../constants/stage';
 import type { BodyPartTab, DecorationLayer, PartOption, RoleDocument } from '../types/role';
 import { getBodyPartOption, optionById } from '../mock/options';
 import {
@@ -11,15 +18,15 @@ import {
   gafSources
 } from '../mock/gafManifest';
 import { clamp, clampToDisc } from '../lib/math';
-import { ACTOR_BODY_SCALE } from '../lib/actorClipAdapter';
-import { actorPartRuntime, getPartFrame, isRuntimeEmptyFrame, sanitizePartScale } from '../lib/twlibPartRuntime';
-import { collectAtlasTextureUrlsForRole, partitionAtlasTextureUrls } from '../lib/atlasTextureAvailability';
-import { applyGafAtlasToSprite } from '../lib/gafAtlasSprite';
-import { createDecoSelectionGlowFilter } from '../lib/decoSelectionFilter';
-import { ActorClip } from '../lib/actorClip';
-import { createActorGafClip, createGafClip, type GafMovieClip } from '../lib/gafMovieClip';
-import { isMissingDecoAssetId } from '../lib/roleSerialization';
-import type { BrushFillMask, BrushFillPoint } from '../lib/brushFillToDeco';
+import { ACTOR_BODY_SCALE } from '../lib/runtime/actorClipAdapter';
+import { actorPartRuntime, getPartFrame, isRuntimeEmptyFrame, sanitizePartScale } from '../lib/runtime/twlibPartRuntime';
+import { collectAtlasTextureUrlsForRole, partitionAtlasTextureUrls } from '../lib/runtime/atlasTextureAvailability';
+import { applyGafAtlasToSprite } from '../lib/runtime/gafAtlasSprite';
+import { createDecoSelectionGlowFilter } from '../lib/stage/decoSelectionFilter';
+import { ActorClip } from '../lib/runtime/actorClip';
+import { createActorGafClip, createGafClip, type GafMovieClip } from '../lib/runtime/gafMovieClip';
+import { isMissingDecoAssetId } from '../lib/serialization/roleSerialization';
+import type { BrushFillMask, BrushFillPoint } from '../lib/conversion/brushFillToDeco';
 import {
   actorSceneKey,
   appendBrushPoint,
@@ -36,7 +43,7 @@ import {
   selectionDragHitRect,
   type DisplayTransformPatch,
   type LocalBounds
-} from '../lib/characterStageHelpers';
+} from '../lib/stage/characterStageHelpers';
 
 interface CharacterStageProps {
   role: RoleDocument;
@@ -109,12 +116,6 @@ interface StageSceneState {
 }
 
 const ALPHA_MASK_DECO_CODES: Set<string> = new Set();
-const BODY_ANIMATION_FRAME_MS = 1000 / 12;
-const DECO_GLOW_CAP = 80;
-const DEFER_STAGE_SYNC_DECO_COUNT = 2000;
-const LARGE_MULTI_DRAG_THRESHOLD = 5000;
-const SCROLL_SURFACE_PADDING = 160;
-
 let cachedGlowFilter: ReturnType<typeof createDecoSelectionGlowFilter> | null = null;
 let cachedControllerGlowFilter: ReturnType<typeof createDecoSelectionGlowFilter> | null = null;
 
