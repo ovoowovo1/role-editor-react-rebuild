@@ -139,6 +139,28 @@ export function decorationTransformKey(deco: DecorationLayer): string {
   ].join('\u0000');
 }
 
+export function selectionDragVisualKey(selectedDecorations: DecorationLayer[], centerX: number, centerY: number): string {
+  return [
+    centerX,
+    centerY,
+    selectedDecorations.map((deco) => `${deco.id}:${decorationDisplayKey(deco)}:${decorationTransformKey(deco)}`).join('|')
+  ].join('\u0000');
+}
+
+export function quarterTurnRotationRadians(facingQuarterTurns: number): number {
+  return (((facingQuarterTurns % 4) + 4) % 4) * (Math.PI / 2);
+}
+
+export function brushFillPoints(mask: { points: BrushFillPoint[] }, draftPoints: BrushFillPoint[] = []): BrushFillPoint[] {
+  return draftPoints.length ? [...mask.points, ...draftPoints] : mask.points;
+}
+
+export function committedBrushFillMask(mask: { points: BrushFillPoint[] }, draftPoints: BrushFillPoint[]): { points: BrushFillPoint[] } {
+  return {
+    points: brushFillPoints(mask, draftPoints)
+  };
+}
+
 export function positionRange(role: RoleDocument): number {
   const raw = role.positionRange;
   const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;

@@ -4,7 +4,9 @@ import { makeDecorationLayer, makeRoleDocument } from '../../test/roleFixtures';
 import {
   actorSceneKey,
   appendBrushPoint,
+  brushFillPoints,
   clampedHeadLayerIndex,
+  committedBrushFillMask,
   decorationDisplayKey,
   decorationTransformKey,
   displayTransformPatchForDecoration,
@@ -12,9 +14,11 @@ import {
   mergeBounds,
   pointBounds,
   positionRange,
+  quarterTurnRotationRadians,
   sameChildOrder,
   selectionControllerPosition,
   selectionDragHitRect,
+  selectionDragVisualKey,
   shouldUsePointBoundsForSelection,
   stageSurfaceMetrics,
   summarizeMultiDragPositions,
@@ -27,6 +31,7 @@ describe('character stage helpers', () => {
 
     expect(decorationDisplayKey(deco)).toBe('asset\u0000code');
     expect(decorationTransformKey(deco)).toBe('1\u00002\u00003\u00004\u00005\u00000.5\u0000false');
+    expect(selectionDragVisualKey([deco], 10, 20)).toBe('10\u000020\u0000a:asset\u0000code:1\u00002\u00003\u00004\u00005\u00000.5\u0000false');
   });
 
   it('builds actor scene keys from role body inputs', () => {
@@ -116,6 +121,22 @@ describe('character stage helpers', () => {
       { x: 10, y: 0, radius: 10 }
     ]);
     expect(appendBrushPoint(points, { x: 11, y: 0, radius: 10 })).toBe(points);
+  });
+
+  it('combines committed and draft brush fill points', () => {
+    const committed = { points: [{ x: 1, y: 2, radius: 3 }] };
+    const draft = [{ x: 4, y: 5, radius: 6 }];
+
+    expect(brushFillPoints(committed)).toBe(committed.points);
+    expect(brushFillPoints(committed, draft)).toEqual([...committed.points, ...draft]);
+    expect(committedBrushFillMask(committed, draft)).toEqual({ points: [...committed.points, ...draft] });
+  });
+
+  it('normalizes quarter-turn stage rotation', () => {
+    expect(quarterTurnRotationRadians(0)).toBe(0);
+    expect(quarterTurnRotationRadians(1)).toBe(Math.PI / 2);
+    expect(quarterTurnRotationRadians(5)).toBe(Math.PI / 2);
+    expect(quarterTurnRotationRadians(-1)).toBe((3 * Math.PI) / 2);
   });
 
   it('computes selection bounds, centers, and hit rectangles', () => {
