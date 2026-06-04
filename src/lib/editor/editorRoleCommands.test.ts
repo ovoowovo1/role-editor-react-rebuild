@@ -8,8 +8,11 @@ import {
   commitTransientSession,
   copyDecorationsForPaste,
   mirroredCopiedDecorations,
+  pasteBaseClipboardIntoRole,
+  pasteLocalClipboardIntoRole,
   roleWithChosenBodyPart,
   roleWithDragDelta,
+  selectionIdsToRestoreForRole,
   selectionIdsForCommand,
   stableSelectionIdsForRole
 } from './editorRoleCommands';
@@ -41,6 +44,18 @@ describe('editor role commands', () => {
     expect(stableSelectionIdsForRole(role, ['a'], true, fallback)).not.toBe(fallback);
   });
 
+  it('deduplicates restored selection ids and drops missing layers', () => {
+    const role = makeRoleDocument({
+      decorations: [makeDecorationLayer('a'), makeDecorationLayer('b')]
+    });
+
+    expect(selectionIdsToRestoreForRole(role, ['missing', 'a', 'a', HEAD_LAYER_ID, 'b'])).toEqual([
+      'a',
+      HEAD_LAYER_ID,
+      'b'
+    ]);
+  });
+
   it('copies and mirrors clipboard decorations without mutating the source', () => {
     const selected = [makeDecorationLayer('a', { x: 12.345, y: -8.765, scaleX: 2, scaleY: 3, rotation: 270 })];
     const clipboard = clipboardDecorationsFromSelection(selected);
@@ -56,6 +71,46 @@ describe('editor role commands', () => {
     expect(mirroredY[0]).toMatchObject({ y: 8.77, scaleY: -3, rotation: 90 });
     expect(mirroredX[0].id).not.toBe(selected[0].id);
     expect(mirroredY[0].id).not.toBe(selected[0].id);
+  });
+
+  it('pastes local clipboard copies and returns ids for selection restoration', () => {
+    const role = makeRoleDocument({
+      decorations: [makeDecorationLayer('a')]
+    });
+    const source = makeDecorationLayer('source', { x: 4, y: 5 });
+    const result = pasteLocalClipboardIntoRole(role, [source], {
+      placement: 'bottom',
+      index: '1',
+      scopes: { palette: true, copy: true, mergeBatch: true }
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.role.decorations).toHaveLength(2);
+    expect(result?.pastedIds).toHaveLength(1);
+    expect(result?.pastedIds[0]).not.toBe(source.id);
+    expect(result?.role.decorations[1]).toMatchObject({ x: 4, y: 5 });
+    expect(role.decorations).toHaveLength(1);
+  });
+
+  it('pastes base clipboard with incremental offsets after the current selection', () => {
+    const role = makeRoleDocument({
+      decorations: [
+        makeDecorationLayer('a', { x: 1, y: 2 }),
+        makeDecorationLayer('b', { x: 10, y: 20 })
+      ]
+    });
+    const { id: _id, ...clipboardItem } = makeDecorationLayer('copy', { x: 3, y: 4 });
+    const clipboard = [clipboardItem];
+
+    const first = pasteBaseClipboardIntoRole(role, clipboard, ['a'], 0);
+    expect(first).toMatchObject({ pasteCount: 1, offset: 8 });
+    expect(first?.pastedIds).toHaveLength(1);
+    expect(role.decorations.map((item) => item.id)).toEqual(['a', first?.pastedIds[0], 'b']);
+    expect(role.decorations[1]).toMatchObject({ x: 11, y: 12 });
+
+    const second = pasteBaseClipboardIntoRole(role, clipboard, first?.pastedIds ?? [], first?.pasteCount ?? 0);
+    expect(second).toMatchObject({ pasteCount: 2, offset: 16 });
+    expect(role.decorations[2]).toMatchObject({ x: 19, y: 20 });
   });
 
   it('updates body part fields while preserving existing scale fallback', () => {

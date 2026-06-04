@@ -4,9 +4,7 @@ import { t } from '../i18n';
 import {
   BODY_ANIMATION_FRAME_MS,
   DECO_GLOW_CAP,
-  DEFER_STAGE_SYNC_DECO_COUNT,
-  LARGE_MULTI_DRAG_THRESHOLD,
-  SCROLL_SURFACE_PADDING
+  DEFER_STAGE_SYNC_DECO_COUNT
 } from '../constants/stage';
 import type { BodyPartTab, DecorationLayer, PartOption, RoleDocument } from '../types/role';
 import { getBodyPartOption, optionById } from '../mock/options';
@@ -36,11 +34,15 @@ import {
   displayTransformPatchForDecoration,
   displayTransformPatchForHeadLayer,
   mergeBounds,
+  multiDragStartMode,
   pointBounds,
   positionRange,
   sameChildOrder,
   selectionControllerPosition,
   selectionDragHitRect,
+  shouldUsePointBoundsForSelection,
+  stageSurfaceMetrics,
+  summarizeMultiDragPositions,
   type DisplayTransformPatch,
   type LocalBounds
 } from '../lib/stage/characterStageHelpers';
@@ -499,7 +501,7 @@ function syncSelectionDragController(
   }
 
   let bounds: LocalBounds | null = null;
-  if (selectedDecorations.length >= LARGE_MULTI_DRAG_THRESHOLD) {
+  if (shouldUsePointBoundsForSelection(selectedDecorations.length)) {
     for (const deco of selectedDecorations) {
       bounds = mergeBounds(bounds, pointBounds(deco.x, deco.y));
     }
@@ -712,50 +714,41 @@ export function CharacterStage({
       const currentScene = sceneRef.current;
       const selectedDecos: DecorationLayer[] = [];
       const displayPositions = new Map<string, { x: number; y: number }>();
-      let cx = 0;
-      let cy = 0;
-      let minX = Number.POSITIVE_INFINITY;
-      let minY = Number.POSITIVE_INFINITY;
-      let maxX = Number.NEGATIVE_INFINITY;
-      let maxY = Number.NEGATIVE_INFINITY;
+      const selectedPositions: Array<{ id: string; x: number; y: number }> = [];
+      let overlayItemCount = 0;
 
       for (const item of currentRole.decorations) {
         if (!selectedSet.has(item.id)) continue;
         const record = currentScene.decoDisplays.get(item.id);
+        if (record) overlayItemCount += 1;
         const displayPosition = record
           ? getDisplayRootPosition(record.container, currentScene.disguiseRoot)
           : { x: item.x, y: item.y };
         selectedDecos.push(item);
         displayPositions.set(item.id, displayPosition);
-        cx += displayPosition.x;
-        cy += displayPosition.y;
-        minX = Math.min(minX, displayPosition.x);
-        minY = Math.min(minY, displayPosition.y);
-        maxX = Math.max(maxX, displayPosition.x);
-        maxY = Math.max(maxY, displayPosition.y);
+        selectedPositions.push({ id: item.id, x: displayPosition.x, y: displayPosition.y });
       }
 
-      if (selectedDecos.length < 2) {
+      const summary = summarizeMultiDragPositions(selectedPositions);
+      const dragMode = multiDragStartMode(selectedDecos.length, overlayItemCount);
+      if (!summary || dragMode === 'single-fallback') {
         callbacksRef.current.onBeginTransient();
         const local = root.toLocal(event.global);
         dragRef.current = { id, offsetX: local.x - deco.x, offsetY: local.y - deco.y };
         return;
       }
 
-      cx /= selectedDecos.length;
-      cy /= selectedDecos.length;
-
-      if (selectedDecos.length >= LARGE_MULTI_DRAG_THRESHOLD) {
-        const preview = createLargeMultiDragPreview(maxX - minX, maxY - minY);
-        preview.position.set(cx, cy);
+      if (dragMode === 'preview') {
+        const preview = createLargeMultiDragPreview(summary.maxX - summary.minX, summary.maxY - summary.minY);
+        preview.position.set(summary.centerX, summary.centerY);
         currentScene.disguiseRoot.addChild(preview);
 
         const local = root.toLocal(event.global);
         dragRef.current = {
           id,
-          offsetX: local.x - cx,
-          offsetY: local.y - cy,
-          preview: { container: preview, startX: cx, startY: cy }
+          offsetX: local.x - summary.centerX,
+          offsetY: local.y - summary.centerY,
+          preview: { container: preview, startX: summary.centerX, startY: summary.centerY }
         };
         return;
       }
@@ -781,7 +774,7 @@ export function CharacterStage({
       }
 
       const overlay = new Container();
-      overlay.position.set(cx, cy);
+      overlay.position.set(summary.centerX, summary.centerY);
       overlay.filters = [getCachedGlowFilter()];
       currentScene.disguiseRoot.addChild(overlay);
 
@@ -796,9 +789,9 @@ export function CharacterStage({
       const local = root.toLocal(event.global);
       dragRef.current = {
         id,
-        offsetX: local.x - cx,
-        offsetY: local.y - cy,
-        overlay: { container: overlay, items, startX: cx, startY: cy }
+        offsetX: local.x - summary.centerX,
+        offsetY: local.y - summary.centerY,
+        overlay: { container: overlay, items, startX: summary.centerX, startY: summary.centerY }
       };
       return;
     }
@@ -849,15 +842,11 @@ export function CharacterStage({
     if (!viewport) return;
 
     const updateSurfaceSize = () => {
-      const viewportWidth = Math.max(1, viewport.clientWidth);
-      const viewportHeight = Math.max(1, viewport.clientHeight);
-      const zoom = Math.max(1, stageScale);
-      const needsScrollSurface = zoom > 1;
-      const nextViewportSize = { width: viewportWidth, height: viewportHeight };
-      const nextSurfaceSize = {
-        width: Math.ceil(viewportWidth * zoom + (needsScrollSurface ? SCROLL_SURFACE_PADDING * 2 : 0)),
-        height: Math.ceil(viewportHeight * zoom + (needsScrollSurface ? SCROLL_SURFACE_PADDING * 2 : 0))
-      };
+      const { viewportSize: nextViewportSize, surfaceSize: nextSurfaceSize } = stageSurfaceMetrics(
+        viewport.clientWidth,
+        viewport.clientHeight,
+        stageScale
+      );
 
       setViewportSize((current) => {
         if (current.width === nextViewportSize.width && current.height === nextViewportSize.height) return current;

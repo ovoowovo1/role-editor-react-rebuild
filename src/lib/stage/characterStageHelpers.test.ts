@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LARGE_MULTI_DRAG_THRESHOLD } from '../../constants/stage';
 import { makeDecorationLayer, makeRoleDocument } from '../../test/roleFixtures';
 import {
   actorSceneKey,
@@ -13,7 +14,11 @@ import {
   positionRange,
   sameChildOrder,
   selectionControllerPosition,
-  selectionDragHitRect
+  selectionDragHitRect,
+  shouldUsePointBoundsForSelection,
+  stageSurfaceMetrics,
+  summarizeMultiDragPositions,
+  multiDragStartMode
 } from './characterStageHelpers';
 
 describe('character stage helpers', () => {
@@ -40,6 +45,21 @@ describe('character stage helpers', () => {
     expect(positionRange(makeRoleDocument({ positionRange: '80' as unknown as number }))).toBe(80);
     expect(positionRange(makeRoleDocument({ positionRange: -1 }))).toBe(60);
     expect(positionRange(makeRoleDocument({ positionRange: 20000 }))).toBe(10000);
+  });
+
+  it('computes scrollable stage surface metrics from viewport size and zoom', () => {
+    expect(stageSurfaceMetrics(100, 50, 1)).toEqual({
+      viewportSize: { width: 100, height: 50 },
+      surfaceSize: { width: 100, height: 50 }
+    });
+    expect(stageSurfaceMetrics(100, 50, 2)).toEqual({
+      viewportSize: { width: 100, height: 50 },
+      surfaceSize: { width: 520, height: 420 }
+    });
+    expect(stageSurfaceMetrics(0, -5, 0.5)).toEqual({
+      viewportSize: { width: 1, height: 1 },
+      surfaceSize: { width: 1, height: 1 }
+    });
   });
 
   it('clamps head layer index and compares child order by identity', () => {
@@ -112,5 +132,29 @@ describe('character stage helpers', () => {
       width: 54,
       height: 68
     });
+  });
+
+  it('summarizes and classifies multi-drag selections', () => {
+    expect(summarizeMultiDragPositions([
+      { id: 'a', x: 0, y: 4 },
+      { id: 'b', x: 10, y: 20 },
+      { id: 'c', x: -4, y: 2 }
+    ])).toEqual({
+      count: 3,
+      centerX: 2,
+      centerY: 26 / 3,
+      minX: -4,
+      minY: 2,
+      maxX: 10,
+      maxY: 20
+    });
+
+    expect(summarizeMultiDragPositions([])).toBeNull();
+    expect(multiDragStartMode(1, 1)).toBe('single-fallback');
+    expect(multiDragStartMode(2, 1)).toBe('single-fallback');
+    expect(multiDragStartMode(2, 2)).toBe('overlay');
+    expect(multiDragStartMode(LARGE_MULTI_DRAG_THRESHOLD, 0)).toBe('preview');
+    expect(shouldUsePointBoundsForSelection(LARGE_MULTI_DRAG_THRESHOLD - 1)).toBe(false);
+    expect(shouldUsePointBoundsForSelection(LARGE_MULTI_DRAG_THRESHOLD)).toBe(true);
   });
 });

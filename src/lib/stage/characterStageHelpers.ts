@@ -1,5 +1,6 @@
 import type { DecorationLayer, HeadLayerTransform, RoleDocument } from '../../types/role';
 import { DEFAULT_POSITION_RANGE, MAX_POSITION_RANGE } from '../../constants/editor';
+import { LARGE_MULTI_DRAG_THRESHOLD, SCROLL_SURFACE_PADDING } from '../../constants/stage';
 import type { BrushFillPoint } from '../conversion/brushFillToDeco';
 import { clamp } from '../math';
 
@@ -21,6 +22,11 @@ export interface RectLike {
   height: number;
 }
 
+export interface StageSurfaceMetrics {
+  viewportSize: { width: number; height: number };
+  surfaceSize: { width: number; height: number };
+}
+
 export interface DisplayTransformPatch {
   x: number;
   y: number;
@@ -29,6 +35,81 @@ export interface DisplayTransformPatch {
   scaleY: number;
   alpha: number;
   visible: boolean;
+}
+
+export interface MultiDragPosition {
+  id: string;
+  x: number;
+  y: number;
+}
+
+export interface MultiDragPositionSummary {
+  count: number;
+  centerX: number;
+  centerY: number;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+export type MultiDragStartMode = 'single-fallback' | 'overlay' | 'preview';
+
+export function stageSurfaceMetrics(
+  viewportWidth: number,
+  viewportHeight: number,
+  stageScale: number
+): StageSurfaceMetrics {
+  const width = Math.max(1, viewportWidth);
+  const height = Math.max(1, viewportHeight);
+  const zoom = Math.max(1, stageScale);
+  const needsScrollSurface = zoom > 1;
+  return {
+    viewportSize: { width, height },
+    surfaceSize: {
+      width: Math.ceil(width * zoom + (needsScrollSurface ? SCROLL_SURFACE_PADDING * 2 : 0)),
+      height: Math.ceil(height * zoom + (needsScrollSurface ? SCROLL_SURFACE_PADDING * 2 : 0))
+    }
+  };
+}
+
+export function shouldUsePointBoundsForSelection(selectedCount: number): boolean {
+  return selectedCount >= LARGE_MULTI_DRAG_THRESHOLD;
+}
+
+export function summarizeMultiDragPositions(positions: readonly MultiDragPosition[]): MultiDragPositionSummary | null {
+  if (!positions.length) return null;
+  let centerX = 0;
+  let centerY = 0;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  for (const position of positions) {
+    centerX += position.x;
+    centerY += position.y;
+    minX = Math.min(minX, position.x);
+    minY = Math.min(minY, position.y);
+    maxX = Math.max(maxX, position.x);
+    maxY = Math.max(maxY, position.y);
+  }
+
+  return {
+    count: positions.length,
+    centerX: centerX / positions.length,
+    centerY: centerY / positions.length,
+    minX,
+    minY,
+    maxX,
+    maxY
+  };
+}
+
+export function multiDragStartMode(selectedDecorationCount: number, overlayItemCount: number): MultiDragStartMode {
+  if (selectedDecorationCount < 2) return 'single-fallback';
+  if (selectedDecorationCount >= LARGE_MULTI_DRAG_THRESHOLD) return 'preview';
+  return overlayItemCount >= 2 ? 'overlay' : 'single-fallback';
 }
 
 export function actorSceneKey(role: RoleDocument, bodyAnimationLabel: string): string {

@@ -8,6 +8,8 @@ interface LegacyCampGender {
   gender: GenderCode;
 }
 
+type LegacyPayload = Record<string, unknown>;
+
 const CAMP_GENDER_BY_LEGACY_DR: Record<number, LegacyCampGender> = {
   0: { camp: 'skydow', gender: 'male' },
   1: { camp: 'skydow', gender: 'female' },
@@ -23,27 +25,44 @@ function isTwroleBytes(bytes: Uint8Array): boolean {
   return bytes.length >= 2 && bytes[0] === 0 && bytes[1] === 1;
 }
 
-async function readLegacyPayload(file: File): Promise<any | null> {
+function asRecord(value: unknown): LegacyPayload | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as LegacyPayload : null;
+}
+
+function readPath(root: unknown, path: string[]): unknown {
+  let current: unknown = root;
+  for (const key of path) {
+    const record = asRecord(current);
+    if (!record) return undefined;
+    current = record[key];
+  }
+  return current;
+}
+
+async function readLegacyPayload(file: File): Promise<LegacyPayload | null> {
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const jsonText = isTwroleBytes(bytes)
       ? new TextDecoder().decode(ungzip(bytes.slice(2)))
       : new TextDecoder().decode(bytes);
-    return JSON.parse(jsonText);
+    return asRecord(JSON.parse(jsonText));
   } catch {
     return null;
   }
 }
 
-function getLegacyCampGender(payload: any | null): LegacyCampGender | null {
-  const rawDr = payload?.data?.dr ?? payload?.dr;
+export function getLegacyCampGender(payload: unknown): LegacyCampGender | null {
+  const rawDr = readPath(payload, ['data', 'dr']) ?? readPath(payload, ['dr']);
   const dr = typeof rawDr === 'number' ? rawDr : typeof rawDr === 'string' ? Number(rawDr) : NaN;
   if (!Number.isInteger(dr)) return null;
   return CAMP_GENDER_BY_LEGACY_DR[dr] ?? null;
 }
 
-function applyLegacyPayloadMetadata(result: ImportResult, payload: any | null): ImportResult {
-  const rawGroups = payload?.decoGroups ?? payload?.data?.decoGroups ?? payload?.data?.cr?.decoGroups;
+export function applyLegacyPayloadMetadata(result: ImportResult, payload: unknown): ImportResult {
+  const rawGroups =
+    readPath(payload, ['decoGroups']) ??
+    readPath(payload, ['data', 'decoGroups']) ??
+    readPath(payload, ['data', 'cr', 'decoGroups']);
   const groups = normalizeLegacyDecoGroups(rawGroups, result.role);
   const campGender = getLegacyCampGender(payload);
 

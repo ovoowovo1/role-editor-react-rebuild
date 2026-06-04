@@ -12,5 +12,6 @@
     "allowSyntheticDefaultImports": true,
     "types": ["node"]
   },
-  "include": ["renderer/**/*.ts"]
+  "include": ["renderer/**/*.ts"],
+  "exclude": ["renderer/**/*.test.ts"]
 }

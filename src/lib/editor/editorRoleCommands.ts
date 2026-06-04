@@ -1,8 +1,10 @@
-import type { BodyPartTab, DecorationLayer, PartOption, RoleDocument } from '../../types/role';
+import type { BodyPartTab, DecorationLayer, EditorClipboardItem, PartOption, RoleDocument } from '../../types/role';
 import { getPartFrame } from '../runtime/twlibPartRuntime';
 import { normalizeDegrees } from '../math';
 import { copyDecoration } from './editorImportMerge';
 import { cloneRole } from './editorRoleUtils';
+import { pasteClipboardIntoRole } from './editorDecorationMutations';
+import { insertDecorations, type InsertDraftSettings } from './editorInsertSettings';
 import {
   captureDecorationTransforms,
   makeSnapshotEntry,
@@ -12,6 +14,8 @@ import {
   type DecorationTransformTarget,
   type LocalHistoryEntry
 } from './editorTransformHistory';
+
+const BASE_CLIPBOARD_PASTE_OFFSET_STEP = 8;
 
 export function selectionIdsForCommand(...candidates: string[][]): string[] {
   const selected = candidates.find((ids) => ids.length > 0) ?? [];
@@ -32,6 +36,10 @@ export function stableSelectionIdsForRole(
   if (current.length) return current;
   if (!transientActive) return [];
   return commandSelectionIdsForRole(role, ...fallbacks);
+}
+
+export function selectionIdsToRestoreForRole(role: RoleDocument, ids: string[]): string[] {
+  return validSelectionIds(role, [...new Set(ids.filter(Boolean))]);
 }
 
 export interface BeginTransientSessionResult {
@@ -90,6 +98,46 @@ export function clipboardDecorationsFromSelection(selectedDecorations: Decoratio
 
 export function copyDecorationsForPaste(localClipboard: DecorationLayer[]): DecorationLayer[] {
   return localClipboard.map((item) => copyDecoration(item));
+}
+
+export interface LocalClipboardPasteResult {
+  role: RoleDocument;
+  pastedIds: string[];
+}
+
+export function pasteLocalClipboardIntoRole(
+  current: RoleDocument,
+  localClipboard: DecorationLayer[],
+  settings: InsertDraftSettings
+): LocalClipboardPasteResult | null {
+  if (!localClipboard.length) return null;
+  const copied = copyDecorationsForPaste(localClipboard);
+  return {
+    role: insertDecorations(current, copied, settings),
+    pastedIds: copied.map((item) => item.id)
+  };
+}
+
+export interface BaseClipboardPasteResult {
+  pastedIds: string[];
+  pasteCount: number;
+  offset: number;
+}
+
+export function pasteBaseClipboardIntoRole(
+  current: RoleDocument,
+  baseClipboard: EditorClipboardItem[],
+  selectedDecorationIds: string[],
+  pasteCount: number
+): BaseClipboardPasteResult | null {
+  if (!baseClipboard.length) return null;
+  const nextPasteCount = pasteCount + 1;
+  const offset = nextPasteCount * BASE_CLIPBOARD_PASTE_OFFSET_STEP;
+  return {
+    pastedIds: pasteClipboardIntoRole(current, baseClipboard, selectedDecorationIds, offset),
+    pasteCount: nextPasteCount,
+    offset
+  };
 }
 
 export function mirroredCopiedDecorations(

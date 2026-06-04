@@ -15,7 +15,6 @@ import {
   deleteDecorationFromRole,
   makeDecoration,
   moveSelectedToBoundaryInRole,
-  pasteClipboardIntoRole,
   setSelectedVisibleInRole,
   toggleDecorationVisibilityInRole
 } from '../lib/editor/editorDecorationMutations';
@@ -59,7 +58,6 @@ import {
   sameRole,
   sameTransformTarget,
   transformValuesFromSingleDeco,
-  validSelectionIds,
   type DecorationTransformTarget,
   type LocalHistoryEntry
 } from '../lib/editor/editorTransformHistory';
@@ -78,11 +76,13 @@ import {
   clipboardDecorationsFromSelection,
   commandSelectionIdsForRole,
   commitTransientSession,
-  copyDecorationsForPaste,
   mirroredCopiedDecorations,
+  pasteBaseClipboardIntoRole,
+  pasteLocalClipboardIntoRole,
   roleWithChosenBodyPart,
   roleWithDragDelta,
   selectionIdsForCommand,
+  selectionIdsToRestoreForRole,
   stableSelectionIdsForRole
 } from '../lib/editor/editorRoleCommands';
 
@@ -232,7 +232,7 @@ export function useRoleEditor() {
       const nextIds = [...new Set(ids.filter(Boolean))];
       if (!nextIds.length) return;
       window.setTimeout(() => {
-        const stillValid = validSelectionIds(roleRef.current, nextIds);
+        const stillValid = selectionIdsToRestoreForRole(roleRef.current, nextIds);
         if (!stillValid.length) return;
         selectedIdsRef.current = stillValid;
         setSelectedLayerIds(stillValid);
@@ -630,20 +630,21 @@ export function useRoleEditor() {
     if (!localClipboard.length) {
       // Fallback to base clipboard
       if (!baseClipboard.length) return;
-      pasteCountRef.current += 1;
-      const offset = pasteCountRef.current * 8;
+      const pasteCountBefore = pasteCountRef.current;
+      pasteCountRef.current = pasteCountBefore + 1;
       updateRole((current) => {
-        const pastedIds = pasteClipboardIntoRole(current, baseClipboard, selectedDecorationIds, offset);
-        window.setTimeout(() => setSelectedLayerIds(pastedIds), 0);
+        const result = pasteBaseClipboardIntoRole(current, baseClipboard, selectedDecorationIds, pasteCountBefore);
+        if (!result) return current;
+        window.setTimeout(() => setSelectedLayerIds(result.pastedIds), 0);
         return current;
       });
       return;
     }
     const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.copy);
-    const copied = copyDecorationsForPaste(localClipboard);
-    const nextRole = insertDecorations(roleRef.current, copied, settings);
-    commitRole(nextRole);
-    restoreSelection(copied.map((item) => item.id));
+    const result = pasteLocalClipboardIntoRole(roleRef.current, localClipboard, settings);
+    if (!result) return;
+    commitRole(result.role);
+    restoreSelection(result.pastedIds);
   }, [baseClipboard, commitRole, insertDraftSettings, localClipboard, restoreSelection, selectedDecorationIds, updateRole]);
 
   const mirrorCopyHorizontalSelected = useCallback(() => {
