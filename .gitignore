@@ -1,4 +1,10 @@
 node_modules/
-dist/assets/*
-!dist/assets/gaf/
-!dist/assets/gaf/**
+.env
+.env.*
+!.env.example
+.wrangler/
+.dev.vars
+*.tsbuildinfo
+dist/
+coverage/
+.DS_Store
