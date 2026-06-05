@@ -12,6 +12,7 @@ import type {
   DisguiseDecoOptions,
   DragState,
   StageRuntimeRefs,
+  StageSceneBuildConfig,
   StageSceneState
 } from './types';
 import type { RoleDocument } from '../../types/role';
@@ -29,10 +30,8 @@ export function useStageSceneLifecycle({
   stageBuildGenerationRef,
   stageTeardownRef,
   beginDecorationDragRef,
+  sceneBuildConfigRef,
   sceneKey,
-  stageScale,
-  facingQuarterTurns,
-  bodyAnimationLabel,
   cancelDeferredStageSync,
   setSceneVersion
 }: {
@@ -48,10 +47,8 @@ export function useStageSceneLifecycle({
   stageBuildGenerationRef: MutableRefObject<number>;
   stageTeardownRef: MutableRefObject<(() => void) | null>;
   beginDecorationDragRef: MutableRefObject<(id: string, event: FederatedPointerEvent, root: Container) => void>;
+  sceneBuildConfigRef: MutableRefObject<StageSceneBuildConfig>;
   sceneKey: string;
-  stageScale: number;
-  facingQuarterTurns: number;
-  bodyAnimationLabel: string;
   cancelDeferredStageSync(): void;
   setSceneVersion: Dispatch<SetStateAction<number>>;
 }) {
@@ -69,6 +66,7 @@ export function useStageSceneLifecycle({
 
     partitionAtlasTextureUrls(urls).then(({ failed: failedTextures }) => {
       if (cancelled || buildId !== stageBuildGenerationRef.current) return;
+      const { stageScale, facingQuarterTurns, bodyAnimationLabel } = sceneBuildConfigRef.current;
 
       stageTeardownRef.current?.();
       stageTeardownRef.current = null;
@@ -146,5 +144,22 @@ export function useStageSceneLifecycle({
       stageTeardownRef.current?.();
       stageTeardownRef.current = null;
     };
-  }, [sceneKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [
+    appRef,
+    beginDecorationDragRef,
+    brushFillRef,
+    cancelDeferredStageSync,
+    dragRef,
+    hostRef,
+    roleRef,
+    sceneBuildConfigRef,
+    sceneKey,
+    sceneRef,
+    selectedIdsRef,
+    setSceneVersion,
+    stageBgRef,
+    stageBuildGenerationRef,
+    stageRuntimeRefs,
+    stageTeardownRef
+  ]);
 }

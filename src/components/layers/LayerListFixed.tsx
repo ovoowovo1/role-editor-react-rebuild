@@ -175,7 +175,13 @@ export function LayerList({
         <span>{layerCount}</span>
       </div>
       <div className="layer-tools">
-        <button type="button" disabled={!canGroupSelected} onClick={onGroupSelected} title={t('layers.groupTitle')}>
+        <button
+          type="button"
+          data-testid="group-selected-button"
+          disabled={!canGroupSelected}
+          onClick={onGroupSelected}
+          title={t('layers.groupTitle')}
+        >
           {t('layers.group')}
         </button>
         <button

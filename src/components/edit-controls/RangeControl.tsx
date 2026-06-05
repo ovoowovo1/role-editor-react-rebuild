@@ -2,6 +2,7 @@ import type { RangeControlProps } from './types';
 
 export function RangeControl({
   label,
+  testId,
   value,
   min,
   max,
@@ -22,6 +23,7 @@ export function RangeControl({
       <span className="range-label">{label}</span>
       <input
         type="range"
+        data-testid={testId ? `${testId}-range` : undefined}
         min={min}
         max={max}
         step={step}
@@ -35,6 +37,7 @@ export function RangeControl({
       <input
         className="number-box"
         type="number"
+        data-testid={testId ? `${testId}-number` : undefined}
         min={inputMin}
         max={inputMax}
         step={step}

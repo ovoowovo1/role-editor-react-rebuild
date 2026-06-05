@@ -34,6 +34,7 @@ export interface EditControlsProps {
 
 export interface RangeControlProps {
   label: string;
+  testId?: string;
   value: number;
   min: number;
   max: number;

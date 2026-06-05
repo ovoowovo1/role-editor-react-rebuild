@@ -1,10 +1,8 @@
 import { useRef, useState } from 'react';
-import { Application, Container, FederatedPointerEvent } from 'pixi.js';
 import { t } from '../i18n';
 import type { DecorationLayer, RoleDocument } from '../types/role';
 import type { BrushFillMask } from '../lib/conversion/brushFillToDeco';
 import { actorSceneKey } from '../lib/stage/characterStageHelpers';
-import { beginDecorationDrag } from './character-stage/stageInteractions';
 import {
   useBodyAnimationPlayback,
   useStageDisplaySync,
@@ -14,15 +12,8 @@ import {
   useStageTransform,
   useStageRuntimeRefSync
 } from './character-stage/stageEffects';
+import { useStageRuntimeController } from './character-stage/stageRuntimeController';
 import { useStageSceneLifecycle } from './character-stage/stageSceneLifecycle';
-import type {
-  BrushFillState,
-  BrushDrawState,
-  DragState,
-  StageCallbacks,
-  StageRuntimeRefs,
-  StageSceneState
-} from './character-stage/types';
 
 interface CharacterStageProps {
   role: RoleDocument;
@@ -64,14 +55,18 @@ export function CharacterStage({
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const stageBgRef = useRef<HTMLDivElement | null>(null);
-  const appRef = useRef<Application | null>(null);
-  const dragRef = useRef<DragState | null>(null);
-  const brushDrawRef = useRef<BrushDrawState | null>(null);
-  const beginDecorationDragRef = useRef<(id: string, event: FederatedPointerEvent, root: Container) => void>(() => undefined);
-  const sceneRef = useRef<StageSceneState | null>(null);
-  const roleRef = useRef(role);
-  const selectedIdsRef = useRef(selectedIds);
-  const callbacksRef = useRef<StageCallbacks>({
+  const [sceneVersion, setSceneVersion] = useState(0);
+  const sceneKey = actorSceneKey(role, bodyAnimationLabel);
+  const { scheduleDeferredStageSync, cancelDeferredStageSync } = useDeferredStageSync();
+  const stageRuntime = useStageRuntimeController({
+    role,
+    selectedIds,
+    stageScale,
+    facingQuarterTurns,
+    bodyAnimationLabel,
+    brushFillActive,
+    brushFillBrushSize,
+    brushFillMask,
     onUpdateDecoration,
     onApplyDragDelta,
     onCommitDragDelta,
@@ -79,37 +74,14 @@ export function CharacterStage({
     onCommitTransient,
     onBrushFillMaskChange
   });
-  const brushFillRef = useRef<BrushFillState>({
-    active: brushFillActive,
-    brushSize: brushFillBrushSize,
-    mask: brushFillMask
-  });
-  const stageBuildGenerationRef = useRef(0);
-  const stageTeardownRef = useRef<(() => void) | null>(null);
-  const [sceneVersion, setSceneVersion] = useState(0);
-  const lastPlaybackResetRef = useRef({ sceneVersion: -1, label: '', restartKey: -1 });
-  const sceneKey = actorSceneKey(role, bodyAnimationLabel);
-  const { scheduleDeferredStageSync, cancelDeferredStageSync } = useDeferredStageSync();
 
-  const stageRuntimeRefs: StageRuntimeRefs = {
-    roleRef,
-    selectedIdsRef,
-    callbacksRef,
-    brushFillRef,
-    sceneRef,
-    dragRef,
-    brushDrawRef
-  };
-
-  beginDecorationDragRef.current = (id, event, root) => beginDecorationDrag(id, event, root, stageRuntimeRefs);
-
-  const { surfaceSize, viewportSize } = useStageSurfaceMetrics(viewportRef, sceneRef, stageScale);
+  const { surfaceSize, viewportSize } = useStageSurfaceMetrics(viewportRef, stageRuntime.sceneRef, stageScale);
 
   usePixiApplicationLifecycle({
     hostRef,
-    appRef,
-    sceneRef,
-    stageTeardownRef,
+    appRef: stageRuntime.appRef,
+    sceneRef: stageRuntime.sceneRef,
+    stageTeardownRef: stageRuntime.stageTeardownRef,
     cancelDeferredStageSync
   });
 
@@ -119,11 +91,11 @@ export function CharacterStage({
     brushFillActive,
     brushFillBrushSize,
     brushFillMask,
-    roleRef,
-    selectedIdsRef,
-    callbacksRef,
-    brushFillRef,
-    brushDrawRef,
+    roleRef: stageRuntime.roleRef,
+    selectedIdsRef: stageRuntime.selectedIdsRef,
+    callbacksRef: stageRuntime.callbacksRef,
+    brushFillRef: stageRuntime.brushFillRef,
+    brushDrawRef: stageRuntime.brushDrawRef,
     onUpdateDecoration,
     onApplyDragDelta,
     onCommitDragDelta,
@@ -133,22 +105,20 @@ export function CharacterStage({
   });
 
   useStageSceneLifecycle({
-    appRef,
+    appRef: stageRuntime.appRef,
     hostRef,
     stageBgRef,
-    roleRef,
-    selectedIdsRef,
-    brushFillRef,
-    dragRef,
-    sceneRef,
-    stageRuntimeRefs,
-    stageBuildGenerationRef,
-    stageTeardownRef,
-    beginDecorationDragRef,
+    roleRef: stageRuntime.roleRef,
+    selectedIdsRef: stageRuntime.selectedIdsRef,
+    brushFillRef: stageRuntime.brushFillRef,
+    dragRef: stageRuntime.dragRef,
+    sceneRef: stageRuntime.sceneRef,
+    stageRuntimeRefs: stageRuntime.stageRuntimeRefs,
+    stageBuildGenerationRef: stageRuntime.stageBuildGenerationRef,
+    stageTeardownRef: stageRuntime.stageTeardownRef,
+    beginDecorationDragRef: stageRuntime.beginDecorationDragRef,
+    sceneBuildConfigRef: stageRuntime.sceneBuildConfigRef,
     sceneKey,
-    stageScale,
-    facingQuarterTurns,
-    bodyAnimationLabel,
     cancelDeferredStageSync,
     setSceneVersion
   });
@@ -159,25 +129,25 @@ export function CharacterStage({
     brushFillActive,
     brushFillMask,
     sceneVersion,
-    appRef,
-    roleRef,
-    sceneRef,
-    dragRef,
-    brushDrawRef,
-    beginDecorationDragRef,
+    appRef: stageRuntime.appRef,
+    roleRef: stageRuntime.roleRef,
+    sceneRef: stageRuntime.sceneRef,
+    dragRef: stageRuntime.dragRef,
+    brushDrawRef: stageRuntime.brushDrawRef,
+    beginDecorationDragRef: stageRuntime.beginDecorationDragRef,
     scheduleDeferredStageSync,
     cancelDeferredStageSync
   });
 
   useBodyAnimationPlayback({
-    sceneRef,
-    lastPlaybackResetRef,
+    sceneRef: stageRuntime.sceneRef,
+    lastPlaybackResetRef: stageRuntime.lastPlaybackResetRef,
     sceneVersion,
     bodyAnimationLabel,
     bodyAnimationPlaying,
     bodyAnimationRestartKey
   });
-  useStageTransform(sceneRef, stageScale, facingQuarterTurns);
+  useStageTransform(stageRuntime.sceneRef, stageScale, facingQuarterTurns);
 
   return (
     <section className="stage-panel">

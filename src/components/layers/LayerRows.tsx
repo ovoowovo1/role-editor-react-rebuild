@@ -43,8 +43,9 @@ export function LayerItemRow({
       style={{ '--layer-depth': row.depth } as CSSProperties}
       onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelect(deco.id, event.ctrlKey || event.metaKey)}
       data-layer-id={deco.id}
+      data-testid={`layer-row-${deco.id}`}
     >
-      <button className="drag-handle" type="button" {...dragHandleProps} title={t('layer.dragHandle')}>
+      <button className="drag-handle" type="button" data-testid={`layer-drag-${deco.id}`} {...dragHandleProps} title={t('layer.dragHandle')}>
         ⋮⋮
       </button>
       <div className="layer-badge">{(row.index ?? 0) + 1}</div>
@@ -58,6 +59,7 @@ export function LayerItemRow({
       <button
         className="layer-icon-button"
         type="button"
+        data-testid={`layer-visibility-${deco.id}`}
         title={deco.visible ? t('layer.hide') : t('layer.show')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
@@ -69,6 +71,7 @@ export function LayerItemRow({
       <button
         className="layer-delete"
         type="button"
+        data-testid={`layer-delete-${deco.id}`}
         title={t('layer.delete')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
@@ -105,10 +108,11 @@ export function HeadRow({
       className={`layer-row head-layer ${row.grouped ? 'group-child' : ''} ${row.selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${headLayer.visible === false ? 'muted' : ''}`}
       style={{ '--layer-depth': row.depth } as CSSProperties}
       data-layer-id="head"
+      data-testid="layer-row-head"
       title={t('layer.headTitle')}
       onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelect(HEAD_LAYER_ID, event.ctrlKey || event.metaKey)}
     >
-      <button className="drag-handle" type="button" {...dragHandleProps} title={t('layer.headDrag')}>
+      <button className="drag-handle" type="button" data-testid="layer-drag-head" {...dragHandleProps} title={t('layer.headDrag')}>
         ⋮⋮
       </button>
       <div className="layer-badge">{(row.index ?? 0) + 1}</div>
@@ -122,6 +126,7 @@ export function HeadRow({
       <button
         className="layer-icon-button"
         type="button"
+        data-testid="layer-visibility-head"
         title={headLayer.visible === false ? t('layer.headShow') : t('layer.headHide')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
@@ -130,7 +135,7 @@ export function HeadRow({
       >
         {headLayer.visible === false ? '○' : '◉'}
       </button>
-      <button className="layer-delete" type="button" disabled title={t('layer.headCantDelete')}>
+      <button className="layer-delete" type="button" data-testid="layer-delete-head" disabled title={t('layer.headCantDelete')}>
         ×
       </button>
     </div>
@@ -205,14 +210,16 @@ export function GroupHeaderRow({
       style={{ '--layer-depth': row.depth } as CSSProperties}
       onClick={(event: ReactMouseEvent<HTMLDivElement>) => onSelectGroup(group.id, event.ctrlKey || event.metaKey)}
       data-group-id={group.id}
+      data-testid={`group-row-${group.id}`}
       data-depth={Math.min(row.depth, 4)}
     >
-      <button className="group-drag-handle" type="button" {...dragHandleProps} title={t('layer.groupDrag')}>
+      <button className="group-drag-handle" type="button" data-testid={`group-drag-${group.id}`} {...dragHandleProps} title={t('layer.groupDrag')}>
         ⋮⋮
       </button>
       <button
         className="group-toggle"
         type="button"
+        data-testid={`group-toggle-${group.id}`}
         title={group.collapsed ? t('layer.groupExpand') : t('layer.groupCollapse')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
@@ -226,6 +233,7 @@ export function GroupHeaderRow({
           <input
             ref={inputRef}
             className="group-name-input"
+            data-testid={`group-name-input-${group.id}`}
             value={draftName}
             onChange={(event) => setDraftName(event.target.value)}
             onClick={(event) => event.stopPropagation()}
@@ -247,6 +255,7 @@ export function GroupHeaderRow({
       <button
         className="group-edit"
         type="button"
+        data-testid={`group-edit-${group.id}`}
         title={t('layer.rename')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
@@ -258,6 +267,7 @@ export function GroupHeaderRow({
       <button
         className="layer-icon-button"
         type="button"
+        data-testid={`group-visibility-${group.id}`}
         title={group.visible === false ? t('layer.groupShow') : t('layer.groupHide')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
@@ -269,6 +279,7 @@ export function GroupHeaderRow({
       <button
         className="group-ungroup"
         type="button"
+        data-testid={`group-ungroup-${group.id}`}
         title={t('layer.ungroup')}
         onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();

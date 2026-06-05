@@ -33,6 +33,7 @@ export function TransformRangePanel({
     <div className="range-root">
       <RangeControl
         label={t('edit.rotate')}
+        testId="transform-rotate"
         value={editValues.rotate}
         min={-180}
         max={180}
@@ -45,6 +46,7 @@ export function TransformRangePanel({
       />
       <RangeControl
         label={t('edit.scale')}
+        testId="transform-scale"
         value={editValues.scale}
         min={selectionScaleMin}
         max={selectionScaleMax}
@@ -57,6 +59,7 @@ export function TransformRangePanel({
       />
       <RangeControl
         label={t('edit.ratio')}
+        testId="transform-ratio"
         value={editValues.ratio}
         min={selectionRatioMin}
         max={selectionRatioMax}
@@ -70,6 +73,7 @@ export function TransformRangePanel({
       <div className="position-row">
         <RangeControl
           label={t('edit.posX')}
+          testId="transform-pos-x"
           value={editValues.posX}
           min={-pr}
           max={pr}
@@ -83,6 +87,7 @@ export function TransformRangePanel({
         />
         <RangeControl
           label={t('edit.posY')}
+          testId="transform-pos-y"
           value={editValues.posY}
           min={-pr}
           max={pr}

@@ -41,6 +41,12 @@ export interface BrushFillState {
   mask: BrushFillMask;
 }
 
+export interface StageSceneBuildConfig {
+  stageScale: number;
+  facingQuarterTurns: number;
+  bodyAnimationLabel: string;
+}
+
 export interface DisguiseDecoOptions {
   onPointerDown(id: string, event: FederatedPointerEvent, disguiseRoot: Container): void;
 }

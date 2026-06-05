@@ -50,24 +50,26 @@ export function useEditorGroupTransformState({
     if (selectedDecorationIds.length > LARGE_SELECTION_SNAPSHOT_CAP) return '';
     return snapshotKeyFromIds(selectedDecorationIds);
   }, [selectedDecorationIds]);
+  const selectedDecorationCount = selectedDecorationIds.length;
+  const snapshotSelectionIds = useMemo(() => (selectionKey ? selectionKey.split('|') : []), [selectionKey]);
 
   useEffect(() => {
-    if (selectedDecorationIds.length < 2) {
+    if (selectedDecorationCount < 2) {
       setGroupSnapshot(null);
       resetGroupTransform();
       return;
     }
-    if (selectedDecorationIds.length > LARGE_SELECTION_SNAPSHOT_CAP) {
+    if (selectedDecorationCount > LARGE_SELECTION_SNAPSHOT_CAP) {
       setGroupSnapshot(null);
       resetGroupTransform();
       return;
     }
     const currentRole = roleRef.current;
-    const ordered = orderedSelectedDecorations(currentRole, selectedDecorationIds);
+    const ordered = orderedSelectedDecorations(currentRole, snapshotSelectionIds);
     const snapshot = snapshotGroupSelection(ordered);
     setGroupSnapshot(snapshot);
     resetGroupTransform();
-  }, [selectionKey, resetGroupTransform]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [resetGroupTransform, roleRef, selectedDecorationCount, snapshotSelectionIds]);
 
   const editValues = useMemo<TransformValues>(
     () => editValuesForGroupTransform(role, selectedDecorationIds, groupSnapshot, groupTransform),

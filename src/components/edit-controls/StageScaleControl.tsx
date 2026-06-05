@@ -17,12 +17,22 @@ export function StageScaleControl({
 }: StageScaleControlProps) {
   return (
     <div className="stage-control-row">
-      <span>{selectedCount ? t('edit.selectedCount', { count: selectedCount }) : t('edit.noLayer')}</span>
-      <button type="button" disabled={stageScale <= stageMinScale} onClick={() => onStageScaleChange(stageScale - 1)}>
+      <span data-testid="selected-count-label">{selectedCount ? t('edit.selectedCount', { count: selectedCount }) : t('edit.noLayer')}</span>
+      <button
+        type="button"
+        data-testid="stage-scale-minus-button"
+        disabled={stageScale <= stageMinScale}
+        onClick={() => onStageScaleChange(stageScale - 1)}
+      >
         {t('edit.stageMinus')}
       </button>
-      <strong>{stageScale}?</strong>
-      <button type="button" disabled={stageScale >= stageMaxScale} onClick={() => onStageScaleChange(stageScale + 1)}>
+      <strong data-testid="stage-scale-value">{stageScale}?</strong>
+      <button
+        type="button"
+        data-testid="stage-scale-plus-button"
+        disabled={stageScale >= stageMaxScale}
+        onClick={() => onStageScaleChange(stageScale + 1)}
+      >
         {t('edit.stagePlus')}
       </button>
     </div>

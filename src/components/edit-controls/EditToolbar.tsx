@@ -37,6 +37,7 @@ export function EditToolbar({
         <button
           type="button"
           className="tool-icon-btn"
+          data-testid="toolbar-deselect-button"
           disabled={disabled}
           onClick={onCancelSelection}
           aria-label={t('edit.cancelSelection')}
@@ -49,6 +50,7 @@ export function EditToolbar({
         <button
           type="button"
           className="tool-icon-btn"
+          data-testid="toolbar-flip-horizontal-button"
           disabled={disabled}
           onClick={onFlip}
           aria-label={t('edit.flipHorizontal')}
@@ -61,6 +63,7 @@ export function EditToolbar({
         <button
           type="button"
           className="tool-icon-btn"
+          data-testid="toolbar-mirror-copy-horizontal-button"
           disabled={disabled}
           onClick={onMirrorCopyHorizontal}
           aria-label={t('edit.mirrorCopyH')}
@@ -73,6 +76,7 @@ export function EditToolbar({
         <button
           type="button"
           className="tool-icon-btn"
+          data-testid="toolbar-mirror-copy-vertical-button"
           disabled={disabled}
           onClick={onMirrorCopyVertical}
           aria-label={t('edit.mirrorCopyV')}
@@ -85,6 +89,7 @@ export function EditToolbar({
         <button
           type="button"
           className="tool-icon-btn tool-icon-face"
+          data-testid="toolbar-face-rotate-button"
           disabled={faceDisabled}
           onClick={onFaceRotate}
           aria-label={t('edit.face')}
@@ -99,6 +104,7 @@ export function EditToolbar({
         <button
           type="button"
           className="tool-icon-btn"
+          data-testid="toolbar-weapon-animation-button"
           onClick={onOpenWeaponAnimation}
           aria-label={t('edit.weaponAnimation', { label: bodyAnimationLabel })}
           title={t('edit.weaponAnimation', { label: bodyAnimationLabel })}
@@ -110,6 +116,7 @@ export function EditToolbar({
         <button
           type="button"
           className="tool-icon-btn"
+          data-testid="toolbar-animation-start-button"
           disabled={bodyAnimationPlaying}
           onClick={onStartWeaponAnimation}
           aria-label={t('edit.startAnimation')}
@@ -122,6 +129,7 @@ export function EditToolbar({
         <button
           type="button"
           className="tool-icon-btn"
+          data-testid="toolbar-animation-stop-button"
           disabled={!bodyAnimationPlaying}
           onClick={onStopWeaponAnimation}
           aria-label={t('edit.stopAnimation')}
@@ -134,6 +142,7 @@ export function EditToolbar({
         <button
           type="button"
           className="tool-icon-btn"
+          data-testid="toolbar-animation-restart-button"
           onClick={onRestartWeaponAnimation}
           aria-label={t('edit.restartAnimation')}
           title={t('edit.restart')}

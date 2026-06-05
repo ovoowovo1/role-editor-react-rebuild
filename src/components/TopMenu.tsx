@@ -26,6 +26,7 @@ export function TopMenu({
   gender,
   canUndo,
   canRedo,
+  status,
   onImport,
   onMerge,
   onDownloadTwrole,
@@ -46,6 +47,7 @@ export function TopMenu({
         ref={inputRef}
         type="file"
         accept=".twrole,.json,application/json"
+        data-testid="import-file-input"
         hidden
         onChange={(event) => {
           const file = event.target.files?.[0];
@@ -57,6 +59,7 @@ export function TopMenu({
         ref={mergeInputRef}
         type="file"
         accept=".twrole,.json,application/json"
+        data-testid="merge-file-input"
         hidden
         onChange={(event) => {
           const file = event.target.files?.[0];
@@ -65,13 +68,13 @@ export function TopMenu({
         }}
       />
       <div className="menu-actions">
-        <button className="primary-button" type="button" onClick={() => inputRef.current?.click()}>
+        <button className="primary-button" type="button" data-testid="import-button" onClick={() => inputRef.current?.click()}>
           {t('menu.import')}
         </button>
-        <button className="primary-button" type="button" onClick={onDownloadTwrole}>
+        <button className="primary-button" type="button" data-testid="download-twrole-button" onClick={onDownloadTwrole}>
           {t('menu.download')}
         </button>
-        <button className="primary-button subtle" type="button" onClick={onExportJson}>
+        <button className="primary-button subtle" type="button" data-testid="export-json-button" onClick={onExportJson}>
           {t('menu.exportJson')}
         </button>
         <button className="primary-button subtle" type="button" onClick={onOpenInsertSettings}>
@@ -83,10 +86,10 @@ export function TopMenu({
       </div>
 
       <div className="icon-actions" aria-label={t('menu.history')}>
-        <button type="button" title={t('menu.undo')} disabled={!canUndo} onClick={onUndo}>
+        <button type="button" title={t('menu.undo')} data-testid="undo-button" disabled={!canUndo} onClick={onUndo}>
           ↶
         </button>
-        <button type="button" title={t('menu.redo')} disabled={!canRedo} onClick={onRedo}>
+        <button type="button" title={t('menu.redo')} data-testid="redo-button" disabled={!canRedo} onClick={onRedo}>
           ↷
         </button>
         <button type="button" className="menu-shortcuts" title={t('menu.shortcutsTitle')} onClick={onOpenShortcuts}>
@@ -95,6 +98,10 @@ export function TopMenu({
       </div>
 
       <div className="menu-spacer" />
+
+      <span className="status-pill" data-testid="status-pill" title={status}>
+        {status}
+      </span>
 
       <label className="select-label">
         {t('menu.camp')}
