@@ -24,6 +24,9 @@ export const zhTW: Record<string, string> = {
   'status.brushFillInserted': '已用 {count} 個裝飾圖層填滿筆刷範圍',
   'status.brushFillFailed': '筆刷填滿失敗：{message}',
   'status.brushFillEmpty': '筆刷填滿沒有產生圖層',
+  'status.autoCreateConverted': '自動生成完成：{count} 個裝飾圖層',
+  'status.autoCreateInserted': '已插入 {count} 個自動生成裝飾圖層',
+  'status.autoCreateFailed': '自動生成失敗：{message}',
 
   // Insert Settings dialog
   'insert.title': '插入設定',
@@ -97,6 +100,8 @@ export const zhTW: Record<string, string> = {
   'tabs.foot': '腳部',
   'tabs.cape': '披風',
   'tabs.colorBlock': '色塊',
+  'tabs.extra': '圖片轉 TWRole',
+  'tabs.autoCreate': '自動生成',
 
   // ChoiceGrid
   'choices.choices': '{tab} 選項',
@@ -114,7 +119,10 @@ export const zhTW: Record<string, string> = {
 
   // Extra panel
   'extra.title': '圖片轉 TWRole',
-  'extra.mode': 'Extra 模式',
+  'extra.method.label': '圖片轉 TWRole 方法',
+  'extra.method.standard': '標準轉換',
+  'extra.method.autoCreate': '自動生成',
+  'extra.mode': '標準轉換模式',
   'extra.mode.image': '圖片',
   'extra.mode.brush': '筆刷填滿',
   'extra.upload': '拖放圖片',
@@ -172,6 +180,40 @@ export const zhTW: Record<string, string> = {
   'extra.brush.samples': '取樣',
   'extra.brush.points': '筆刷點',
   'extra.brush.groupName': '筆刷填滿',
+
+  // AutoCreate panel
+  'autoCreate.title': 'AutoCreate 自動生成',
+  'autoCreate.sourceCount': '{count} 個裝飾素材',
+  'autoCreate.drop': '拖放目標圖片',
+  'autoCreate.chooseImage': '選擇目標圖片',
+  'autoCreate.replace': '更換',
+  'autoCreate.convert': '開始生成',
+  'autoCreate.converting': '生成中...',
+  'autoCreate.stop': '停止',
+  'autoCreate.insert': '插入圖層',
+  'autoCreate.downloadJson': '下載 export.json',
+  'autoCreate.groupName.default': 'AutoCreate 自動生成',
+  'autoCreate.section.settings': 'Settings',
+  'autoCreate.iterations': 'Iterations / --tiles',
+  'autoCreate.budget': 'Tile budget / --tile-budget',
+  'autoCreate.logEvery': 'Log every / --log-every',
+  'autoCreate.savePreview': 'Save preview during process',
+  'autoCreate.progressIdle': '待命',
+  'autoCreate.progress.sources': '讀取素材',
+  'autoCreate.progress.run': '最佳化',
+  'autoCreate.progress.final': '最後修剪',
+  'autoCreate.stat.layers': '圖層',
+  'autoCreate.stat.mse': 'MSE',
+  'autoCreate.stat.sources': '素材',
+  'autoCreate.stat.size': '尺寸',
+  'autoCreate.accepted': '接受',
+  'autoCreate.rejected': '拒絕',
+  'autoCreate.pruned': '移除',
+  'autoCreate.replaced': '替換',
+  'autoCreate.error.fileType': '請選擇圖片檔案。',
+  'autoCreate.error.aborted': '已停止自動生成。',
+  'autoCreate.inserted': '已插入',
+  'autoCreate.output': '輸出預覽',
 
   // LayerList
   'layers.title': '圖層',

@@ -2,7 +2,7 @@ import { t } from '../../i18n';
 import { colorBlockToRole } from '../../mock/colorBlocks';
 import type { useColorBlockPresets } from '../../hooks/useColorBlockPresets';
 import type { useRoleEditor } from '../../hooks/useRoleEditor';
-import type { PartTab } from '../../types/role';
+import type { PartOption, PartTab } from '../../types/role';
 import { ChoiceGrid } from '../ChoiceGrid';
 import { ColorBlockGrid } from '../ColorBlockGrid';
 import { ExtraPanel } from '../extra/ExtraPanel';
@@ -54,7 +54,7 @@ export function EditorSourcePanel({
         presets={colorBlockPresets.presets}
         loading={colorBlockPresets.loading}
         error={colorBlockPresets.error}
-        onPick={(preset) => {
+        onPick={(preset: Parameters<typeof colorBlockToRole>[0]) => {
           editor.mergeImportedRole(colorBlockToRole(preset, editor.role));
           setStatus(t('status.addedColorBlock', { label: preset.label }));
         }}
@@ -67,7 +67,7 @@ export function EditorSourcePanel({
       tab={editor.selectedTab}
       options={editor.visibleOptionsByTab[editor.selectedTab]}
       selectedOptionId={selectedOptionId}
-      onPick={(option) => {
+      onPick={(option: PartOption) => {
         editor.choosePart(editor.selectedTab, option);
         setStatus(
           editor.selectedTab === 'deco'

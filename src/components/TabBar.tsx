@@ -1,5 +1,4 @@
 import { PART_TABS, type PartTab } from '../types/role';
-import { tabLabels } from '../mock/options';
 import { t } from '../i18n';
 
 export type TopBarMode = PartTab | 'colorBlock' | 'extra';
