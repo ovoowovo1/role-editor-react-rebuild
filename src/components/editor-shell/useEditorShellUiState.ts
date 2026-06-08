@@ -1,8 +1,20 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../../lib/runtime/actorBodyAnimation';
 import type { BrushFillMask } from '../../lib/conversion/brushFillToDeco';
 import type { PartTab } from '../../types/role';
 import type { TopBarMode } from '../TabBar';
+
+const PLAYBACK_TOOL_VISIBLE_STORAGE_KEY = 'role-editor:playback-tool-visible';
+
+function readPlaybackToolVisiblePreference(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    const stored = window.localStorage.getItem(PLAYBACK_TOOL_VISIBLE_STORAGE_KEY);
+    return stored == null ? true : stored !== 'false';
+  } catch {
+    return true;
+  }
+}
 
 export function useEditorShellUiState(initialTopBarMode: TopBarMode, onPartTabChange: (tab: PartTab) => void) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -11,11 +23,20 @@ export function useEditorShellUiState(initialTopBarMode: TopBarMode, onPartTabCh
   const [bodyAnimationLabel, setBodyAnimationLabel] = useState(DEFAULT_ACTOR_BODY_ANIMATION_LABEL);
   const [bodyAnimationPlaying, setBodyAnimationPlaying] = useState(false);
   const [bodyAnimationRestartKey, setBodyAnimationRestartKey] = useState(0);
+  const [playbackToolVisible, setPlaybackToolVisible] = useState(readPlaybackToolVisiblePreference);
   const [facingQuarterTurns, setFacingQuarterTurns] = useState(0);
   const [topBarMode, setTopBarMode] = useState<TopBarMode>(initialTopBarMode);
   const [brushFillActive, setBrushFillActive] = useState(false);
   const [brushFillBrushSize, setBrushFillBrushSize] = useState(18);
   const [brushFillMask, setBrushFillMask] = useState<BrushFillMask>({ points: [] });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PLAYBACK_TOOL_VISIBLE_STORAGE_KEY, String(playbackToolVisible));
+    } catch {
+      // The in-memory state remains usable when localStorage is unavailable.
+    }
+  }, [playbackToolVisible]);
 
   const handleTopBarChange = useCallback(
     (mode: TopBarMode) => {
@@ -30,6 +51,7 @@ export function useEditorShellUiState(initialTopBarMode: TopBarMode, onPartTabCh
 
   const clearBrushFillMask = useCallback(() => setBrushFillMask({ points: [] }), []);
   const rotateFacing = useCallback(() => setFacingQuarterTurns((turns) => (turns + 1) % 4), []);
+  const togglePlaybackToolVisible = useCallback(() => setPlaybackToolVisible((visible) => !visible), []);
   const restartBodyAnimation = useCallback(() => {
     setBodyAnimationRestartKey((key) => key + 1);
     setBodyAnimationPlaying(false);
@@ -48,6 +70,8 @@ export function useEditorShellUiState(initialTopBarMode: TopBarMode, onPartTabCh
     setBodyAnimationPlaying,
     bodyAnimationRestartKey,
     setBodyAnimationRestartKey,
+    playbackToolVisible,
+    togglePlaybackToolVisible,
     facingQuarterTurns,
     topBarMode,
     brushFillActive,

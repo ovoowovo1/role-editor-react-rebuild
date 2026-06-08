@@ -1,6 +1,5 @@
 import { t } from '../i18n';
 import { EditToolbar } from './edit-controls/EditToolbar';
-import { StageScaleControl } from './edit-controls/StageScaleControl';
 import { TransformRangePanel } from './edit-controls/TransformRangePanel';
 import type { EditControlsProps } from './edit-controls/types';
 
@@ -8,9 +7,9 @@ export function EditControls({
   disabled,
   faceAlwaysEnabled = false,
   editValues,
-  selectedCount,
   bodyAnimationLabel,
   bodyAnimationPlaying,
+  playbackToolVisible,
   stageScale,
   positionRange,
   stageMinScale,
@@ -31,6 +30,7 @@ export function EditControls({
   onStartWeaponAnimation,
   onStopWeaponAnimation,
   onRestartWeaponAnimation,
+  onTogglePlaybackTool,
   onStageScaleChange
 }: EditControlsProps) {
   const faceDisabled = faceAlwaysEnabled ? false : disabled;
@@ -42,6 +42,10 @@ export function EditControls({
         faceDisabled={faceDisabled}
         bodyAnimationLabel={bodyAnimationLabel}
         bodyAnimationPlaying={bodyAnimationPlaying}
+        playbackToolVisible={playbackToolVisible}
+        stageScale={stageScale}
+        stageMinScale={stageMinScale}
+        stageMaxScale={stageMaxScale}
         onCancelSelection={onCancelSelection}
         onFlip={onFlip}
         onMirrorCopyHorizontal={onMirrorCopyHorizontal}
@@ -51,6 +55,8 @@ export function EditControls({
         onStartWeaponAnimation={onStartWeaponAnimation}
         onStopWeaponAnimation={onStopWeaponAnimation}
         onRestartWeaponAnimation={onRestartWeaponAnimation}
+        onTogglePlaybackTool={onTogglePlaybackTool}
+        onStageScaleChange={onStageScaleChange}
       />
 
       <TransformRangePanel
@@ -64,14 +70,6 @@ export function EditControls({
         onBeginTransient={onBeginTransient}
         onCommitTransient={onCommitTransient}
         onTransformChange={onTransformChange}
-      />
-
-      <StageScaleControl
-        selectedCount={selectedCount}
-        stageScale={stageScale}
-        stageMinScale={stageMinScale}
-        stageMaxScale={stageMaxScale}
-        onStageScaleChange={onStageScaleChange}
       />
     </section>
   );

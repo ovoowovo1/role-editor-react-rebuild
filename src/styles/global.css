@@ -122,8 +122,7 @@ input:disabled {
 
 .primary-button,
 .icon-actions button,
-.edit-action-row button,
-.stage-control-row button {
+.edit-action-row button {
   min-height: 34px;
   padding: 7px 13px;
   border-radius: 7px;
@@ -135,8 +134,7 @@ input:disabled {
 
 .primary-button:hover,
 .icon-actions button:hover,
-.edit-action-row button:hover,
-.stage-control-row button:hover {
+.edit-action-row button:hover {
   filter: brightness(1.16);
 }
 
@@ -849,13 +847,6 @@ input:disabled {
   background: rgba(255, 92, 92, 0.88);
 }
 
-.stage-control-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
 .shortcut-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1098,13 +1089,6 @@ input[type='range']::-webkit-slider-thumb {
   cursor: pointer;
   appearance: none;
   margin-top: -5px;
-}
-
-.stage-control-row {
-  justify-content: flex-end;
-  margin-top: 8px;
-  color: #cdf8ff;
-  font-size: 12px;
 }
 
 .edit-list {

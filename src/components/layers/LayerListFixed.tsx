@@ -242,11 +242,7 @@ export function LayerList({
                   onToggleVisibility={onToggleVisibility}
                   onDelete={onDelete}
                 />
-              ) : (
-                <button className="layer-spacer" type="button" onClick={onClearSelection}>
-                  {decorations.length ? t('layers.clearSelection') : t('layers.addDeco')}
-                </button>
-              )}
+              ) : null}
             </div>
           ))}
         </div>

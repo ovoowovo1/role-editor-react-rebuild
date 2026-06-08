@@ -39,7 +39,7 @@ export function TransformRangePanel({
         max={180}
         step={0.25}
         disabled={disabled}
-        hint="C / V"
+        //hint="C / V"
         onBegin={onBeginTransient}
         onCommit={onCommitTransient}
         onChange={(rotate, commit) => onTransformChange({ rotate }, commit)}
@@ -52,7 +52,7 @@ export function TransformRangePanel({
         max={selectionScaleMax}
         step={0.001}
         disabled={disabled}
-        hint="Z / X"
+        //hint="Z / X"
         onBegin={onBeginTransient}
         onCommit={onCommitTransient}
         onChange={(scale, commit) => onTransformChange({ scale }, commit)}
@@ -65,7 +65,7 @@ export function TransformRangePanel({
         max={selectionRatioMax}
         step={0.001}
         disabled={disabled}
-        hint="Shift+Z / Shift+X"
+        //hint="Shift+Z / Shift+X"
         onBegin={onBeginTransient}
         onCommit={onCommitTransient}
         onChange={(ratio, commit) => onTransformChange({ ratio }, commit)}

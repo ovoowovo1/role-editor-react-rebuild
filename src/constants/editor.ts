@@ -3,6 +3,7 @@ export const EDITOR_LOCAL_HISTORY_LIMIT = 200;
 
 export const EDITOR_STAGE_MIN_SCALE = 1;
 export const EDITOR_STAGE_MAX_SCALE = 30;
+export const EDITOR_STAGE_SCALE_STEP = 0.5;
 
 export const DEFAULT_POSITION_RANGE = 60;
 export const MAX_POSITION_RANGE = 10000;

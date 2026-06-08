@@ -59,6 +59,8 @@ export const zhTW: Record<string, string> = {
   'edit.stopAnimation': '停止武器動畫',
   'edit.restartAnimation': '重新開始武器動畫',
   'edit.weaponPlayback': '武器動畫播放',
+  'edit.hidePlaybackTool': '隱藏播放工具',
+  'edit.showPlaybackTool': '顯示播放工具',
   'edit.iconToolbar': '圖示工具列',
   'edit.controls': '編輯控制項',
   'edit.start': '開始',

@@ -40,9 +40,9 @@ export function EditorStagePanel({ editor, shell }: EditorStagePanelProps) {
       <EditControls
         disabled={!editor.selectedDecorationIds.length}
         faceAlwaysEnabled
-        selectedCount={editor.selectedDecorationIds.length}
         bodyAnimationLabel={shell.bodyAnimationLabel}
         bodyAnimationPlaying={shell.bodyAnimationPlaying}
+        playbackToolVisible={shell.playbackToolVisible}
         editValues={editor.editValues}
         stageScale={editor.stageScale}
         positionRange={editor.role.positionRange ?? DEFAULT_POSITION_RANGE}
@@ -64,6 +64,7 @@ export function EditorStagePanel({ editor, shell }: EditorStagePanelProps) {
         onStartWeaponAnimation={() => shell.setBodyAnimationPlaying(true)}
         onStopWeaponAnimation={() => shell.setBodyAnimationPlaying(false)}
         onRestartWeaponAnimation={shell.restartBodyAnimation}
+        onTogglePlaybackTool={shell.togglePlaybackToolVisible}
         onStageScaleChange={editor.setStageScale}
       />
     </section>

@@ -59,6 +59,8 @@ export const en: Record<string, string> = {
   'edit.stopAnimation': 'Stop weapon animation',
   'edit.restartAnimation': 'Restart weapon animation',
   'edit.weaponPlayback': 'Weapon animation playback',
+  'edit.hidePlaybackTool': 'Hide playback controls',
+  'edit.showPlaybackTool': 'Show playback controls',
   'edit.iconToolbar': 'Icon toolbar',
   'edit.controls': 'Edit controls',
   'edit.start': 'Start',

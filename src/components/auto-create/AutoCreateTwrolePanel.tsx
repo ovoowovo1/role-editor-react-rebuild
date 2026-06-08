@@ -4,11 +4,11 @@ import type { DecorationLayer, PartOption } from '../../types/role';
 import {
   createAutoCreateTwroleExportBlob,
   DEFAULT_AUTO_CREATE_TWROLE_SETTINGS,
-  runAutoCreateTwrole,
   type AutoCreateTwroleProgress,
   type AutoCreateTwroleResult,
   type AutoCreateTwroleSettings
 } from '../../lib/conversion/autoCreateTwrole';
+import { runAutoCreateTwroleInWorker } from '../../lib/conversion/autoCreateTwroleWorkerClient';
 
 export interface AutoCreateTwrolePanelProps {
   decoOptions: PartOption[];
@@ -146,7 +146,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
     });
 
     try {
-      const next = await runAutoCreateTwrole({
+      const next = await runAutoCreateTwroleInWorker({
         targetFile: file,
         decoOptions,
         settings,

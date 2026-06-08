@@ -42,11 +42,25 @@ test('stage scale, face rotate, and animation controls respond without page erro
   const fixture = await writeRoleFixture(testInfo, 'stage-controls-source', makeEditorSmokeRole(1));
 
   await importRoleFile(page, fixture, 1);
-  await expect(page.getByTestId('stage-scale-value')).toContainText('1');
+  await expect(page.getByTestId('stage-scale-value')).toHaveCount(0);
   await page.getByTestId('stage-scale-plus-button').click();
-  await expect(page.getByTestId('stage-scale-value')).toContainText('2');
+  await expect.poll(async () => page.locator('.stage-bg').evaluate((element) => (element as HTMLElement).style.transform)).toContain('scale(1.5)');
   await page.getByTestId('stage-scale-minus-button').click();
-  await expect(page.getByTestId('stage-scale-value')).toContainText('1');
+  await expect.poll(async () => page.locator('.stage-bg').evaluate((element) => (element as HTMLElement).style.transform)).toContain('scale(1)');
+
+  await expect(page.locator('.playback-tool')).toBeVisible();
+  await expect(page.getByTestId('toolbar-playback-toggle-button')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('toolbar-playback-toggle-button').click();
+  await expect(page.locator('.playback-tool')).toHaveCount(0);
+  await expect(page.getByTestId('toolbar-animation-start-button')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('role-editor:playback-tool-visible'))).toBe('false');
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('toolbar-playback-toggle-button')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.playback-tool')).toHaveCount(0);
+  await page.getByTestId('toolbar-playback-toggle-button').click();
+  await expect(page.getByTestId('toolbar-playback-toggle-button')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.playback-tool')).toBeVisible();
 
   await page.getByTestId('toolbar-face-rotate-button').click();
   await page.getByTestId('toolbar-animation-start-button').click();

@@ -99,10 +99,6 @@ export function TopMenu({
 
       <div className="menu-spacer" />
 
-      <span className="status-pill" data-testid="status-pill" title={status}>
-        {status}
-      </span>
-
       <label className="select-label">
         {t('menu.camp')}
         <select value={camp} onChange={(event) => onCampChange(event.target.value)}>

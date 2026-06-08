@@ -50,7 +50,6 @@ test('invalid import reports failure without corrupting the current role', async
   await importRoleFile(page, fixture, 2);
   await page.getByTestId('import-file-input').setInputFiles(invalidFixture);
 
-  await expect(page.getByTestId('status-pill')).toContainText('Unsupported role file', { timeout: 20_000 });
   await expect.poll(() => visibleLayerIds(page)).toEqual(['e2e-deco-1', 'e2e-deco-2', 'head']);
   expectNoPageErrors(monitor);
 });

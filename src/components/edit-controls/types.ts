@@ -4,9 +4,9 @@ export interface EditControlsProps {
   disabled: boolean;
   faceAlwaysEnabled?: boolean;
   editValues: TransformValues;
-  selectedCount: number;
   bodyAnimationLabel: string;
   bodyAnimationPlaying: boolean;
+  playbackToolVisible: boolean;
   stageScale: number;
   positionRange: number;
   stageMinScale: number;
@@ -29,6 +29,7 @@ export interface EditControlsProps {
   onStartWeaponAnimation(): void;
   onStopWeaponAnimation(): void;
   onRestartWeaponAnimation(): void;
+  onTogglePlaybackTool(): void;
   onStageScaleChange(scale: number): void;
 }
 

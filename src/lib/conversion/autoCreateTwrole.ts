@@ -153,6 +153,9 @@ export interface RunAutoCreateTwroleOptions {
 }
 
 type Vec3 = [number, number, number];
+type AutoCreateCanvas = HTMLCanvasElement | OffscreenCanvas;
+type AutoCreateCanvas2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+type AutoCreateImage = HTMLImageElement | ImageBitmap;
 
 interface TargetImageData {
   width: number;
@@ -171,7 +174,7 @@ interface SourceTile {
   code: string;
   assetId: string;
   label: string;
-  canvas: HTMLCanvasElement;
+  canvas: AutoCreateCanvas;
   origW: number;
   origH: number;
   thumbW: number;
@@ -257,26 +260,55 @@ function clamp255(value: number): number {
   return clamp(Math.round(value), 0, 255);
 }
 
-function createCanvas(width: number, height: number): HTMLCanvasElement {
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(width));
-  canvas.height = Math.max(1, Math.round(height));
-  return canvas;
+function createCanvas(width: number, height: number): AutoCreateCanvas {
+  const safeWidth = Math.max(1, Math.round(width));
+  const safeHeight = Math.max(1, Math.round(height));
+
+  // Main thread keeps using a normal canvas so the existing internal preview
+  // path can still call toDataURL(). Workers do not have document, so they use
+  // OffscreenCanvas for the heavy AutoCreate math.
+  if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+    const canvas = document.createElement('canvas');
+    canvas.width = safeWidth;
+    canvas.height = safeHeight;
+    return canvas;
+  }
+
+  if (typeof OffscreenCanvas !== 'undefined') {
+    return new OffscreenCanvas(safeWidth, safeHeight);
+  }
+
+  throw new Error('Canvas is not available in this browser context.');
 }
 
-function get2d(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
-  const context = canvas.getContext('2d', { willReadFrequently: true });
+function get2d(canvas: AutoCreateCanvas): AutoCreateCanvas2D {
+  const context = canvas.getContext('2d', { willReadFrequently: true } as CanvasRenderingContext2DSettings);
   if (!context) throw new Error('Canvas 2D context is not available.');
-  return context;
+  return context as AutoCreateCanvas2D;
 }
 
-const imageCache = new Map<string, Promise<HTMLImageElement>>();
+function imagePixelWidth(image: AutoCreateImage): number {
+  return Math.max(1, Math.round(('naturalWidth' in image ? image.naturalWidth : image.width) || image.width || 1));
+}
 
-function loadImage(src: string): Promise<HTMLImageElement> {
-  const cached = imageCache.get(src);
-  if (cached) return cached;
+function imagePixelHeight(image: AutoCreateImage): number {
+  return Math.max(1, Math.round(('naturalHeight' in image ? image.naturalHeight : image.height) || image.height || 1));
+}
 
-  const request = new Promise<HTMLImageElement>((resolve, reject) => {
+const imageCache = new Map<string, Promise<AutoCreateImage>>();
+
+async function loadImageBitmapFromUrl(src: string): Promise<ImageBitmap> {
+  if (typeof fetch === 'undefined' || typeof createImageBitmap === 'undefined') {
+    throw new Error('ImageBitmap loading is not available in this browser context.');
+  }
+  const response = await fetch(src);
+  if (!response.ok) throw new Error(`Failed to fetch image: ${src}`);
+  const blob = await response.blob();
+  return createImageBitmap(blob);
+}
+
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
     if (!src.startsWith('data:') && !src.startsWith('blob:')) {
       image.crossOrigin = 'anonymous';
@@ -285,11 +317,25 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     image.onerror = () => reject(new Error(`Failed to load image: ${src}`));
     image.src = src;
   });
+}
+
+function loadImage(src: string): Promise<AutoCreateImage> {
+  const cached = imageCache.get(src);
+  if (cached) return cached;
+
+  const request =
+    typeof Image !== 'undefined'
+      ? loadImageElement(src)
+      : loadImageBitmapFromUrl(src);
   imageCache.set(src, request);
   return request;
 }
 
-async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
+async function loadImageFromFile(file: File): Promise<AutoCreateImage> {
+  if (typeof createImageBitmap !== 'undefined' && typeof document === 'undefined') {
+    return createImageBitmap(file);
+  }
+
   const url = URL.createObjectURL(file);
   try {
     return await loadImage(url);
@@ -300,7 +346,18 @@ async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
 }
 
 function nextFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  if (typeof requestAnimationFrame !== 'undefined') {
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function getLocalStorage(): Storage | null {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage : null;
+  } catch {
+    return null;
+  }
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -431,15 +488,15 @@ function premultToStraightImageData(premult: Float32Array, width: number, height
 
 async function loadTargetImage(file: File, settings: AutoCreateTwroleSettings): Promise<TargetImageData> {
   const image = await loadImageFromFile(file);
-  const sourceWidth = Math.max(1, image.naturalWidth || image.width || 1);
-  const sourceHeight = Math.max(1, image.naturalHeight || image.height || 1);
+  const sourceWidth = imagePixelWidth(image);
+  const sourceHeight = imagePixelHeight(image);
   // Match Pillow's Image.open(...).convert("RGBA") behavior: keep the target size.
   const width = sourceWidth;
   const height = sourceHeight;
   const canvas = createCanvas(width, height);
   const context = get2d(canvas);
   context.clearRect(0, 0, width, height);
-  context.drawImage(image, 0, 0, width, height);
+  context.drawImage(image as CanvasImageSource, 0, 0, width, height);
   const straight = context.getImageData(0, 0, width, height).data;
   const premult = premultiply(straight);
   const mask = new Uint8Array(width * height);
@@ -470,10 +527,10 @@ interface SourceVisualSize {
   frameHeight: number;
 }
 
-function visualSizeForOption(option: PartOption, image: HTMLImageElement): SourceVisualSize {
+function visualSizeForOption(option: PartOption, image: AutoCreateImage): SourceVisualSize {
   const atlas = option.atlas;
-  const fallbackWidth = Math.max(1, image.naturalWidth || image.width || 50);
-  const fallbackHeight = Math.max(1, image.naturalHeight || image.height || 50);
+  const fallbackWidth = imagePixelWidth(image);
+  const fallbackHeight = imagePixelHeight(image);
   const frameWidth = Math.max(1, Math.round(atlas?.width ?? fallbackWidth));
   const frameHeight = Math.max(1, Math.round(atlas?.height ?? fallbackHeight));
   return {
@@ -517,9 +574,9 @@ async function optionToSourceTile(option: PartOption, idx: number, settings: Aut
   context.clearRect(0, 0, thumbW, thumbH);
 
   if (atlas) {
-    context.drawImage(image, atlas.x, atlas.y, atlas.width, atlas.height, 0, 0, thumbW, thumbH);
+    context.drawImage(image as CanvasImageSource, atlas.x, atlas.y, atlas.width, atlas.height, 0, 0, thumbW, thumbH);
   } else {
-    context.drawImage(image, 0, 0, thumbW, thumbH);
+    context.drawImage(image as CanvasImageSource, 0, 0, thumbW, thumbH);
   }
 
   const data = context.getImageData(0, 0, thumbW, thumbH).data;
@@ -828,7 +885,7 @@ class ExperienceMemory {
   private load(): void {
     if (!this.key) return;
     try {
-      const raw = window.localStorage.getItem(this.key);
+      const raw = getLocalStorage()?.getItem(this.key);
       if (!raw) return;
       const parsed = JSON.parse(raw) as MemoryPayload;
       if (!parsed || typeof parsed !== 'object') return;
@@ -847,7 +904,7 @@ class ExperienceMemory {
     if (!this.key) return;
     try {
       const next: MemoryPayload = { ...this.payload, updated_at: Math.floor(Date.now() / 1000) };
-      window.localStorage.setItem(this.key, JSON.stringify(next));
+      getLocalStorage()?.setItem(this.key, JSON.stringify(next));
     } catch {
       // localStorage can be unavailable in private mode. The generator still works without memory.
     }
@@ -942,7 +999,7 @@ function transformSource(source: SourceTile, sxInternal: number, syInternal: num
   resizeContext.save();
   resizeContext.translate(sxInternal < 0 ? newW : 0, syInternal < 0 ? newH : 0);
   resizeContext.scale(sxInternal < 0 ? -1 : 1, syInternal < 0 ? -1 : 1);
-  resizeContext.drawImage(source.canvas, 0, 0, source.thumbW, source.thumbH, 0, 0, newW, newH);
+  resizeContext.drawImage(source.canvas as CanvasImageSource, 0, 0, source.thumbW, source.thumbH, 0, 0, newW, newH);
   resizeContext.restore();
 
   let finalCanvas = resized;
@@ -956,7 +1013,7 @@ function transformSource(source: SourceTile, sxInternal: number, syInternal: num
     const rotateContext = get2d(finalCanvas);
     rotateContext.translate(rotW / 2, rotH / 2);
     rotateContext.rotate(rad);
-    rotateContext.drawImage(resized, -newW / 2, -newH / 2);
+    rotateContext.drawImage(resized as CanvasImageSource, -newW / 2, -newH / 2);
   }
 
   const context = get2d(finalCanvas);
@@ -1240,7 +1297,7 @@ class ColorLearningCollage {
     const imageData = premultToStraightImageData(this.canvas, this.width, this.height);
     const canvas = createCanvas(this.width, this.height);
     get2d(canvas).putImageData(imageData, 0, 0);
-    return canvas.toDataURL('image/png');
+    return 'toDataURL' in canvas ? canvas.toDataURL('image/png') : '';
   }
 
   private evaluateCandidate(candidate: Candidate): Candidate | null {

@@ -202,7 +202,6 @@ export function CharacterStage({
           />
         </div>
       </div>
-      <div className="stage-help">{t(brushFillActive ? 'stage.brushHelp' : 'stage.help')}</div>
     </section>
   );
 }

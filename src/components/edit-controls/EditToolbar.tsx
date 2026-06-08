@@ -1,10 +1,15 @@
 import { t } from '../../i18n';
+import { EDITOR_STAGE_SCALE_STEP } from '../../constants/editor';
 
 interface EditToolbarProps {
   disabled: boolean;
   faceDisabled: boolean;
   bodyAnimationLabel: string;
   bodyAnimationPlaying: boolean;
+  playbackToolVisible: boolean;
+  stageScale: number;
+  stageMinScale: number;
+  stageMaxScale: number;
   onCancelSelection(): void;
   onFlip(): void;
   onMirrorCopyHorizontal(): void;
@@ -14,6 +19,8 @@ interface EditToolbarProps {
   onStartWeaponAnimation(): void;
   onStopWeaponAnimation(): void;
   onRestartWeaponAnimation(): void;
+  onTogglePlaybackTool(): void;
+  onStageScaleChange(scale: number): void;
 }
 
 export function EditToolbar({
@@ -21,6 +28,10 @@ export function EditToolbar({
   faceDisabled,
   bodyAnimationLabel,
   bodyAnimationPlaying,
+  playbackToolVisible,
+  stageScale,
+  stageMinScale,
+  stageMaxScale,
   onCancelSelection,
   onFlip,
   onMirrorCopyHorizontal,
@@ -29,8 +40,12 @@ export function EditToolbar({
   onOpenWeaponAnimation,
   onStartWeaponAnimation,
   onStopWeaponAnimation,
-  onRestartWeaponAnimation
+  onRestartWeaponAnimation,
+  onTogglePlaybackTool,
+  onStageScaleChange
 }: EditToolbarProps) {
+  const playbackToggleLabel = playbackToolVisible ? t('edit.hidePlaybackTool') : t('edit.showPlaybackTool');
+
   return (
     <div className="tool-row" aria-label={t('edit.iconToolbar')}>
       <div className="tool">
@@ -99,59 +114,100 @@ export function EditToolbar({
             face
           </span>
         </button>
-      </div>
-      <div className="tool playback-tool" aria-label={t('edit.weaponPlayback')}>
         <button
           type="button"
           className="tool-icon-btn"
-          data-testid="toolbar-weapon-animation-button"
-          onClick={onOpenWeaponAnimation}
-          aria-label={t('edit.weaponAnimation', { label: bodyAnimationLabel })}
-          title={t('edit.weaponAnimation', { label: bodyAnimationLabel })}
+          data-testid="stage-scale-minus-button"
+          disabled={stageScale <= stageMinScale}
+          onClick={() => onStageScaleChange(stageScale - EDITOR_STAGE_SCALE_STEP)}
+          aria-label={t('edit.stageMinus')}
+          title={t('edit.stageMinus')}
         >
           <span className="material-icons" aria-hidden="true">
-            sports_martial_arts
+            zoom_out
           </span>
         </button>
         <button
           type="button"
           className="tool-icon-btn"
-          data-testid="toolbar-animation-start-button"
-          disabled={bodyAnimationPlaying}
-          onClick={onStartWeaponAnimation}
-          aria-label={t('edit.startAnimation')}
-          title={t('edit.start')}
+          data-testid="stage-scale-plus-button"
+          disabled={stageScale >= stageMaxScale}
+          onClick={() => onStageScaleChange(stageScale + EDITOR_STAGE_SCALE_STEP)}
+          aria-label={t('edit.stagePlus')}
+          title={t('edit.stagePlus')}
         >
           <span className="material-icons" aria-hidden="true">
-            play_arrow
+            zoom_in
           </span>
         </button>
         <button
           type="button"
           className="tool-icon-btn"
-          data-testid="toolbar-animation-stop-button"
-          disabled={!bodyAnimationPlaying}
-          onClick={onStopWeaponAnimation}
-          aria-label={t('edit.stopAnimation')}
-          title={t('edit.stop')}
+          data-testid="toolbar-playback-toggle-button"
+          aria-pressed={playbackToolVisible}
+          onClick={onTogglePlaybackTool}
+          aria-label={playbackToggleLabel}
+          title={playbackToggleLabel}
         >
           <span className="material-icons" aria-hidden="true">
-            stop
-          </span>
-        </button>
-        <button
-          type="button"
-          className="tool-icon-btn"
-          data-testid="toolbar-animation-restart-button"
-          onClick={onRestartWeaponAnimation}
-          aria-label={t('edit.restartAnimation')}
-          title={t('edit.restart')}
-        >
-          <span className="material-icons" aria-hidden="true">
-            replay
+            {playbackToolVisible ? 'visibility_off' : 'visibility'}
           </span>
         </button>
       </div>
+      {playbackToolVisible ? (
+        <div className="tool playback-tool" aria-label={t('edit.weaponPlayback')}>
+          <button
+            type="button"
+            className="tool-icon-btn"
+            data-testid="toolbar-weapon-animation-button"
+            onClick={onOpenWeaponAnimation}
+            aria-label={t('edit.weaponAnimation', { label: bodyAnimationLabel })}
+            title={t('edit.weaponAnimation', { label: bodyAnimationLabel })}
+          >
+            <span className="material-icons" aria-hidden="true">
+              sports_martial_arts
+            </span>
+          </button>
+          <button
+            type="button"
+            className="tool-icon-btn"
+            data-testid="toolbar-animation-start-button"
+            disabled={bodyAnimationPlaying}
+            onClick={onStartWeaponAnimation}
+            aria-label={t('edit.startAnimation')}
+            title={t('edit.start')}
+          >
+            <span className="material-icons" aria-hidden="true">
+              play_arrow
+            </span>
+          </button>
+          <button
+            type="button"
+            className="tool-icon-btn"
+            data-testid="toolbar-animation-stop-button"
+            disabled={!bodyAnimationPlaying}
+            onClick={onStopWeaponAnimation}
+            aria-label={t('edit.stopAnimation')}
+            title={t('edit.stop')}
+          >
+            <span className="material-icons" aria-hidden="true">
+              stop
+            </span>
+          </button>
+          <button
+            type="button"
+            className="tool-icon-btn"
+            data-testid="toolbar-animation-restart-button"
+            onClick={onRestartWeaponAnimation}
+            aria-label={t('edit.restartAnimation')}
+            title={t('edit.restart')}
+          >
+            <span className="material-icons" aria-hidden="true">
+              replay
+            </span>
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

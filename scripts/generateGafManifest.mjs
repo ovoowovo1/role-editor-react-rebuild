@@ -44,6 +44,14 @@ function copyFallback(reason) {
   console.warn(`[generate:gaf] Using fallback → ${path.relative(root, OUT)}`);
 }
 
+function writeIfChanged(filePath, contents) {
+  if (fs.existsSync(filePath) && fs.readFileSync(filePath, 'utf8') === contents) {
+    return false;
+  }
+  fs.writeFileSync(filePath, contents);
+  return true;
+}
+
 /** @returns {Promise<Buffer>} */
 async function loadGafPayload(absPath, label) {
   const buf = fs.readFileSync(absPath);
@@ -137,7 +145,6 @@ async function main() {
 
   const payload = {
     schemaVersion: 2,
-    generatedAt: new Date().toISOString(),
     source: 'parsed',
     assetManifest: {
       decorations: '/assets/gaf/decorations.gaf',
@@ -160,8 +167,10 @@ async function main() {
   };
 
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
-  fs.writeFileSync(OUT, `${JSON.stringify(payload, null, 2)}\n`);
-  console.log(`[generate:gaf] Wrote ${path.relative(root, OUT)} (${payload.decorationGafSymbols.length} deco symbols)`);
+  const output = `${JSON.stringify(payload, null, 2)}\n`;
+  const changed = writeIfChanged(OUT, output);
+  const action = changed ? 'Wrote' : 'Unchanged';
+  console.log(`[generate:gaf] ${action} ${path.relative(root, OUT)} (${payload.decorationGafSymbols.length} deco symbols)`);
 }
 
 main().catch((err) => {

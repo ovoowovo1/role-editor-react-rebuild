@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EDITOR_BASE_HISTORY_LIMIT, EDITOR_STAGE_MAX_SCALE, EDITOR_STAGE_MIN_SCALE } from '../constants/editor';
+import {
+  EDITOR_BASE_HISTORY_LIMIT,
+  EDITOR_STAGE_MAX_SCALE,
+  EDITOR_STAGE_MIN_SCALE,
+  EDITOR_STAGE_SCALE_STEP
+} from '../constants/editor';
 import { createDefaultRole } from '../mock/options';
 import type { PartTab, RoleDocument } from '../types/role';
 import { clamp } from '../lib/math';
@@ -31,7 +36,8 @@ export function useEditorState() {
   );
 
   const setStageScale = useCallback((value: number) => {
-    setStageScaleState(clamp(Math.round(value), EDITOR_STAGE_MIN_SCALE, EDITOR_STAGE_MAX_SCALE));
+    const steppedValue = Math.round(value / EDITOR_STAGE_SCALE_STEP) * EDITOR_STAGE_SCALE_STEP;
+    setStageScaleState(clamp(steppedValue, EDITOR_STAGE_MIN_SCALE, EDITOR_STAGE_MAX_SCALE));
   }, []);
 
   const setInsertDraftSettings = useCallback((settings: InsertDraftSettings) => {
