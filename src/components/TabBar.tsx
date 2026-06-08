@@ -35,6 +35,7 @@ export function TabBar({ value, onChange }: TabBarProps) {
         key="colorBlock"
         className={`top-bar-button ${value === 'colorBlock' ? 'selected' : ''}`}
         type="button"
+        data-testid="tab-color-block-button"
         onClick={() => onChange('colorBlock')}
       >
         {t('tabs.colorBlock')}

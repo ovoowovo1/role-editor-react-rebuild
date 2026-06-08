@@ -33,41 +33,38 @@ export function ColorBlockGrid({ presets, loading = false, error, onPick }: Colo
         <span>{loading ? t('colorBlock.loading') : t('colorBlock.count', { count: presets.length })}</span>
       </div>
       {error ? <div className="choice-empty-state">{error}</div> : null}
-      <div className="choice-virtual-space" style={{ height: Math.max(520, presets.length * 118) }}>
-        <div className="choice-row" style={{ transform: 'translateY(0)', height: Math.max(118, presets.length * 118), flexWrap: 'wrap' }}>
-          {presets.map((preset) => {
-            const previewOptions = previewOptionsByPreset.get(preset.id) ?? [];
-            return (
-              <button
-                type="button"
-                key={preset.id}
-                className="choice-block color-block-choice"
-                title={`${preset.label} (${t('colorBlock.decoCount', { count: preset.deco.length })})`}
-                onClick={() => onPick(preset)}
-                style={{ height: 108 }}
-              >
-                <span
-                  className="color-block-swatch"
-                  style={{
-                    width: 54,
-                    height: 32,
-                    borderRadius: 8,
-                    background: preset.color,
-                    border: '1px solid rgba(255,255,255,0.45)',
-                    boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.35)'
-                  }}
-                />
-                <span style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, width: 64, justifyItems: 'center' }}>
-                  {previewOptions.map((option) => (
-                    <AssetPreview key={option.id} option={option} size={18} />
-                  ))}
-                </span>
-                <span>{preset.label}</span>
-                <small className="asset-source-badge">{preset.deco.length} decos</small>
-              </button>
-            );
-          })}
-        </div>
+      <div className="color-block-grid">
+        {presets.map((preset) => {
+          const previewOptions = previewOptionsByPreset.get(preset.id) ?? [];
+          return (
+            <button
+              type="button"
+              key={preset.id}
+              className="choice-block color-block-choice"
+              title={`${preset.label} (${t('colorBlock.decoCount', { count: preset.deco.length })})`}
+              onClick={() => onPick(preset)}
+            >
+              <span
+                className="color-block-swatch"
+                style={{
+                  width: 54,
+                  height: 32,
+                  borderRadius: 8,
+                  background: preset.color,
+                  border: '1px solid rgba(255,255,255,0.45)',
+                  boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.35)'
+                }}
+              />
+              <span style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, width: 64, justifyItems: 'center' }}>
+                {previewOptions.map((option) => (
+                  <AssetPreview key={option.id} option={option} size={18} />
+                ))}
+              </span>
+              <span>{preset.label}</span>
+              <small className="asset-source-badge">{preset.deco.length} decos</small>
+            </button>
+          );
+        })}
       </div>
     </section>
   );
