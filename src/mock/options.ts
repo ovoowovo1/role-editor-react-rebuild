@@ -2,7 +2,6 @@ import { makeMockAsset } from './assets';
 import {
   actorAtlasFrames,
   actorFallbackFrameCounts,
-  actorRuntimeManifest,
   decorationAtlasFrames,
   decorationGafSymbols,
   gafSources,
@@ -125,6 +124,31 @@ export const camps: CampOption[] = [
 
 const playerCampCodes = ['skydow', 'royal', 'third'] as const;
 type PlayerCampCode = (typeof playerCampCodes)[number];
+const sharedDecoRank = playerCampCodes.length;
+const unknownDecoRank = sharedDecoRank + 1;
+const decoCodeCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const legacyBodyPartFrames: Record<BodyPartTab, Record<PlayerCampCode, number[]>> = {
+  head: {
+    skydow: [36, 37, 38, 39, 40, 41, 86, 93, 94],
+    royal: [45, 46, 50, 51, 52, 53, 87, 91, 92],
+    third: [42, 43, 44, 47, 48, 49, 88, 95, 96]
+  },
+  hand: {
+    skydow: [2, 8, 11, 12, 13, 14, 15, 16, 27, 28, 35, 49, 55, 56, 61, 65, 66],
+    royal: [3, 8, 17, 18, 19, 24, 25, 26, 31, 32, 33, 47, 48, 50, 57, 58, 63, 64],
+    third: [8, 20, 21, 22, 23, 29, 30, 34, 36, 37, 38, 40, 45, 46, 59, 60, 62, 67, 68]
+  },
+  foot: {
+    skydow: [1, 3, 4, 13, 21, 23, 24, 25, 26, 27, 28, 43, 53, 54, 55, 56, 66, 67, 69, 70, 77, 78],
+    royal: [2, 5, 6, 7, 8, 18, 29, 30, 31, 32, 33, 39, 40, 41, 42, 46, 64, 65, 73, 74, 79, 80],
+    third: [9, 10, 22, 34, 35, 36, 37, 38, 44, 45, 47, 48, 49, 50, 51, 52, 58, 62, 63, 71, 72, 75, 76]
+  },
+  cape: {
+    skydow: [12, 13, 21, 24, 25],
+    royal: [2, 3, 5, 6, 14, 15, 16, 20],
+    third: [4, 7, 9, 10, 17, 18]
+  }
+};
 
 const legacyCampCodeMap: Record<string, string> = {
   camp1: 'skydow',
@@ -148,76 +172,56 @@ function toPlayerCampCode(raw: string | null | undefined): PlayerCampCode | 'civ
   return null;
 }
 
-function isCampTaggedLinkage(linkage: string, camp: PlayerCampCode): boolean {
-  const lower = linkage.toLowerCase();
-  const token = new RegExp(`(?:^|_)${camp}(?:_|$)`, 'i');
-  return token.test(lower);
-}
-
 function isAllCampDeco(code: string): boolean {
   return code.startsWith('xmas_deco_');
 }
 
-function collectActorFrameCampMap(tab: BodyPartTab): Map<number, Set<PlayerCampCode>> | null {
-  const runtime = actorRuntimeManifest;
-  if (!runtime) return null;
-  const linkage = actorPartRuntime[tab].library;
-  const timelineId = runtime.timelinesByLinkage[linkage];
-  const timeline = timelineId ? runtime.timelinesById[timelineId] : undefined;
-  if (!timeline) return null;
-
-  const map = new Map<number, Set<PlayerCampCode>>();
-  for (let frame = 1; frame <= timeline.framesCount; frame += 1) {
-    const insts = timeline.frames[String(frame)] ?? [];
-    const frameCamps = new Set<PlayerCampCode>();
-    for (const inst of insts) {
-      const ao = timeline.animationObjects[inst.objectId];
-      if (!ao || ao.mask) continue;
-      const element = runtime.elements[String(ao.regionId)];
-      const linkageName = element?.linkageName ?? '';
-      for (const camp of playerCampCodes) {
-        if (isCampTaggedLinkage(linkageName, camp)) frameCamps.add(camp);
-      }
-    }
-    map.set(frame, frameCamps);
-  }
-  return map;
+function decoCampRank(code: string): number {
+  const campIndex = playerCampCodes.findIndex((camp) => code.startsWith(`${camp}_`));
+  if (campIndex >= 0) return campIndex;
+  return isAllCampDeco(code) ? sharedDecoRank : unknownDecoRank;
 }
 
-const actorFrameCampMapByTab: Partial<Record<BodyPartTab, Map<number, Set<PlayerCampCode>> | null>> = {
-  head: collectActorFrameCampMap('head'),
-  hand: collectActorFrameCampMap('hand'),
-  foot: collectActorFrameCampMap('foot'),
-  cape: collectActorFrameCampMap('cape')
-};
+function compareDecoOptions(left: PartOption, right: PartOption): number {
+  return (
+    decoCampRank(left.code) - decoCampRank(right.code) ||
+    decoCodeCollator.compare(left.code, right.code) ||
+    decoCodeCollator.compare(left.label, right.label) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+function sortDecoOptions(options: PartOption[]): PartOption[] {
+  return [...options].sort(compareDecoOptions);
+}
+
+function filterBodyPartOptionsByCamp(tab: BodyPartTab, camp: PlayerCampCode): PartOption[] {
+  const frames = legacyBodyPartFrames[tab][camp];
+  const order = new Map(frames.map((frame, index) => [frame, index]));
+  return partOptions[tab]
+    .filter((option) => option.frame != null && order.has(option.frame))
+    .sort((left, right) => (order.get(left.frame ?? 0) ?? 0) - (order.get(right.frame ?? 0) ?? 0));
+}
 
 export function filterPartOptionsByCamp(tab: PartTab, campRaw: string): PartOption[] {
   const normalizedCamp = toPlayerCampCode(campRaw);
   if (!normalizedCamp) return partOptions[tab];
   if (normalizedCamp === 'civil') {
     if (tab === 'deco') {
-      return partOptions.deco.filter((option) =>
-        isAllCampDeco(option.code) || playerCampCodes.some((camp) => option.code.startsWith(`${camp}_`))
+      return sortDecoOptions(
+        partOptions.deco.filter((option) =>
+          isAllCampDeco(option.code) || playerCampCodes.some((camp) => option.code.startsWith(`${camp}_`))
+        )
       );
     }
     return partOptions[tab];
   }
 
   if (tab === 'deco') {
-    return partOptions.deco.filter((option) => isAllCampDeco(option.code) || option.code.startsWith(`${normalizedCamp}_`));
+    return sortDecoOptions(partOptions.deco.filter((option) => isAllCampDeco(option.code) || option.code.startsWith(`${normalizedCamp}_`)));
   }
 
-  const frameCampMap = actorFrameCampMapByTab[tab as BodyPartTab];
-  if (!frameCampMap) return partOptions[tab];
-
-  return partOptions[tab].filter((option) => {
-    if (option.isEmpty) return true;
-    const frame = option.frame ?? parsePartFrameCode(option.code);
-    if (!frame) return true;
-    const campsForFrame = frameCampMap.get(frame);
-    if (!campsForFrame || !campsForFrame.size) return true;
-    return campsForFrame.has(normalizedCamp);
-  });
+  return filterBodyPartOptionsByCamp(tab, normalizedCamp);
 }
 
 export const genders: { code: GenderCode; name: string }[] = [
