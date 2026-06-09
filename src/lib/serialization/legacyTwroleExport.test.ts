@@ -1,7 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { ungzip } from 'pako';
+import { describe, expect, it, vi } from 'vitest';
 import { HEAD_LAYER_ID } from '../../constants/layers';
 import type { DecorationGroup, DecorationLayer, RoleDocument } from '../../types/role';
-import { buildLegacyCompactPayload } from './legacyTwroleExport';
+import { buildLegacyCompactPayload, createRoleJsonBlobWithThumb, createTwroleBlobWithThumb } from './legacyTwroleExport';
+import { md5Hex } from './md5';
+
+vi.mock('../stage/fullRoleRenderer', () => ({
+  renderFullRoleToDataUrl: vi.fn(async () => ({
+    dataUrl: 'data:image/png;base64,ZmFrZS10aHVtYg==',
+    width: 256,
+    height: 256,
+    alphaPixels: 4,
+    nonTransparentBounds: { minX: 110, minY: 120, maxX: 111, maxY: 121 },
+    warnings: [],
+    missingTextureCount: 0
+  }))
+}));
 
 function layer(id: string, patch: Partial<DecorationLayer> = {}): DecorationLayer {
   return {
@@ -52,6 +66,10 @@ function role(patch: Partial<RoleDocument> = {}): RoleDocument {
 }
 
 describe('legacy twrole export', () => {
+  it('hashes strings with MD5 for legacy thumb hashes', () => {
+    expect(md5Hex('abc')).toBe('900150983cd24fb0d6963f7d28e17f72');
+  });
+
   it('builds compact payload with camp/gender dr and bottom-to-top visible decos', () => {
     const payload = buildLegacyCompactPayload(role());
 
@@ -61,5 +79,28 @@ describe('legacy twrole export', () => {
     expect(payload.data.cr.deco.map((item) => item.c)).toEqual(['b', 'head', 'a']);
     expect(payload.data.cr.deco[1].r).toBeCloseTo(Math.PI / 4);
     expect(payload.decoGroups).toHaveLength(1);
+  });
+
+  it('exports JSON with a rendered thumb and hash', async () => {
+    const blob = await createRoleJsonBlobWithThumb(role());
+    const payload = JSON.parse(await blob.text());
+
+    expect(payload.hash).toBe(md5Hex(payload.thumb.dataUrl));
+    expect(payload.hash).not.toBe('');
+    expect(payload.thumb.dataUrl).toMatch(/^data:image\/png;base64,/);
+    expect(payload.thumb.pivot).toEqual({ x: 18, y: 8 });
+    expect(payload.data.cr.deco.map((item: { c: string }) => item.c)).toEqual(['b', 'head', 'a']);
+  });
+
+  it('exports twrole gzip with a rendered thumb and hash', async () => {
+    const blob = await createTwroleBlobWithThumb(role());
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const payload = JSON.parse(ungzip(bytes.slice(2), { to: 'string' }) as string);
+
+    expect(Array.from(bytes.slice(0, 2))).toEqual([0, 1]);
+    expect(payload.hash).toBe(md5Hex(payload.thumb.dataUrl));
+    expect(payload.thumb.dataUrl).toMatch(/^data:image\/png;base64,/);
+    expect(typeof payload.thumb.pivot.x).toBe('number');
+    expect(typeof payload.thumb.pivot.y).toBe('number');
   });
 });

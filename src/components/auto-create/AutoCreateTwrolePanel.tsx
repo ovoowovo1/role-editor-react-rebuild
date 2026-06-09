@@ -13,7 +13,7 @@ import {
 import { canRunAutoCreateTwroleWorker, runAutoCreateTwroleInWorker } from '../../lib/conversion/autoCreateTwroleWorkerClient';
 import { settingsForScope, type InsertDraftSettings } from '../../lib/editor/editorInsertSettings';
 import { insertDecorationBatchIntoRole } from '../../lib/editor/editorImportMerge';
-import { createTwroleBlob } from '../../lib/serialization/legacyTwroleExport';
+import { createTwroleBlobWithThumb } from '../../lib/serialization/legacyTwroleExport';
 
 export interface AutoCreateTwrolePanelProps {
   decoOptions: PartOption[];
@@ -339,13 +339,18 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
     downloadBlob(createAutoCreateTwroleExportBlob(result), 'export2.json');
   };
 
-  const downloadTwrole = () => {
+  const downloadTwrole = async () => {
     if (!result) return;
     const scopedSettings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
     const merged = insertDecorationBatchIntoRole(role, result.decorations, t('autoCreate.groupName.default'), scopedSettings);
     if (!merged) return;
     const baseName = file?.name.replace(/\.[^.]+$/, '') || 'auto-create';
-    downloadBlob(createTwroleBlob(merged.role), baseName + '.twrole');
+    try {
+      downloadBlob(await createTwroleBlobWithThumb(merged.role), baseName + '.twrole');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      onStatus(t('status.autoCreateFailed', { message }));
+    }
   };
 
   const numberInput = (labelKey: string, key: GuiNumericSettingKey, min: number) => (

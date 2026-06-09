@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { t } from '../i18n';
 import { downloadBlob } from '../lib/math';
 import { parseRoleFileWithLegacyGroups, parseRoleFileInWorkerWithLegacyGroups } from '../lib/serialization/legacyGroupImport';
-import { createRoleJsonBlob, createTwroleBlob } from '../lib/serialization/legacyTwroleExport';
+import { createRoleJsonBlobWithThumb, createTwroleBlobWithThumb } from '../lib/serialization/legacyTwroleExport';
 import type { RoleDocument } from '../types/role';
 
 interface UseRoleFileActionsOptions {
@@ -48,14 +48,24 @@ export function useRoleFileActions({
     [mergeImportedRole, setStatus]
   );
 
-  const handleDownloadTwrole = useCallback(() => {
-    downloadBlob(createTwroleBlob(role), 'role.twrole');
-    setStatus(t('status.downloadedTwrole'));
+  const handleDownloadTwrole = useCallback(async () => {
+    try {
+      downloadBlob(await createTwroleBlobWithThumb(role), 'role.twrole');
+      setStatus(t('status.downloadedTwrole'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(`Export failed: ${message}`);
+    }
   }, [role, setStatus]);
 
-  const handleExportJson = useCallback(() => {
-    downloadBlob(createRoleJsonBlob(role), 'role.json');
-    setStatus(t('status.exportedJson'));
+  const handleExportJson = useCallback(async () => {
+    try {
+      downloadBlob(await createRoleJsonBlobWithThumb(role), 'role.json');
+      setStatus(t('status.exportedJson'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(`Export failed: ${message}`);
+    }
   }, [role, setStatus]);
 
   return {

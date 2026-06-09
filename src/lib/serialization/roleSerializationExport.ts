@@ -1,9 +1,10 @@
-import { gzip } from 'pako';
 import type { DecorationGroup, DecorationLayer, RoleDocument } from '../../types/role';
-import { exportLegacyDecoGroups, type LegacyDecoGroup } from './legacyDecoGroups';
+import {
+  createRoleJsonBlobWithThumb,
+  createTwroleBlobWithThumb
+} from './legacyTwroleExport';
 import { normalizeRoleDocument } from './roleSerializationImport';
 import {
-  TWROLE_HEADER,
   rotationRadiansForExport,
   type LegacyCompactDecoEntry,
   type LegacyCompactRoleConfig
@@ -17,16 +18,6 @@ interface ExportEnvelope {
   thumb: null;
   decoGroups: DecorationGroup[];
   mockAdapters: string[];
-}
-
-interface LegacyTwrolePayload {
-  data: {
-    dr: number;
-    cr: LegacyCompactRoleConfig;
-  };
-  hash: string;
-  thumb: null | { dataUrl: string; pivot: { x: number; y: number } };
-  decoGroups: LegacyDecoGroup[];
 }
 
 function cloneRole(role: RoleDocument): RoleDocument {
@@ -49,31 +40,8 @@ export function roleToEnvelope(role: RoleDocument): ExportEnvelope {
   };
 }
 
-function buildLegacyCompactPayload(role: RoleDocument): LegacyTwrolePayload {
-  const normalized = normalizeRoleDocument(role);
-  const legacyConfig = exportOriginalLikeRoleConfig(normalized);
-  return {
-    data: {
-      dr: 8,
-      cr: legacyConfig
-    },
-    hash: '',
-    thumb: null,
-    decoGroups: exportLegacyDecoGroups(role)
-  };
-}
-
-export function createRoleJsonBlob(role: RoleDocument): Blob {
-  return new Blob([JSON.stringify(buildLegacyCompactPayload(role), null, 2)], { type: 'application/json' });
-}
-
-export function createTwroleBlob(role: RoleDocument): Blob {
-  const payload = buildLegacyCompactPayload(role);
-  const json = JSON.stringify(payload);
-  const compressed = gzip(json, { level: 1 });
-  const header = new Uint8Array(TWROLE_HEADER);
-  return new Blob([header, compressed], { type: 'application/octet-stream' });
-}
+export const createRoleJsonBlob = createRoleJsonBlobWithThumb;
+export const createTwroleBlob = createTwroleBlobWithThumb;
 
 function exportOldEditorDecolist(role: RoleDocument): LegacyCompactDecoEntry[] {
   const normalized = normalizeRoleDocument(role);
@@ -114,4 +82,3 @@ export function exportOriginalLikeRoleConfig(role: RoleDocument): LegacyCompactR
     deco
   };
 }
-

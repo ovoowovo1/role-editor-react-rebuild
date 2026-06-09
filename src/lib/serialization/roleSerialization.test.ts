@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { gzip } from 'pako';
 import type { DecorationLayer, RoleDocument } from '../../types/role';
 import {
@@ -9,6 +9,18 @@ import {
   normalizeImportedRole,
   parseRoleBytes
 } from './roleSerialization';
+
+vi.mock('../stage/fullRoleRenderer', () => ({
+  renderFullRoleToDataUrl: vi.fn(async () => ({
+    dataUrl: 'data:image/png;base64,cm9sZS1zZXJpYWxpemF0aW9u',
+    width: 256,
+    height: 256,
+    alphaPixels: 4,
+    nonTransparentBounds: { minX: 100, minY: 100, maxX: 101, maxY: 101 },
+    warnings: [],
+    missingTextureCount: 0
+  }))
+}));
 
 function layer(id: string, patch: Partial<DecorationLayer> = {}): DecorationLayer {
   return {
@@ -99,7 +111,7 @@ describe('role serialization', () => {
   });
 
   it('round-trips exported twrole bytes through the legacy parser path', async () => {
-    const blob = createTwroleBlob(role());
+    const blob = await createTwroleBlob(role());
     const bytes = new Uint8Array(await blob.arrayBuffer());
 
     const result = parseRoleBytes(bytes);
