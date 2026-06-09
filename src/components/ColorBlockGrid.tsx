@@ -55,12 +55,12 @@ export function ColorBlockGrid({ presets, loading = false, error, onPick }: Colo
                   boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.35)'
                 }}
               />
-              <span style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, width: 64, justifyItems: 'center' }}>
+              <span className="color-block-preview-row">
                 {previewOptions.map((option) => (
                   <AssetPreview key={option.id} option={option} size={18} />
                 ))}
               </span>
-              <span>{preset.label}</span>
+              <span className="choice-label">{preset.label}</span>
               <small className="asset-source-badge">{preset.deco.length} decos</small>
             </button>
           );

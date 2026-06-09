@@ -54,7 +54,12 @@ function createAlphaMaskColorFilter(): ColorMatrixFilter {
   return filter;
 }
 
-const ALPHA_MASK_COLOR_FILTER = createAlphaMaskColorFilter();
+let alphaMaskColorFilter: ColorMatrixFilter | null = null;
+
+function getAlphaMaskColorFilter(): ColorMatrixFilter {
+  alphaMaskColorFilter ??= createAlphaMaskColorFilter();
+  return alphaMaskColorFilter;
+}
 
 function elementPivotMatrix(el: GafElementSerialized): Matrix {
   const sx = Math.abs(el.scaleX) > 1e-8 ? el.scaleX : 1;
@@ -348,7 +353,7 @@ export class GafMovieClip extends Container {
         if (!sprite) continue;
         sprite.alpha = clamp01(inst.alpha);
         if (this._alphaMask) {
-          sprite.filters = [ALPHA_MASK_COLOR_FILTER];
+          sprite.filters = [getAlphaMaskColorFilter()];
         }
 
         const instMat = instanceMatrix(inst.matrix);

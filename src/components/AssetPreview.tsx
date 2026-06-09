@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { PartOption } from '../types/role';
+import { loadActorPartPreview, shouldUseActorPartRuntimePreview } from '../lib/runtime/actorPartPreview';
 import { probeAtlasTextureUrl } from '../lib/runtime/atlasTextureAvailability';
 
 interface AssetPreviewProps {
@@ -8,8 +9,45 @@ interface AssetPreviewProps {
   className?: string;
 }
 
+type RuntimePreviewState = {
+  key: string;
+  dataUrl: string | null;
+  loading: boolean;
+};
+
+function runtimePreviewKey(option: PartOption | undefined): string | null {
+  if (!option) return null;
+  if (!shouldUseActorPartRuntimePreview(option)) return null;
+  const actorLibrary = option.actorLibrary;
+  const frame = option.frame;
+  if (!actorLibrary || frame == null) return null;
+  return `${actorLibrary}:${frame}`;
+}
+
 export function AssetPreview({ option, size = 50, className = '' }: AssetPreviewProps) {
   const [atlasOk, setAtlasOk] = useState<boolean | null>(null);
+  const [runtimePreview, setRuntimePreview] = useState<RuntimePreviewState | null>(null);
+  const actorPreviewKey = runtimePreviewKey(option);
+
+  useEffect(() => {
+    if (!option || !actorPreviewKey) {
+      setRuntimePreview(null);
+      return;
+    }
+    let cancelled = false;
+    setRuntimePreview({ key: actorPreviewKey, dataUrl: null, loading: true });
+    const preview = loadActorPartPreview(option);
+    if (!preview) {
+      setRuntimePreview(null);
+      return;
+    }
+    preview.then((dataUrl) => {
+      if (!cancelled) setRuntimePreview({ key: actorPreviewKey, dataUrl, loading: false });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [actorPreviewKey, option]);
 
   useEffect(() => {
     if (!option?.atlas) {
@@ -27,6 +65,8 @@ export function AssetPreview({ option, size = 50, className = '' }: AssetPreview
   }, [option?.atlas?.texture]);
 
   if (!option) return <span className={className}>?</span>;
+  const activeRuntimePreview = runtimePreview?.key === actorPreviewKey ? runtimePreview : null;
+  if (activeRuntimePreview?.dataUrl) return <img className={className} src={activeRuntimePreview.dataUrl} alt="" draggable={false} />;
 
   if (!option.atlas) {
     return <img className={className} src={option.icon} alt="" draggable={false} />;

@@ -94,9 +94,10 @@ export function ChoiceGrid({ tab, options, selectedOptionId, onPick }: ChoiceGri
                   title={`${option.label} (${option.code})`}
                   onClick={() => onPick(option)}
                 >
-                  <AssetPreview option={option} size={50} />
-                  {option.source === 'gaf' && <small className="asset-source-badge">GAF</small>}
-                  <span>{option.label.replace(/\s+/g, ' ')}</span>
+                  <span className="choice-preview">
+                    <AssetPreview option={option} size={46} />
+                  </span>
+                  <span className="choice-label">{option.label.replace(/\s+/g, ' ')}</span>
                 </button>
               ))}
             </div>

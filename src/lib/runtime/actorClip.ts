@@ -190,8 +190,8 @@ const WEAPON_PREVIEW_CONFIGS: readonly WeaponPreviewConfig[] = [
 export class ActorPart {
   clip: GafMovieClip;
 
-  constructor(library: string, failedTextures: Set<string>) {
-    this.clip = makeClip(library, failedTextures);
+  constructor(library: string, failedTextures: Set<string>, options: CreateGafClipOptions = {}) {
+    this.clip = makeClip(library, failedTextures, options);
   }
 
   setFrame(frame: number, scale = 1): void {
@@ -220,7 +220,7 @@ export class ActorCape extends ActorPart {
   container: Container;
 
   constructor(failedTextures: Set<string>) {
-    super(actorPartRuntime.cape.library, failedTextures);
+    super(actorPartRuntime.cape.library, failedTextures, { nestedTimelineFrame: 'first' });
     this.container = new Container();
     this.container.addChild(this.clip);
   }
