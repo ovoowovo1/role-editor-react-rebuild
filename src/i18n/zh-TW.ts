@@ -27,6 +27,7 @@ export const zhTW: Record<string, string> = {
   'status.autoCreateConverted': '自動生成完成：{count} 個裝飾圖層',
   'status.autoCreateInserted': '已插入 {count} 個自動生成裝飾圖層',
   'status.autoCreateFailed': '自動生成失敗：{message}',
+  'status.autoCreateStopped': '自動生成已停止，可以下載目前結果或按「繼續生成」。',
 
   // Insert Settings dialog
   'insert.title': '插入設定',
@@ -194,6 +195,9 @@ export const zhTW: Record<string, string> = {
   'autoCreate.stop': '停止',
   'autoCreate.insert': '插入圖層',
   'autoCreate.downloadJson': '下載 export.json',
+  'autoCreate.downloadTwrole': '下載 TWRole',
+  'autoCreate.resume': '繼續生成',
+  'autoCreate.stopping': '停止中...',
   'autoCreate.groupName.default': 'AutoCreate 自動生成',
   'autoCreate.section.settings': 'Settings',
   'autoCreate.iterations': 'Iterations / --tiles',

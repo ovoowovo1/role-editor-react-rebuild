@@ -1,4 +1,6 @@
 import {
+  AutoCreateTwroleStoppedError,
+  type AutoCreateTwroleCheckpoint,
   type AutoCreateTwroleProgress,
   type AutoCreateTwroleResult,
   type RunAutoCreateTwroleOptions
@@ -10,6 +12,7 @@ type WorkerStartMessage = {
   targetFile: File;
   decoOptions: RunAutoCreateTwroleOptions['decoOptions'];
   settings: RunAutoCreateTwroleOptions['settings'];
+  resumeSnapshot?: RunAutoCreateTwroleOptions['resumeSnapshot'];
 };
 
 type WorkerAbortMessage = {
@@ -27,7 +30,9 @@ type WorkerSerializedError = {
 
 type WorkerResponseMessage =
   | { type: 'progress'; id: string; progress: AutoCreateTwroleProgress }
+  | { type: 'checkpoint'; id: string; checkpoint: AutoCreateTwroleCheckpoint }
   | { type: 'done'; id: string; result: AutoCreateTwroleResult }
+  | { type: 'stopped'; id: string; result: AutoCreateTwroleResult; checkpoint: AutoCreateTwroleCheckpoint }
   | { type: 'error'; id: string; error: WorkerSerializedError };
 
 const MIN_PROGRESS_INTERVAL_MS = 100;
@@ -103,12 +108,12 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
     };
 
     const abort = () => {
+      if (settled) return;
       try {
         worker.postMessage({ type: 'abort', id } satisfies WorkerAbortMessage);
       } catch {
-        // The worker may already be gone. We still reject with AbortError below.
+        finish(() => reject(makeAbortError()));
       }
-      finish(() => reject(makeAbortError()));
     };
 
     const emitProgress = (progress: AutoCreateTwroleProgress) => {
@@ -149,9 +154,22 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
         return;
       }
 
+      if (message.type === 'checkpoint') {
+        flushPendingProgress();
+        options.onCheckpoint?.(message.checkpoint);
+        return;
+      }
+
       if (message.type === 'done') {
         flushPendingProgress();
         finish(() => resolve(message.result));
+        return;
+      }
+
+      if (message.type === 'stopped') {
+        flushPendingProgress();
+        options.onCheckpoint?.(message.checkpoint);
+        finish(() => reject(new AutoCreateTwroleStoppedError({ result: message.result, checkpoint: message.checkpoint })));
         return;
       }
 
@@ -169,7 +187,8 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
       id,
       targetFile: options.targetFile,
       decoOptions: options.decoOptions,
-      settings: options.settings
+      settings: options.settings,
+      resumeSnapshot: options.resumeSnapshot ?? null
     };
     worker.postMessage(startMessage satisfies WorkerRequestMessage);
   });

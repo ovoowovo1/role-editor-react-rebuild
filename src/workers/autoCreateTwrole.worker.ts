@@ -1,5 +1,7 @@
 import {
+  isAutoCreateTwroleStoppedError,
   runAutoCreateTwrole,
+  type AutoCreateTwroleCheckpoint,
   type AutoCreateTwroleProgress,
   type AutoCreateTwroleResult,
   type AutoCreateTwroleSettings
@@ -12,6 +14,7 @@ type WorkerStartMessage = {
   targetFile: File;
   decoOptions: PartOption[];
   settings?: Partial<AutoCreateTwroleSettings>;
+  resumeSnapshot?: AutoCreateTwroleCheckpoint['snapshot'] | null;
 };
 
 type WorkerAbortMessage = {
@@ -29,7 +32,9 @@ type WorkerSerializedError = {
 
 type WorkerResponseMessage =
   | { type: 'progress'; id: string; progress: AutoCreateTwroleProgress }
+  | { type: 'checkpoint'; id: string; checkpoint: AutoCreateTwroleCheckpoint }
   | { type: 'done'; id: string; result: AutoCreateTwroleResult }
+  | { type: 'stopped'; id: string; result: AutoCreateTwroleResult; checkpoint: AutoCreateTwroleCheckpoint }
   | { type: 'error'; id: string; error: WorkerSerializedError };
 
 const scope = globalThis as unknown as {
@@ -64,15 +69,23 @@ scope.addEventListener('message', (event) => {
     targetFile: message.targetFile,
     decoOptions: message.decoOptions,
     settings: message.settings,
+    resumeSnapshot: message.resumeSnapshot ?? null,
     signal: controller.signal,
     onProgress: (progress) => {
       scope.postMessage({ type: 'progress', id: message.id, progress });
+    },
+    onCheckpoint: (checkpoint) => {
+      scope.postMessage({ type: 'checkpoint', id: message.id, checkpoint });
     }
   })
     .then((result) => {
       scope.postMessage({ type: 'done', id: message.id, result });
     })
     .catch((error) => {
+      if (isAutoCreateTwroleStoppedError(error)) {
+        scope.postMessage({ type: 'stopped', id: message.id, result: error.result, checkpoint: error.checkpoint });
+        return;
+      }
       scope.postMessage({ type: 'error', id: message.id, error: serializeError(error) });
     })
     .finally(() => {

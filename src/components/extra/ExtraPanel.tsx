@@ -20,6 +20,8 @@ const toolTabs: ExtraPanelToolTab[] = ['standard', 'autoCreate'];
 
 export function ExtraPanel({
   decoOptions,
+  role,
+  insertDraftSettings,
   brushFillActive,
   brushFillBrushSize,
   brushFillMask,
@@ -32,6 +34,8 @@ export function ExtraPanel({
   const [toolTab, setToolTab] = useState<ExtraPanelToolTab>('standard');
   const controller = useExtraPanelController({
     decoOptions,
+    role,
+    insertDraftSettings,
     brushFillActive,
     brushFillBrushSize,
     brushFillMask,
@@ -91,7 +95,13 @@ export function ExtraPanel({
             role="tabpanel"
             aria-labelledby="extra-tool-tab-autoCreate"
           >
-            <AutoCreateTwrolePanelContent decoOptions={decoOptions} onInsert={onInsert} onStatus={onStatus} />
+            <AutoCreateTwrolePanelContent
+              decoOptions={decoOptions}
+              role={role}
+              insertDraftSettings={insertDraftSettings}
+              onInsert={onInsert}
+              onStatus={onStatus}
+            />
           </div>
         ) : (
           <div id="extra-panel-standard" role="tabpanel" aria-labelledby="extra-tool-tab-standard">

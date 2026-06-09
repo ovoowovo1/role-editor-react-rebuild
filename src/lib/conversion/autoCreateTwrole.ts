@@ -1,4 +1,5 @@
 import type { DecorationLayer, PartOption } from '../../types/role';
+import { DEFAULT_POSITION_RANGE } from '../../constants/editor';
 import { createId, round } from '../math';
 
 const ALPHA_MSE_WEIGHT = 1.0;
@@ -16,6 +17,8 @@ const DEFAULT_GRADIENT_STD_WEIGHT = 0.42;
 const DEFAULT_GRADIENT_COMPLEXITY_THRESHOLD = 18.0;
 const DEFAULT_GRADIENT_ORIGINAL_MAX_PX = 12;
 const MEMORY_VERSION = 1;
+const AUTO_CREATE_SNAPSHOT_VERSION = 1;
+const DEFAULT_ROLE_EXPORT_MAX_SIDE = DEFAULT_POSITION_RANGE * 2;
 const DEFAULT_MEMORY_NAME = 'experience_color_memory.json';
 const AUTO_CREATE_EXPERIENCE_STORAGE_PREFIX = 'auto-create-twrole:';
 
@@ -136,6 +139,7 @@ export interface AutoCreateTwroleResult {
   sourceWidth: number;
   sourceHeight: number;
   sourceCount: number;
+  insertScale: number;
   mse: number;
   accepted: number;
   rejected: number;
@@ -144,12 +148,77 @@ export interface AutoCreateTwroleResult {
   warnings: string[];
 }
 
+export interface AutoCreateTwroleSnapshotTile {
+  active: boolean;
+  sourceId: number;
+  sxInternal: number;
+  syInternal: number;
+  rDeg: number;
+  centerX: number;
+  centerY: number;
+  bbox: [left: number, top: number, right: number, bottom: number];
+  decoration: DecorationLayer;
+  legacy: AutoCreateTwroleLegacyDecoEntry;
+  gainMse: number;
+}
+
+export interface AutoCreateTwroleSnapshot {
+  version: number;
+  targetWidth: number;
+  targetHeight: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  sourceCount: number;
+  sourceSignature: string;
+  step: number;
+  totalSteps: number;
+  seed: number;
+  rngState: number;
+  rngSpareNormal: number | null;
+  accepted: number;
+  rejected: number;
+  pruned: number;
+  replaced: number;
+  mse: number;
+  tiles: AutoCreateTwroleSnapshotTile[];
+  warnings: string[];
+}
+
+export interface AutoCreateTwroleCheckpoint {
+  progress: AutoCreateTwroleProgress;
+  result: AutoCreateTwroleResult;
+  snapshot: AutoCreateTwroleSnapshot;
+}
+
+export interface AutoCreateTwroleStoppedResult {
+  result: AutoCreateTwroleResult;
+  checkpoint: AutoCreateTwroleCheckpoint;
+}
+
+export class AutoCreateTwroleStoppedError extends Error {
+  readonly result: AutoCreateTwroleResult;
+  readonly checkpoint: AutoCreateTwroleCheckpoint;
+
+  constructor(stopped: AutoCreateTwroleStoppedResult) {
+    super('AutoCreateTwrole was stopped.');
+    this.name = 'AutoCreateTwroleStoppedError';
+    this.result = stopped.result;
+    this.checkpoint = stopped.checkpoint;
+  }
+}
+
+export function isAutoCreateTwroleStoppedError(error: unknown): error is AutoCreateTwroleStoppedError {
+  return error instanceof AutoCreateTwroleStoppedError;
+}
+
 export interface RunAutoCreateTwroleOptions {
   targetFile: File;
   decoOptions: PartOption[];
   settings?: Partial<AutoCreateTwroleSettings>;
+  resumeSnapshot?: AutoCreateTwroleSnapshot | null;
   signal?: AbortSignal;
   onProgress?: (progress: AutoCreateTwroleProgress) => void;
+  onCheckpoint?: (checkpoint: AutoCreateTwroleCheckpoint) => void;
 }
 
 type Vec3 = [number, number, number];
@@ -407,9 +476,13 @@ function getLocalStorage(): Storage | null {
   }
 }
 
+function makeAbortError(): DOMException {
+  return new DOMException('AutoCreateTwrole was aborted.', 'AbortError');
+}
+
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
-    throw new DOMException('AutoCreateTwrole was aborted.', 'AbortError');
+    throw makeAbortError();
   }
 }
 
@@ -467,6 +540,16 @@ class SeededRandom {
       [items[i], items[j]] = [items[j], items[i]];
     }
     return items;
+  }
+
+  snapshot(): { state: number; spareNormal: number | null } {
+    return { state: this.state, spareNormal: this.spareNormal };
+  }
+
+  restore(state: number, spareNormal: number | null): void {
+    const normalized = Number.isFinite(state) ? Math.floor(state) >>> 0 : 0x9e3779b9;
+    this.state = normalized === 0 ? 0x9e3779b9 : normalized;
+    this.spareNormal = Number.isFinite(spareNormal) ? spareNormal : null;
   }
 
   weightedIndex(weights: readonly number[]): number {
@@ -1072,6 +1155,11 @@ function targetCenterCoords(px: number, py: number, width: number, height: numbe
   return { x: px - width / 2, y: py - height / 2 };
 }
 
+function roleExportScaleForTarget(width: number, height: number): number {
+  const maxSide = Math.max(1, width, height);
+  return Math.min(1, DEFAULT_ROLE_EXPORT_MAX_SIDE / maxSide);
+}
+
 function rolePositionForVisualCenter(
   source: SourceTile,
   desiredX: number,
@@ -1092,12 +1180,15 @@ function rolePositionForVisualCenter(
 }
 
 function buildDecoDraft(source: SourceTile, centerX: number, centerY: number, sxInternal: number, syInternal: number, rDeg: number, width: number, height: number): DecoDraft {
-  const rawScaleX = sxInternal * source.sFactor;
-  const rawScaleY = syInternal * source.sFactor;
+  const roleScale = roleExportScaleForTarget(width, height);
+  const rawScaleX = sxInternal * source.sFactor * roleScale;
+  const rawScaleY = syInternal * source.sFactor * roleScale;
   const scaleX = round(rawScaleX, 4);
   const scaleY = round(rawScaleY, 4);
   const desired = targetCenterCoords(centerX, centerY, width, height);
-  const { x, y } = rolePositionForVisualCenter(source, desired.x, desired.y, rawScaleX, rawScaleY, rDeg);
+  const desiredRoleX = desired.x * roleScale;
+  const desiredRoleY = desired.y * roleScale;
+  const { x, y } = rolePositionForVisualCenter(source, desiredRoleX, desiredRoleY, rawScaleX, rawScaleY, rDeg);
   const roleX = round(x, 2);
   const roleY = round(y, 2);
   const rotation = round(rDeg, 3);
@@ -1317,6 +1408,95 @@ class ColorLearningCollage {
 
   activeCount(): number {
     return this.tiles.reduce((sum, tile) => sum + (tile.active ? 1 : 0), 0);
+  }
+
+  restoreFromSnapshot(snapshot: AutoCreateTwroleSnapshot): void {
+    const restored: TileRecord[] = [];
+
+    for (const tile of snapshot.tiles) {
+      if (!tile.active) continue;
+      const source = this.sources[tile.sourceId];
+      if (!source) continue;
+
+      const rgba = this.cache.get(source, tile.sxInternal, tile.syInternal, tile.rDeg);
+      const left = Math.round(tile.centerX - rgba.width / 2);
+      const top = Math.round(tile.centerY - rgba.height / 2);
+      const right = left + rgba.width;
+      const bottom = top + rgba.height;
+      const bbox = bboxClip([left, top, right, bottom], this.width, this.height);
+      if (!bbox || bbox[0] !== left || bbox[1] !== top || bbox[2] !== right || bbox[3] !== bottom) continue;
+
+      restored.push({
+        active: true,
+        sourceId: tile.sourceId,
+        sxInternal: tile.sxInternal,
+        syInternal: tile.syInternal,
+        rDeg: tile.rDeg,
+        bbox,
+        centerX: tile.centerX,
+        centerY: tile.centerY,
+        decoration: { ...tile.decoration },
+        legacy: { ...tile.legacy },
+        gainMse: tile.gainMse
+      });
+    }
+
+    this.tiles.splice(0, this.tiles.length, ...restored);
+    this.accepted = Math.max(snapshot.accepted, restored.length);
+    this.rejected = Math.max(0, Math.round(snapshot.rejected));
+    this.pruned = Math.max(0, Math.round(snapshot.pruned));
+    this.replaced = Math.max(0, Math.round(snapshot.replaced));
+
+    this.canvas.fill(0);
+    for (const tile of this.tiles) {
+      this.alphaOverFull(tile.bbox, this.tileRgba(tile));
+    }
+    this.errors.recomputeAll();
+  }
+
+  createSnapshot(
+    step: number,
+    totalSteps: number,
+    seed: number,
+    target: Pick<TargetImageData, 'width' | 'height' | 'sourceWidth' | 'sourceHeight'>,
+    warnings: string[]
+  ): AutoCreateTwroleSnapshot {
+    const rng = this.rng.snapshot();
+    return {
+      version: AUTO_CREATE_SNAPSHOT_VERSION,
+      targetWidth: target.width,
+      targetHeight: target.height,
+      sourceWidth: target.sourceWidth,
+      sourceHeight: target.sourceHeight,
+      sourceCount: this.sources.length,
+      sourceSignature: this.sources.map((source) => source.assetId + ':' + source.code).join('|'),
+      step: Math.max(0, Math.round(step)),
+      totalSteps: Math.max(1, Math.round(totalSteps)),
+      seed,
+      rngState: rng.state,
+      rngSpareNormal: rng.spareNormal,
+      accepted: this.accepted,
+      rejected: this.rejected,
+      pruned: this.pruned,
+      replaced: this.replaced,
+      mse: this.currentMse(),
+      tiles: this.tiles
+        .filter((tile) => tile.active)
+        .map((tile) => ({
+          active: true,
+          sourceId: tile.sourceId,
+          sxInternal: tile.sxInternal,
+          syInternal: tile.syInternal,
+          rDeg: tile.rDeg,
+          centerX: tile.centerX,
+          centerY: tile.centerY,
+          bbox: [...tile.bbox] as [number, number, number, number],
+          decoration: { ...tile.decoration },
+          legacy: { ...tile.legacy },
+          gainMse: tile.gainMse
+        })),
+      warnings: [...warnings]
+    };
   }
 
   exportDecorations(): DecorationLayer[] {
@@ -1832,8 +2012,10 @@ export async function runAutoCreateTwrole({
   targetFile,
   decoOptions,
   settings: rawSettings,
+  resumeSnapshot,
   signal,
-  onProgress
+  onProgress,
+  onCheckpoint
 }: RunAutoCreateTwroleOptions): Promise<AutoCreateTwroleResult> {
   const settings: AutoCreateTwroleSettings = { ...DEFAULT_AUTO_CREATE_TWROLE_SETTINGS, ...rawSettings };
   throwIfAborted(signal);
@@ -1852,7 +2034,7 @@ export async function runAutoCreateTwrole({
       rejected: 0,
       pruned: 0,
       replaced: 0,
-      message: `sources ${done}/${total}`
+      message: 'sources ' + done + '/' + total
     });
   });
 
@@ -1860,8 +2042,31 @@ export async function runAutoCreateTwrole({
     throw new Error('No usable deco sources were found. Check the current deco palette and atlas PNG assets.');
   }
 
-  const seed = settings.seed > 0 ? settings.seed : Math.floor(Date.now() % 2147483647);
+  const totalSteps = Math.max(1, Math.round(settings.tiles));
+  const logEvery = Math.max(1, Math.round(settings.logEvery));
+  const exportEvery = Math.round(settings.exportEvery);
+  const sourceSignature = sourceLoad.sources.map((source) => source.assetId + ':' + source.code).join('|');
+  const canResume = Boolean(
+    resumeSnapshot &&
+      resumeSnapshot.version === AUTO_CREATE_SNAPSHOT_VERSION &&
+      resumeSnapshot.targetWidth === target.width &&
+      resumeSnapshot.targetHeight === target.height &&
+      resumeSnapshot.sourceWidth === target.sourceWidth &&
+      resumeSnapshot.sourceHeight === target.sourceHeight &&
+      resumeSnapshot.sourceCount === sourceLoad.sources.length &&
+      resumeSnapshot.sourceSignature === sourceSignature &&
+      resumeSnapshot.totalSteps === totalSteps &&
+      resumeSnapshot.step >= 0 &&
+      resumeSnapshot.step <= totalSteps
+  );
+
+  const fallbackSeed = settings.seed > 0 ? settings.seed : Math.floor(Date.now() % 2147483647);
+  const seed = canResume && resumeSnapshot ? resumeSnapshot.seed : fallbackSeed;
   const rng = new SeededRandom(seed);
+  if (canResume && resumeSnapshot) {
+    rng.restore(resumeSnapshot.rngState, resumeSnapshot.rngSpareNormal);
+  }
+
   const collage = new ColorLearningCollage(
     sourceLoad.sources,
     target.straight,
@@ -1873,12 +2078,63 @@ export async function runAutoCreateTwrole({
     settings
   );
 
-  const totalSteps = Math.max(1, Math.round(settings.tiles));
-  const logEvery = Math.max(1, Math.round(settings.logEvery));
-  const exportEvery = Math.round(settings.exportEvery);
+  if (canResume && resumeSnapshot) {
+    collage.restoreFromSnapshot(resumeSnapshot);
+  }
 
-  for (let step = 1; step <= totalSteps; step += 1) {
-    throwIfAborted(signal);
+  const createResult = async (): Promise<AutoCreateTwroleResult> => {
+    const decorations = collage.exportDecorations();
+    return {
+      decorations,
+      exportJson: { deco: collage.exportLegacyDeco() },
+      previewDataUrl: await collage.previewDataUrl(),
+      targetWidth: target.width,
+      targetHeight: target.height,
+      sourceWidth: target.sourceWidth,
+      sourceHeight: target.sourceHeight,
+      sourceCount: sourceLoad.sources.length,
+      insertScale: roleExportScaleForTarget(target.width, target.height),
+      mse: collage.currentMse(),
+      accepted: collage.accepted,
+      rejected: collage.rejected,
+      pruned: collage.pruned,
+      replaced: collage.replaced,
+      warnings: sourceLoad.warnings
+    };
+  };
+
+  const publishCheckpoint = async (
+    stage: AutoCreateTwroleProgressStage,
+    progressStep: number,
+    progressTotal: number,
+    snapshotStep: number,
+    message?: string
+  ): Promise<AutoCreateTwroleCheckpoint> => {
+    const progress = createProgress(collage, stage, progressStep, progressTotal, message);
+    const result = await createResult();
+    const checkpoint: AutoCreateTwroleCheckpoint = {
+      progress,
+      result,
+      snapshot: collage.createSnapshot(snapshotStep, totalSteps, seed, target, sourceLoad.warnings)
+    };
+    onCheckpoint?.(checkpoint);
+    return checkpoint;
+  };
+
+  let startStep = 1;
+  if (canResume && resumeSnapshot) {
+    const restoredStep = Math.min(totalSteps, Math.max(0, Math.round(resumeSnapshot.step)));
+    startStep = Math.min(totalSteps + 1, restoredStep + 1);
+    onProgress?.(createProgress(collage, 'run', restoredStep, totalSteps, 'resumed'));
+  }
+
+  for (let step = startStep; step <= totalSteps; step += 1) {
+    if (signal?.aborted) {
+      const stoppedStep = Math.max(0, step - 1);
+      const checkpoint = await publishCheckpoint('run', stoppedStep, totalSteps, stoppedStep, 'stopped');
+      throw new AutoCreateTwroleStoppedError({ result: checkpoint.result, checkpoint });
+    }
+
     let didWork = false;
     const active = collage.activeCount();
 
@@ -1899,12 +2155,14 @@ export async function runAutoCreateTwrole({
       collage.recomputeErrors();
     }
 
-    if (exportEvery > 0 && step % exportEvery === 0) {
-      collage.saveMemory();
-    }
-
     if (step === 1 || step % logEvery === 0 || step === totalSteps) {
       onProgress?.(createProgress(collage, 'run', step, totalSteps, didWork ? 'accepted/refined' : 'searched'));
+      await nextFrame();
+    }
+
+    if (exportEvery > 0 && (step === 1 || step % exportEvery === 0 || step === totalSteps)) {
+      collage.saveMemory();
+      await publishCheckpoint('run', step, totalSteps, step, 'checkpoint');
       await nextFrame();
     }
   }
@@ -1912,11 +2170,17 @@ export async function runAutoCreateTwrole({
   const finalRounds = Math.max(0, Math.round(settings.finalPruneRounds));
   if (finalRounds > 0) {
     for (let i = 0; i < finalRounds; i += 1) {
-      throwIfAborted(signal);
+      if (signal?.aborted) {
+        const checkpoint = await publishCheckpoint('final', i + 1, finalRounds, totalSteps, 'stopped');
+        throw new AutoCreateTwroleStoppedError({ result: checkpoint.result, checkpoint });
+      }
       if (!collage.tryPruneOnce()) break;
       if (i % 10 === 0) {
         onProgress?.(createProgress(collage, 'final', i + 1, finalRounds, 'final prune'));
         await nextFrame();
+        if (exportEvery > 0) {
+          await publishCheckpoint('final', i + 1, finalRounds, totalSteps, 'final prune');
+        }
       }
     }
   }
@@ -1925,23 +2189,7 @@ export async function runAutoCreateTwrole({
   collage.saveMemory();
   onProgress?.(createProgress(collage, 'final', finalRounds, finalRounds || 1, 'done'));
 
-  const decorations = collage.exportDecorations();
-  return {
-    decorations,
-    exportJson: { deco: collage.exportLegacyDeco() },
-    previewDataUrl: await collage.previewDataUrl(),
-    targetWidth: target.width,
-    targetHeight: target.height,
-    sourceWidth: target.sourceWidth,
-    sourceHeight: target.sourceHeight,
-    sourceCount: sourceLoad.sources.length,
-    mse: collage.currentMse(),
-    accepted: collage.accepted,
-    rejected: collage.rejected,
-    pruned: collage.pruned,
-    replaced: collage.replaced,
-    warnings: sourceLoad.warnings
-  };
+  return createResult();
 }
 
 export function createAutoCreateTwroleExportBlob(result: Pick<AutoCreateTwroleResult, 'exportJson'>): Blob {

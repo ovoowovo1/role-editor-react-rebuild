@@ -1,17 +1,24 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { t } from '../../i18n';
-import type { DecorationLayer, PartOption } from '../../types/role';
+import type { DecorationLayer, PartOption, RoleDocument } from '../../types/role';
 import {
   createAutoCreateTwroleExportBlob,
   DEFAULT_AUTO_CREATE_TWROLE_SETTINGS,
+  isAutoCreateTwroleStoppedError,
+  type AutoCreateTwroleCheckpoint,
   type AutoCreateTwroleProgress,
   type AutoCreateTwroleResult,
   type AutoCreateTwroleSettings
 } from '../../lib/conversion/autoCreateTwrole';
 import { canRunAutoCreateTwroleWorker, runAutoCreateTwroleInWorker } from '../../lib/conversion/autoCreateTwroleWorkerClient';
+import { settingsForScope, type InsertDraftSettings } from '../../lib/editor/editorInsertSettings';
+import { insertDecorationBatchIntoRole } from '../../lib/editor/editorImportMerge';
+import { createTwroleBlob } from '../../lib/serialization/legacyTwroleExport';
 
 export interface AutoCreateTwrolePanelProps {
   decoOptions: PartOption[];
+  role: RoleDocument;
+  insertDraftSettings: InsertDraftSettings;
   onInsert(decorations: DecorationLayer[], groupName: string): number;
   onStatus(message: string): void;
 }
@@ -71,13 +78,15 @@ function sortTitles(left: string, right: string): number {
   return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
 }
 
-export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }: AutoCreateTwrolePanelProps) {
+export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSettings, onInsert, onStatus }: AutoCreateTwrolePanelProps) {
   const [settings, setSettings] = useState<AutoCreateTwroleSettings>(DEFAULT_AUTO_CREATE_TWROLE_SETTINGS);
   const [file, setFile] = useState<File | null>(null);
   const [targetPreviewUrl, setTargetPreviewUrl] = useState<string | null>(null);
   const [result, setResult] = useState<AutoCreateTwroleResult | null>(null);
   const [progress, setProgress] = useState<AutoCreateTwroleProgress | null>(null);
+  const [checkpoint, setCheckpoint] = useState<AutoCreateTwroleCheckpoint | null>(null);
   const [running, setRunning] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [inserted, setInserted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const workerAvailable = useMemo(() => canRunAutoCreateTwroleWorker(), []);
@@ -148,6 +157,8 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
     setTargetPreviewUrl(URL.createObjectURL(incoming));
     setFile(incoming);
     setResult(null);
+    setCheckpoint(null);
+    setStopping(false);
     setInserted(false);
     setError(null);
     setProgress(null);
@@ -180,7 +191,9 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
       };
     });
     setResult(null);
+    setCheckpoint(null);
     setInserted(false);
+    setProgress(null);
   };
 
   const patchSavePreview = (checked: boolean) => {
@@ -189,6 +202,8 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
 
   const resetGeneratedOutput = () => {
     setResult(null);
+    setCheckpoint(null);
+    setStopping(false);
     setInserted(false);
     setProgress(null);
   };
@@ -241,36 +256,58 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    const resumeSnapshot = checkpoint?.snapshot ?? null;
 
     setRunning(true);
+    setStopping(false);
     setError(null);
-    setResult(null);
+    if (!resumeSnapshot) setResult(null);
     setInserted(false);
-    setProgress({
-      stage: 'sources',
-      step: 0,
-      total: Math.max(1, filteredDecoOptions.length),
-      mse: 0,
-      active: 0,
-      accepted: 0,
-      rejected: 0,
-      pruned: 0,
-      replaced: 0
-    });
+    setProgress(
+      resumeSnapshot && checkpoint
+        ? checkpoint.progress
+        : {
+            stage: 'sources',
+            step: 0,
+            total: Math.max(1, filteredDecoOptions.length),
+            mse: 0,
+            active: 0,
+            accepted: 0,
+            rejected: 0,
+            pruned: 0,
+            replaced: 0
+          }
+    );
 
     try {
       const next = await runAutoCreateTwroleInWorker({
         targetFile: file,
         decoOptions: filteredDecoOptions,
         settings,
+        resumeSnapshot,
         signal: controller.signal,
-        onProgress: setProgress
+        onProgress: setProgress,
+        onCheckpoint: (nextCheckpoint) => {
+          setCheckpoint(nextCheckpoint);
+          setResult(nextCheckpoint.result);
+          setProgress(nextCheckpoint.progress);
+          setInserted(false);
+        }
       });
       setResult(next);
+      setCheckpoint(null);
       onStatus(t('status.autoCreateConverted', { count: next.decorations.length }));
     } catch (err) {
-      if ((err as DOMException)?.name === 'AbortError') {
+      if (isAutoCreateTwroleStoppedError(err)) {
+        setResult(err.result);
+        setCheckpoint(err.checkpoint);
+        setProgress(err.checkpoint.progress);
+        setInserted(false);
+        setError(null);
+        onStatus(tr('status.autoCreateStopped', '自動生成已停止，可以下載目前結果或按「繼續生成」。'));
+      } else if ((err as DOMException)?.name === 'AbortError') {
         setError(t('autoCreate.error.aborted'));
+        onStatus(tr('status.autoCreateStopped', '自動生成已停止，可以下載目前結果或按「繼續生成」。'));
       } else {
         const message = err instanceof Error ? err.message : String(err);
         setError(message);
@@ -278,12 +315,15 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
       }
     } finally {
       setRunning(false);
+      setStopping(false);
       abortRef.current = null;
     }
   };
 
   const stop = () => {
-    abortRef.current?.abort();
+    if (!abortRef.current || stopping) return;
+    setStopping(true);
+    abortRef.current.abort();
   };
 
   const insert = () => {
@@ -297,6 +337,15 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
   const downloadExportJson = () => {
     if (!result) return;
     downloadBlob(createAutoCreateTwroleExportBlob(result), 'export2.json');
+  };
+
+  const downloadTwrole = () => {
+    if (!result) return;
+    const scopedSettings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
+    const merged = insertDecorationBatchIntoRole(role, result.decorations, t('autoCreate.groupName.default'), scopedSettings);
+    if (!merged) return;
+    const baseName = file?.name.replace(/\.[^.]+$/, '') || 'auto-create';
+    downloadBlob(createTwroleBlob(merged.role), baseName + '.twrole');
   };
 
   const numberInput = (labelKey: string, key: GuiNumericSettingKey, min: number) => (
@@ -414,16 +463,25 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
 
         <div className="extra-actions auto-create-actions">
           <button type="button" className="primary-button save" disabled={!file || running || filteredDecoOptions.length === 0 || !workerAvailable} onClick={convert}>
-            {running ? t('autoCreate.converting') : t('autoCreate.convert')}
+            {running
+              ? stopping
+                ? tr('autoCreate.stopping', '停止中...')
+                : t('autoCreate.converting')
+              : checkpoint
+                ? tr('autoCreate.resume', '繼續生成')
+                : t('autoCreate.convert')}
           </button>
-          <button type="button" className="primary-button subtle" disabled={!running} onClick={stop}>
+          <button type="button" className="primary-button subtle" disabled={!running || stopping} onClick={stop}>
             {t('autoCreate.stop')}
           </button>
           <button type="button" className="primary-button" disabled={!result || inserted || running} onClick={insert}>
             {inserted ? t('autoCreate.inserted') : t('autoCreate.insert')}
           </button>
-          <button type="button" className="primary-button subtle" disabled={!result || running} onClick={downloadExportJson}>
+          <button type="button" className="primary-button subtle" disabled={!result} onClick={downloadExportJson}>
             {t('autoCreate.downloadJson')}
+          </button>
+          <button type="button" className="primary-button subtle" disabled={!result} onClick={downloadTwrole}>
+            {tr('autoCreate.downloadTwrole', '下載 TWRole')}
           </button>
         </div>
 

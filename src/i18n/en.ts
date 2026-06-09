@@ -27,6 +27,7 @@ export const en: Record<string, string> = {
   'status.autoCreateConverted': 'AutoCreate finished: {count} deco layers',
   'status.autoCreateInserted': 'Inserted {count} AutoCreate deco layers',
   'status.autoCreateFailed': 'AutoCreate failed: {message}',
+  'status.autoCreateStopped': 'AutoCreate stopped. You can download the current result or resume generation.',
 
   // Insert Settings dialog
   'insert.title': 'Insert Settings',
@@ -194,6 +195,9 @@ export const en: Record<string, string> = {
   'autoCreate.stop': 'Stop',
   'autoCreate.insert': 'Insert layers',
   'autoCreate.downloadJson': 'Download export.json',
+  'autoCreate.downloadTwrole': 'Download TWRole',
+  'autoCreate.resume': 'Resume',
+  'autoCreate.stopping': 'Stopping...',
   'autoCreate.groupName.default': 'AutoCreate',
   'autoCreate.section.settings': 'Settings',
   'autoCreate.iterations': 'Iterations / --tiles',

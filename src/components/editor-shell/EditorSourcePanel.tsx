@@ -36,6 +36,8 @@ export function EditorSourcePanel({
     return (
       <ExtraPanel
         decoOptions={editor.visibleOptionsByTab.deco}
+        role={editor.role}
+        insertDraftSettings={editor.insertDraftSettings}
         brushFillActive={shell.brushFillActive}
         brushFillBrushSize={shell.brushFillBrushSize}
         brushFillMask={shell.brushFillMask}

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { t } from '../../i18n';
-import type { DecorationLayer, PartOption } from '../../types/role';
+import type { DecorationLayer, PartOption, RoleDocument } from '../../types/role';
 import type { ImageToDecoConversionOptions } from '../../lib/conversion/imageToDeco';
+import type { InsertDraftSettings } from '../../lib/editor/editorInsertSettings';
 import {
   type BrushFillMask
 } from '../../lib/conversion/brushFillToDeco';
@@ -14,6 +15,8 @@ import { useExtraImageConversion } from './useExtraImageConversion';
 
 export interface ExtraPanelProps {
   decoOptions: PartOption[];
+  role: RoleDocument;
+  insertDraftSettings: InsertDraftSettings;
   brushFillActive: boolean;
   brushFillBrushSize: number;
   brushFillMask: BrushFillMask;
