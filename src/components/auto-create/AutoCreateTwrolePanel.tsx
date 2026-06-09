@@ -8,7 +8,7 @@ import {
   type AutoCreateTwroleResult,
   type AutoCreateTwroleSettings
 } from '../../lib/conversion/autoCreateTwrole';
-import { runAutoCreateTwroleInWorker } from '../../lib/conversion/autoCreateTwroleWorkerClient';
+import { canRunAutoCreateTwroleWorker, runAutoCreateTwroleInWorker } from '../../lib/conversion/autoCreateTwroleWorkerClient';
 
 export interface AutoCreateTwrolePanelProps {
   decoOptions: PartOption[];
@@ -46,6 +46,31 @@ function toSafeInteger(value: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+type TranslationValues = Record<string, string | number>;
+
+function interpolateFallback(template: string, values?: TranslationValues): string {
+  if (!values) return template;
+  return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? `{${key}}`));
+}
+
+function tr(key: string, fallback: string, values?: TranslationValues): string {
+  const translated = t(key, values);
+  return translated === key ? interpolateFallback(fallback, values) : translated;
+}
+
+interface SourceTitleItem {
+  title: string;
+  count: number;
+}
+
+function optionTitle(option: PartOption): string {
+  return option.label?.trim() || option.code || option.id;
+}
+
+function sortTitles(left: string, right: string): number {
+  return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
+}
+
 export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }: AutoCreateTwrolePanelProps) {
   const [settings, setSettings] = useState<AutoCreateTwroleSettings>(DEFAULT_AUTO_CREATE_TWROLE_SETTINGS);
   const [file, setFile] = useState<File | null>(null);
@@ -55,6 +80,9 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
   const [running, setRunning] = useState(false);
   const [inserted, setInserted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const workerAvailable = useMemo(() => canRunAutoCreateTwroleWorker(), []);
+  const [sourceTitleSearch, setSourceTitleSearch] = useState('');
+  const [excludedSourceTitles, setExcludedSourceTitles] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -64,6 +92,42 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
       if (targetPreviewUrl) URL.revokeObjectURL(targetPreviewUrl);
     };
   }, [targetPreviewUrl]);
+
+  const sourceTitleItems = useMemo<SourceTitleItem[]>(() => {
+    const counts = new Map<string, number>();
+    for (const option of decoOptions) {
+      const title = optionTitle(option);
+      counts.set(title, (counts.get(title) ?? 0) + 1);
+    }
+
+    return Array.from(counts.entries())
+      .map(([title, count]) => ({ title, count }))
+      .sort((left, right) => sortTitles(left.title, right.title));
+  }, [decoOptions]);
+
+  const availableTitleSet = useMemo(() => new Set(sourceTitleItems.map((item) => item.title)), [sourceTitleItems]);
+
+  useEffect(() => {
+    setExcludedSourceTitles((current) => {
+      const next = current.filter((title) => availableTitleSet.has(title));
+      return next.length === current.length ? current : next;
+    });
+  }, [availableTitleSet]);
+
+  const excludedTitleSet = useMemo(() => new Set(excludedSourceTitles), [excludedSourceTitles]);
+
+  const filteredDecoOptions = useMemo(() => {
+    if (excludedTitleSet.size === 0) return decoOptions;
+    return decoOptions.filter((option) => !excludedTitleSet.has(optionTitle(option)));
+  }, [decoOptions, excludedTitleSet]);
+
+  const visibleSourceTitleItems = useMemo(() => {
+    const query = sourceTitleSearch.trim().toLocaleLowerCase();
+    if (!query) return sourceTitleItems;
+    return sourceTitleItems.filter((item) => item.title.toLocaleLowerCase().includes(query));
+  }, [sourceTitleItems, sourceTitleSearch]);
+
+  const usedTitleCount = Math.max(0, sourceTitleItems.length - excludedTitleSet.size);
 
   const progressPercent = useMemo(() => {
     if (!progress || progress.total <= 0) return 0;
@@ -123,8 +187,57 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
     setSettings((current) => ({ ...current, exportEvery: checked ? Math.max(1, current.logEvery) : 0 }));
   };
 
+  const resetGeneratedOutput = () => {
+    setResult(null);
+    setInserted(false);
+    setProgress(null);
+  };
+
+  const toggleSourceTitle = (title: string, useTitle: boolean) => {
+    setExcludedSourceTitles((current) => {
+      const next = new Set(current);
+      if (useTitle) {
+        next.delete(title);
+      } else {
+        next.add(title);
+      }
+      return Array.from(next).sort(sortTitles);
+    });
+    resetGeneratedOutput();
+  };
+
+  const useAllSourceTitles = () => {
+    setExcludedSourceTitles([]);
+    resetGeneratedOutput();
+  };
+
+  const useVisibleSourceTitles = () => {
+    const visible = new Set(visibleSourceTitleItems.map((item) => item.title));
+    setExcludedSourceTitles((current) => current.filter((title) => !visible.has(title)));
+    resetGeneratedOutput();
+  };
+
+  const excludeVisibleSourceTitles = () => {
+    if (visibleSourceTitleItems.length === 0) return;
+    setExcludedSourceTitles((current) => {
+      const next = new Set(current);
+      for (const item of visibleSourceTitleItems) next.add(item.title);
+      return Array.from(next).sort(sortTitles);
+    });
+    resetGeneratedOutput();
+  };
+
   const convert = async () => {
-    if (!file || running) return;
+    if (!file || running || filteredDecoOptions.length === 0) return;
+    if (!workerAvailable) {
+      const message = tr(
+        'autoCreate.error.workerUnavailable',
+        '目前瀏覽器不支援 AutoCreate 背景運算。為了避免頁面無回應，已停用主執行緒 fallback；請使用桌面版 Chrome / Edge / Firefox。'
+      );
+      setError(message);
+      onStatus(t('status.autoCreateFailed', { message }));
+      return;
+    }
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -136,7 +249,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
     setProgress({
       stage: 'sources',
       step: 0,
-      total: Math.max(1, decoOptions.length),
+      total: Math.max(1, filteredDecoOptions.length),
       mse: 0,
       active: 0,
       accepted: 0,
@@ -148,7 +261,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
     try {
       const next = await runAutoCreateTwroleInWorker({
         targetFile: file,
-        decoOptions,
+        decoOptions: filteredDecoOptions,
         settings,
         signal: controller.signal,
         onProgress: setProgress
@@ -239,8 +352,68 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
           </label>
         </div>
 
+        {!workerAvailable ? (
+          <div className="extra-message warning auto-create-browser-note">
+            {tr(
+              'autoCreate.error.workerUnavailable',
+              '目前瀏覽器不支援 AutoCreate 背景運算。為了避免頁面無回應，已停用主執行緒 fallback；請使用桌面版 Chrome / Edge / Firefox。'
+            )}
+          </div>
+        ) : null}
+
+        <div className="extra-section auto-create-source-filter">
+          <div className="extra-section-title">{tr('autoCreate.section.sourceFilter', '素材 title 過濾')}</div>
+          <div className="auto-create-filter-summary">
+            <span>{tr('autoCreate.filter.sourceSummary', '使用素材：{enabled} / {total}', { enabled: filteredDecoOptions.length, total: decoOptions.length })}</span>
+            <span>{tr('autoCreate.filter.titleSummary', '使用 title：{enabled} / {total}', { enabled: usedTitleCount, total: sourceTitleItems.length })}</span>
+          </div>
+          <input
+            className="auto-create-filter-search"
+            type="search"
+            value={sourceTitleSearch}
+            disabled={running}
+            placeholder={tr('autoCreate.filter.searchPlaceholder', '搜尋 title / 裝飾名稱')}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setSourceTitleSearch(event.currentTarget.value)}
+          />
+          <div className="auto-create-filter-actions">
+            <button type="button" className="primary-button subtle" disabled={running || excludedSourceTitles.length === 0} onClick={useAllSourceTitles}>
+              {tr('autoCreate.filter.useAll', '使用全部')}
+            </button>
+            <button type="button" className="primary-button subtle" disabled={running || visibleSourceTitleItems.length === 0} onClick={useVisibleSourceTitles}>
+              {tr('autoCreate.filter.useVisible', '使用目前顯示')}
+            </button>
+            <button type="button" className="primary-button subtle" disabled={running || visibleSourceTitleItems.length === 0} onClick={excludeVisibleSourceTitles}>
+              {tr('autoCreate.filter.excludeVisible', '排除目前顯示')}
+            </button>
+          </div>
+          <div className="auto-create-title-list" role="list" aria-label={tr('autoCreate.filter.listLabel', 'AutoCreate 可使用的素材 title')}>
+            {visibleSourceTitleItems.length ? (
+              visibleSourceTitleItems.map((item) => {
+                const checked = !excludedTitleSet.has(item.title);
+                return (
+                  <label key={item.title} className={checked ? 'auto-create-title-row' : 'auto-create-title-row excluded'} title={item.title}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={running}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) => toggleSourceTitle(item.title, event.currentTarget.checked)}
+                    />
+                    <span className="auto-create-title-name">{item.title}</span>
+                    <span className="auto-create-title-count">{formatNumber(item.count)}</span>
+                  </label>
+                );
+              })
+            ) : (
+              <div className="auto-create-title-empty">{tr('autoCreate.filter.noMatch', '找不到符合的 title。')}</div>
+            )}
+          </div>
+          {filteredDecoOptions.length === 0 ? (
+            <div className="extra-message warning auto-create-filter-warning">{tr('autoCreate.filter.emptyWarning', '所有素材都被排除了，請至少保留一個 title。')}</div>
+          ) : null}
+        </div>
+
         <div className="extra-actions auto-create-actions">
-          <button type="button" className="primary-button save" disabled={!file || running || decoOptions.length === 0} onClick={convert}>
+          <button type="button" className="primary-button save" disabled={!file || running || filteredDecoOptions.length === 0 || !workerAvailable} onClick={convert}>
             {running ? t('autoCreate.converting') : t('autoCreate.convert')}
           </button>
           <button type="button" className="primary-button subtle" disabled={!running} onClick={stop}>
@@ -283,7 +456,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, onInsert, onStatus }
           </div>
           <div>
             <span>{t('autoCreate.stat.sources')}</span>
-            <strong>{formatNumber(result?.sourceCount ?? decoOptions.length)}</strong>
+            <strong>{formatNumber(result?.sourceCount ?? filteredDecoOptions.length)}</strong>
           </div>
           <div>
             <span>{t('autoCreate.stat.size')}</span>

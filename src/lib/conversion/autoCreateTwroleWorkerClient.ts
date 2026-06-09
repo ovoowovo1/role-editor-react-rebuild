@@ -1,8 +1,4 @@
-import { createDefaultRole } from '../../mock/options';
-import type { DecorationLayer } from '../../types/role';
-import { renderFullRoleToDataUrl } from '../stage/fullRoleRenderer';
 import {
-  runAutoCreateTwrole,
   type AutoCreateTwroleProgress,
   type AutoCreateTwroleResult,
   type RunAutoCreateTwroleOptions
@@ -34,6 +30,10 @@ type WorkerResponseMessage =
   | { type: 'done'; id: string; result: AutoCreateTwroleResult }
   | { type: 'error'; id: string; error: WorkerSerializedError };
 
+const MIN_PROGRESS_INTERVAL_MS = 100;
+const WORKER_UNAVAILABLE_MESSAGE =
+  'AutoCreate needs Web Worker + OffscreenCanvas + createImageBitmap. This build disables the old main-thread fallback to avoid freezing the page. Please use a desktop Chromium/Edge/Firefox browser.';
+
 let runCounter = 0;
 
 function makeRunId(): string {
@@ -45,7 +45,7 @@ function makeAbortError(): DOMException {
   return new DOMException('AutoCreateTwrole was aborted.', 'AbortError');
 }
 
-function workerCanRunAutoCreate(): boolean {
+export function canRunAutoCreateTwroleWorker(): boolean {
   return (
     typeof Worker !== 'undefined' &&
     typeof OffscreenCanvas !== 'undefined' &&
@@ -53,52 +53,8 @@ function workerCanRunAutoCreate(): boolean {
   );
 }
 
-function transparentPreviewDataUrl(width: number, height: number): string {
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(width));
-  canvas.height = Math.max(1, Math.round(height));
-  return canvas.toDataURL('image/png');
-}
-
-async function renderEditorPreviewDataUrl(
-  decorations: DecorationLayer[],
-  width: number,
-  height: number
-): Promise<string> {
-  const role = {
-    ...createDefaultRole('skydow', 'male'),
-    name: 'AutoCreate preview',
-    decorations,
-    // decorations are top-first in the React document. Put the hidden head layer
-    // behind them so this preview uses the same decoration renderer as the
-    // center stage without drawing an actor head.
-    headLayerIndex: decorations.length,
-    headLayer: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, visible: false, opacity: 0 },
-    groups: [],
-    updatedAt: new Date().toISOString()
-  };
-
-  const rendered = await renderFullRoleToDataUrl(role, {
-    width,
-    height,
-    background: 'transparent',
-    debug: { onlyDecorations: true, hideHeadLayer: true },
-    stageScale: 1
-  });
-  return rendered.dataUrl;
-}
-
-async function withEditorPreview(result: AutoCreateTwroleResult): Promise<AutoCreateTwroleResult> {
-  try {
-    const previewDataUrl = await renderEditorPreviewDataUrl(result.decorations, result.targetWidth, result.targetHeight);
-    return { ...result, previewDataUrl };
-  } catch (error) {
-    console.warn('[AutoCreateTwrole] Falling back to available preview because editor renderer preview failed.', error);
-    return {
-      ...result,
-      previewDataUrl: result.previewDataUrl || transparentPreviewDataUrl(result.targetWidth, result.targetHeight)
-    };
-  }
+function nowMs(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
 }
 
 function deserializeWorkerError(payload: WorkerSerializedError): Error {
@@ -113,10 +69,29 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
   const id = makeRunId();
   const worker = new Worker(new URL('../../workers/autoCreateTwrole.worker.ts', import.meta.url), { type: 'module' });
   let settled = false;
+  let lastProgressAt = 0;
+  let pendingProgress: AutoCreateTwroleProgress | null = null;
+  let progressTimer: ReturnType<typeof setTimeout> | null = null;
 
   return new Promise<AutoCreateTwroleResult>((resolve, reject) => {
+    const flushPendingProgress = () => {
+      if (progressTimer != null) {
+        clearTimeout(progressTimer);
+        progressTimer = null;
+      }
+      if (!pendingProgress) return;
+      const next = pendingProgress;
+      pendingProgress = null;
+      lastProgressAt = nowMs();
+      options.onProgress?.(next);
+    };
+
     const cleanup = () => {
       options.signal?.removeEventListener('abort', abort);
+      if (progressTimer != null) {
+        clearTimeout(progressTimer);
+        progressTimer = null;
+      }
       worker.terminate();
     };
 
@@ -136,6 +111,28 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
       finish(() => reject(makeAbortError()));
     };
 
+    const emitProgress = (progress: AutoCreateTwroleProgress) => {
+      const current = nowMs();
+      const important = progress.step <= 1 || progress.step >= progress.total || progress.stage === 'final';
+
+      if (important || current - lastProgressAt >= MIN_PROGRESS_INTERVAL_MS) {
+        if (progressTimer != null) {
+          clearTimeout(progressTimer);
+          progressTimer = null;
+        }
+        pendingProgress = null;
+        lastProgressAt = current;
+        options.onProgress?.(progress);
+        return;
+      }
+
+      pendingProgress = progress;
+      if (progressTimer == null) {
+        const delay = Math.max(0, MIN_PROGRESS_INTERVAL_MS - (current - lastProgressAt));
+        progressTimer = setTimeout(flushPendingProgress, delay);
+      }
+    };
+
     if (options.signal?.aborted) {
       abort();
       return;
@@ -148,11 +145,12 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
       if (!message || message.id !== id) return;
 
       if (message.type === 'progress') {
-        options.onProgress?.(message.progress);
+        emitProgress(message.progress);
         return;
       }
 
       if (message.type === 'done') {
+        flushPendingProgress();
         finish(() => resolve(message.result));
         return;
       }
@@ -178,15 +176,18 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
 }
 
 export async function runAutoCreateTwroleInWorker(options: RunAutoCreateTwroleOptions): Promise<AutoCreateTwroleResult> {
-  if (!workerCanRunAutoCreate()) {
-    return withEditorPreview(await runAutoCreateTwrole(options));
+  if (!canRunAutoCreateTwroleWorker()) {
+    throw new Error(WORKER_UNAVAILABLE_MESSAGE);
   }
 
   try {
-    return withEditorPreview(await runAutoCreateTwroleWorkerOnly(options));
+    return await runAutoCreateTwroleWorkerOnly(options);
   } catch (error) {
+    // Important: do not retry on the main thread. The previous fallback made the
+    // page appear frozen when the worker failed or when the browser did not fully
+    // support worker canvas APIs.
     if ((error as DOMException)?.name === 'AbortError' || options.signal?.aborted) throw error;
-    console.warn('[AutoCreateTwrole] Worker failed; retrying on the main thread.', error);
-    return withEditorPreview(await runAutoCreateTwrole(options));
+    console.warn('[AutoCreateTwrole] Worker failed. Main-thread fallback is disabled to keep the UI responsive.', error);
+    throw error;
   }
 }

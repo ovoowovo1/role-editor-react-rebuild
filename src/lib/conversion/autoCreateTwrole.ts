@@ -281,6 +281,53 @@ function createCanvas(width: number, height: number): AutoCreateCanvas {
   throw new Error('Canvas is not available in this browser context.');
 }
 
+type FileReaderSyncConstructor = new () => { readAsDataURL(blob: Blob): string };
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  if (typeof FileReader !== 'undefined') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Failed to read preview blob.'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  const ReaderSync = (globalThis as unknown as { FileReaderSync?: FileReaderSyncConstructor }).FileReaderSync;
+  if (ReaderSync) {
+    try {
+      return Promise.resolve(new ReaderSync().readAsDataURL(blob));
+    } catch {
+      // Fall through to the ArrayBuffer encoder below.
+    }
+  }
+
+  return blob.arrayBuffer().then((buffer) => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    }
+    const base64 = typeof btoa === 'function' ? btoa(binary) : '';
+    return base64 ? `data:${blob.type || 'application/octet-stream'};base64,${base64}` : '';
+  });
+}
+
+async function canvasToDataUrl(canvas: AutoCreateCanvas): Promise<string> {
+  if ('toDataURL' in canvas && typeof canvas.toDataURL === 'function') {
+    return canvas.toDataURL('image/png');
+  }
+
+  const offscreen = canvas as OffscreenCanvas & { convertToBlob?: (options?: { type?: string; quality?: number }) => Promise<Blob> };
+  if (typeof offscreen.convertToBlob === 'function') {
+    const blob = await offscreen.convertToBlob({ type: 'image/png' });
+    return blobToDataUrl(blob);
+  }
+
+  return '';
+}
+
 function get2d(canvas: AutoCreateCanvas): AutoCreateCanvas2D {
   const context = canvas.getContext('2d', { willReadFrequently: true } as CanvasRenderingContext2DSettings);
   if (!context) throw new Error('Canvas 2D context is not available.');
@@ -1293,11 +1340,11 @@ class ColorLearningCollage {
     this.memory.save();
   }
 
-  previewDataUrl(): string {
+  async previewDataUrl(): Promise<string> {
     const imageData = premultToStraightImageData(this.canvas, this.width, this.height);
     const canvas = createCanvas(this.width, this.height);
     get2d(canvas).putImageData(imageData, 0, 0);
-    return 'toDataURL' in canvas ? canvas.toDataURL('image/png') : '';
+    return canvasToDataUrl(canvas);
   }
 
   private evaluateCandidate(candidate: Candidate): Candidate | null {
@@ -1882,7 +1929,7 @@ export async function runAutoCreateTwrole({
   return {
     decorations,
     exportJson: { deco: collage.exportLegacyDeco() },
-    previewDataUrl: collage.previewDataUrl(),
+    previewDataUrl: await collage.previewDataUrl(),
     targetWidth: target.width,
     targetHeight: target.height,
     sourceWidth: target.sourceWidth,

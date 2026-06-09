@@ -13,6 +13,10 @@
   object-fit: contain;
 }
 
+.auto-create-browser-note {
+  margin-top: 10px;
+}
+
 .auto-create-controls label {
   grid-template-columns: 122px minmax(80px, 1fr) 78px;
 }
@@ -85,4 +89,107 @@
 .auto-create-field input[type='number'] {
   width: 100%;
   min-width: 0;
+}
+
+.auto-create-source-filter {
+  margin-top: 12px;
+}
+
+.auto-create-filter-summary {
+  display: grid;
+  gap: 4px;
+  color: #bcefff;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.auto-create-filter-search {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(232, 251, 255, 0.22);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(4, 22, 34, 0.66);
+  color: #f2fdff;
+  outline: none;
+}
+
+.auto-create-filter-search:focus {
+  border-color: rgba(111, 225, 255, 0.62);
+}
+
+.auto-create-filter-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.auto-create-filter-actions .primary-button {
+  min-height: 30px;
+  padding-inline: 8px;
+  font-size: 11px;
+}
+
+.auto-create-title-list {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+  margin-top: 10px;
+  padding: 6px;
+  border: 1px solid rgba(232, 251, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.auto-create-title-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  color: #e8fbff;
+  font-size: 12px;
+}
+
+.auto-create-title-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.auto-create-title-row.excluded {
+  color: rgba(232, 251, 255, 0.46);
+}
+
+.auto-create-title-row input {
+  width: 15px;
+  height: 15px;
+}
+
+.auto-create-title-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auto-create-title-count {
+  min-width: 26px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  text-align: center;
+  color: #bcefff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.auto-create-title-empty {
+  padding: 12px 8px;
+  color: rgba(232, 251, 255, 0.64);
+  font-size: 12px;
+  text-align: center;
+}
+
+.auto-create-filter-warning {
+  margin-top: 8px;
 }
