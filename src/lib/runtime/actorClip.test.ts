@@ -13,17 +13,24 @@ function childClipFrames(container: Container): number[] {
 }
 
 describe('ActorClip runtime cape rendering', () => {
-  it('only uses runtime option previews for non-empty 1x1 cape frames', () => {
+  it('only uses runtime option previews for selected problematic cape frames', () => {
     for (const category of ['head', 'hand', 'foot'] as const) {
       expect(partOptions[category].some((option) => shouldUseActorPartRuntimePreview(option))).toBe(false);
       expect(loadActorPartPreview(partOptions[category][0])).toBeNull();
     }
 
-    for (const frame of [13, 15, 16]) {
+    for (const frame of [2, 7, 13, 15, 16, 21, 24]) {
       const option = partOptions.cape.find((candidate) => candidate.frame === frame);
 
       expect(option).toBeDefined();
       expect(shouldUseActorPartRuntimePreview(option)).toBe(true);
+    }
+
+    for (const frame of [3, 4, 5, 6]) {
+      const option = partOptions.cape.find((candidate) => candidate.frame === frame);
+
+      expect(option).toBeDefined();
+      expect(shouldUseActorPartRuntimePreview(option)).toBe(false);
     }
 
     const emptyCape = partOptions.cape.find((candidate) => candidate.isEmpty);

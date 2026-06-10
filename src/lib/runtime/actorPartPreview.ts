@@ -6,6 +6,7 @@ import { createActorGafClip, type CreateGafClipOptions } from './gafMovieClip';
 const previewCache = new Map<string, Promise<string | null>>();
 const PREVIEW_PADDING = 3;
 const MAX_PREVIEW_CANVAS_SIZE = 180;
+const RUNTIME_PREVIEW_CAPE_FRAMES = new Set([2, 7, 13, 15, 16, 21, 24]);
 
 function canRenderActorPartPreview(option: PartOption): boolean {
   return shouldUseActorPartRuntimePreview(option);
@@ -26,7 +27,7 @@ function actorPreviewClipOptions(option: PartOption): CreateGafClipOptions {
 
 export function shouldUseActorPartRuntimePreview(option: PartOption | undefined): boolean {
   if (!option?.actorLibrary || option.frame == null || option.category !== 'cape' || option.isEmpty) return false;
-  return !!option.atlas && option.atlas.width <= 1 && option.atlas.height <= 1;
+  return RUNTIME_PREVIEW_CAPE_FRAMES.has(option.frame);
 }
 
 async function renderActorPartPreview(option: PartOption): Promise<string | null> {
