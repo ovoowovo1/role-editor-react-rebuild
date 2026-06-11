@@ -220,6 +220,11 @@ export const zhTW: Record<string, string> = {
   'autoCreate.error.aborted': '已停止自動生成。',
   'autoCreate.inserted': '已插入',
   'autoCreate.output': '輸出預覽',
+  'autoCreate.mseChart.title': 'MSE 進度',
+  'autoCreate.mseChart.empty': '開始最佳化後會顯示 MSE 曲線。',
+  'autoCreate.mseChart.latest': '目前',
+  'autoCreate.mseChart.min': '最低',
+  'autoCreate.mseChart.max': '最高',
 
   // LayerList
   'layers.title': '圖層',

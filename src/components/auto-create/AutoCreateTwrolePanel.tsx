@@ -1,4 +1,16 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import {
+  CategoryScale,
+  Chart as ChartJS,
+  Filler,
+  LinearScale,
+  LineElement,
+  PointElement,
+  Tooltip,
+  type ChartData,
+  type ChartOptions
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
 import { t } from '../../i18n';
 import type { DecorationLayer, PartOption, RoleDocument } from '../../types/role';
 import {
@@ -26,6 +38,17 @@ export interface AutoCreateTwrolePanelProps {
 type GuiNumericSettingKey = 'tiles' | 'tileBudget' | 'logEvery';
 
 const numberFormat = new Intl.NumberFormat();
+const MAX_MSE_HISTORY_POINTS = 240;
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip);
+
+interface MseHistoryPoint {
+  key: string;
+  label: string;
+  stage: AutoCreateTwroleProgress['stage'];
+  step: number;
+  mse: number;
+}
 
 function formatNumber(value: number, fractionDigits = 0): string {
   if (!Number.isFinite(value)) return '-';
@@ -78,12 +101,151 @@ function sortTitles(left: string, right: string): number {
   return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
 }
 
+function shouldRecordMseProgress(progress: AutoCreateTwroleProgress): boolean {
+  return (progress.stage === 'run' || progress.stage === 'final') && Number.isFinite(progress.mse);
+}
+
+function mseHistoryKey(progress: AutoCreateTwroleProgress): string {
+  return `${progress.stage}:${progress.step}:${progress.mse.toPrecision(12)}`;
+}
+
+function mseHistoryPoint(progress: AutoCreateTwroleProgress): MseHistoryPoint {
+  return {
+    key: mseHistoryKey(progress),
+    label: `${progress.stage} ${progress.step}`,
+    stage: progress.stage,
+    step: progress.step,
+    mse: progress.mse
+  };
+}
+
+interface AutoCreateMseChartProps {
+  points: MseHistoryPoint[];
+}
+
+function AutoCreateMseChart({ points }: AutoCreateMseChartProps) {
+  const stats = useMemo(() => {
+    if (points.length === 0) return null;
+    let min = points[0].mse;
+    let max = points[0].mse;
+    for (const point of points) {
+      min = Math.min(min, point.mse);
+      max = Math.max(max, point.mse);
+    }
+    return {
+      latest: points[points.length - 1].mse,
+      min,
+      max
+    };
+  }, [points]);
+
+  const data = useMemo<ChartData<'line'>>(
+    () => ({
+      labels: points.map((point) => point.label),
+      datasets: [
+        {
+          label: t('autoCreate.stat.mse'),
+          data: points.map((point) => point.mse),
+          borderColor: '#35d0ff',
+          backgroundColor: 'rgba(53, 208, 255, 0.18)',
+          borderWidth: 2,
+          fill: true,
+          pointBackgroundColor: '#9cffb2',
+          pointBorderColor: '#061622',
+          pointBorderWidth: 1,
+          pointHoverRadius: 4,
+          pointRadius: points.length === 1 ? 3 : 0,
+          tension: 0.25
+        }
+      ]
+    }),
+    [points]
+  );
+
+  const options = useMemo<ChartOptions<'line'>>(
+    () => ({
+      animation: false,
+      maintainAspectRatio: false,
+      normalized: true,
+      responsive: true,
+      interaction: {
+        intersect: false,
+        mode: 'index'
+      },
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          callbacks: {
+            label: (context) => `MSE ${formatNumber(Number(context.parsed.y), 6)}`
+          },
+          displayColors: false
+        }
+      },
+      scales: {
+        x: {
+          display: false,
+          grid: {
+            display: false
+          }
+        },
+        y: {
+          border: {
+            display: false
+          },
+          grid: {
+            color: 'rgba(188, 239, 255, 0.12)'
+          },
+          ticks: {
+            color: 'rgba(216, 248, 255, 0.72)',
+            maxTicksLimit: 4,
+            callback: (value) => formatNumber(Number(value), 5)
+          }
+        }
+      }
+    }),
+    []
+  );
+
+  return (
+    <div className="auto-create-mse-chart" aria-label={t('autoCreate.mseChart.title')}>
+      <div className="auto-create-mse-chart-header">
+        <strong>{t('autoCreate.mseChart.title')}</strong>
+        {stats ? (
+          <span>
+            {t('autoCreate.mseChart.latest')} {formatNumber(stats.latest, 6)}
+          </span>
+        ) : null}
+      </div>
+      {stats ? (
+        <>
+          <div className="auto-create-mse-chart-canvas">
+            <Line data={data} options={options} />
+          </div>
+          <div className="auto-create-mse-chart-stats">
+            <span>
+              {t('autoCreate.mseChart.min')} {formatNumber(stats.min, 6)}
+            </span>
+            <span>
+              {t('autoCreate.mseChart.max')} {formatNumber(stats.max, 6)}
+            </span>
+          </div>
+        </>
+      ) : (
+        <div className="auto-create-mse-chart-empty">{t('autoCreate.mseChart.empty')}</div>
+      )}
+    </div>
+  );
+}
+
 export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSettings, onInsert, onStatus }: AutoCreateTwrolePanelProps) {
   const [settings, setSettings] = useState<AutoCreateTwroleSettings>(DEFAULT_AUTO_CREATE_TWROLE_SETTINGS);
   const [file, setFile] = useState<File | null>(null);
   const [targetPreviewUrl, setTargetPreviewUrl] = useState<string | null>(null);
   const [result, setResult] = useState<AutoCreateTwroleResult | null>(null);
   const [progress, setProgress] = useState<AutoCreateTwroleProgress | null>(null);
+  const [mseHistory, setMseHistory] = useState<MseHistoryPoint[]>([]);
   const [checkpoint, setCheckpoint] = useState<AutoCreateTwroleCheckpoint | null>(null);
   const [running, setRunning] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -146,6 +308,17 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
   const stageLabel = progress ? t(`autoCreate.progress.${progress.stage}`) : t('autoCreate.progressIdle');
   const savePreviewDuringProcess = settings.exportEvery > 0;
 
+  const recordProgress = useCallback((nextProgress: AutoCreateTwroleProgress) => {
+    setProgress(nextProgress);
+    if (!shouldRecordMseProgress(nextProgress)) return;
+    setMseHistory((current) => {
+      const nextPoint = mseHistoryPoint(nextProgress);
+      if (current.some((point) => point.key === nextPoint.key)) return current;
+      const next = [...current, nextPoint];
+      return next.length > MAX_MSE_HISTORY_POINTS ? next.slice(-MAX_MSE_HISTORY_POINTS) : next;
+    });
+  }, []);
+
   const acceptFile = (incoming: File | null | undefined) => {
     if (!incoming) return;
     if (!isImageFile(incoming)) {
@@ -162,6 +335,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
     setInserted(false);
     setError(null);
     setProgress(null);
+    setMseHistory([]);
   };
 
   const handleInputFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -194,6 +368,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
     setCheckpoint(null);
     setInserted(false);
     setProgress(null);
+    setMseHistory([]);
   };
 
   const patchSavePreview = (checked: boolean) => {
@@ -206,6 +381,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
     setStopping(false);
     setInserted(false);
     setProgress(null);
+    setMseHistory([]);
   };
 
   const toggleSourceTitle = (title: string, useTitle: boolean) => {
@@ -262,6 +438,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
     setStopping(false);
     setError(null);
     if (!resumeSnapshot) setResult(null);
+    if (!resumeSnapshot) setMseHistory([]);
     setInserted(false);
     setProgress(
       resumeSnapshot && checkpoint
@@ -286,11 +463,11 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
         settings,
         resumeSnapshot,
         signal: controller.signal,
-        onProgress: setProgress,
+        onProgress: recordProgress,
         onCheckpoint: (nextCheckpoint) => {
           setCheckpoint(nextCheckpoint);
           setResult(nextCheckpoint.result);
-          setProgress(nextCheckpoint.progress);
+          recordProgress(nextCheckpoint.progress);
           setInserted(false);
         }
       });
@@ -301,7 +478,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
       if (isAutoCreateTwroleStoppedError(err)) {
         setResult(err.result);
         setCheckpoint(err.checkpoint);
-        setProgress(err.checkpoint.progress);
+        recordProgress(err.checkpoint.progress);
         setInserted(false);
         setError(null);
         onStatus(tr('status.autoCreateStopped', '自動生成已停止，可以下載目前結果或按「繼續生成」。'));
@@ -506,6 +683,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
               <span>{t('autoCreate.replaced')} {formatNumber(progress.replaced)}</span>
             </div>
           ) : null}
+          <AutoCreateMseChart points={mseHistory} />
         </div>
 
         <div className="extra-stats auto-create-stats">

@@ -220,6 +220,11 @@ export const en: Record<string, string> = {
   'autoCreate.error.aborted': 'AutoCreate was stopped.',
   'autoCreate.inserted': 'Inserted',
   'autoCreate.output': 'Output preview',
+  'autoCreate.mseChart.title': 'MSE progress',
+  'autoCreate.mseChart.empty': 'MSE curve appears after optimization starts.',
+  'autoCreate.mseChart.latest': 'Latest',
+  'autoCreate.mseChart.min': 'Min',
+  'autoCreate.mseChart.max': 'Max',
 
   // LayerList
   'layers.title': 'Layers',
