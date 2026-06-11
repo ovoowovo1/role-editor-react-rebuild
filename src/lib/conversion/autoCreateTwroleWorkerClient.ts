@@ -11,6 +11,8 @@ type WorkerStartMessage = {
   id: string;
   targetFile: File;
   decoOptions: RunAutoCreateTwroleOptions['decoOptions'];
+  sourceMode: RunAutoCreateTwroleOptions['sourceMode'];
+  colorBlockPresets: RunAutoCreateTwroleOptions['colorBlockPresets'];
   settings: RunAutoCreateTwroleOptions['settings'];
   resumeSnapshot?: RunAutoCreateTwroleOptions['resumeSnapshot'];
 };
@@ -187,6 +189,8 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
       id,
       targetFile: options.targetFile,
       decoOptions: options.decoOptions,
+      sourceMode: options.sourceMode ?? 'deco',
+      colorBlockPresets: options.colorBlockPresets ?? [],
       settings: options.settings,
       resumeSnapshot: options.resumeSnapshot ?? null
     };

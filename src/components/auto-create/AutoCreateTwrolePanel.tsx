@@ -12,6 +12,7 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { t } from '../../i18n';
+import type { ColorBlockPreset } from '../../mock/colorBlocks';
 import type { DecorationLayer, PartOption, RoleDocument } from '../../types/role';
 import {
   createAutoCreateTwroleExportBlob,
@@ -20,6 +21,7 @@ import {
   type AutoCreateTwroleCheckpoint,
   type AutoCreateTwroleProgress,
   type AutoCreateTwroleResult,
+  type AutoCreateTwroleSourceMode,
   type AutoCreateTwroleSettings
 } from '../../lib/conversion/autoCreateTwrole';
 import { canRunAutoCreateTwroleWorker, runAutoCreateTwroleInWorker } from '../../lib/conversion/autoCreateTwroleWorkerClient';
@@ -29,10 +31,17 @@ import { createTwroleBlobWithThumb } from '../../lib/serialization/legacyTwroleE
 
 export interface AutoCreateTwrolePanelProps {
   decoOptions: PartOption[];
+  colorBlockPresets?: AutoCreateColorBlockPresetState;
   role: RoleDocument;
   insertDraftSettings: InsertDraftSettings;
   onInsert(decorations: DecorationLayer[], groupName: string): number;
   onStatus(message: string): void;
+}
+
+export interface AutoCreateColorBlockPresetState {
+  presets: ColorBlockPreset[];
+  loading: boolean;
+  error: string | null;
 }
 
 type GuiNumericSettingKey = 'tiles' | 'tileBudget' | 'logEvery';
@@ -239,8 +248,9 @@ function AutoCreateMseChart({ points }: AutoCreateMseChartProps) {
   );
 }
 
-export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSettings, onInsert, onStatus }: AutoCreateTwrolePanelProps) {
+export function AutoCreateTwrolePanelContent({ decoOptions, colorBlockPresets, role, insertDraftSettings, onInsert, onStatus }: AutoCreateTwrolePanelProps) {
   const [settings, setSettings] = useState<AutoCreateTwroleSettings>(DEFAULT_AUTO_CREATE_TWROLE_SETTINGS);
+  const [sourceMode, setSourceMode] = useState<AutoCreateTwroleSourceMode>('deco');
   const [file, setFile] = useState<File | null>(null);
   const [targetPreviewUrl, setTargetPreviewUrl] = useState<string | null>(null);
   const [result, setResult] = useState<AutoCreateTwroleResult | null>(null);
@@ -291,6 +301,13 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
     if (excludedTitleSet.size === 0) return decoOptions;
     return decoOptions.filter((option) => !excludedTitleSet.has(optionTitle(option)));
   }, [decoOptions, excludedTitleSet]);
+  const colorBlockSourcePresets = colorBlockPresets?.presets ?? [];
+  const colorBlockLoading = colorBlockPresets?.loading ?? false;
+  const colorBlockError = colorBlockPresets?.error ?? null;
+  const activeSourceCount = sourceMode === 'colorBlock' ? colorBlockSourcePresets.length : filteredDecoOptions.length;
+  const sourceUnavailable = sourceMode === 'colorBlock'
+    ? colorBlockLoading || colorBlockSourcePresets.length === 0
+    : filteredDecoOptions.length === 0;
 
   const visibleSourceTitleItems = useMemo(() => {
     const query = sourceTitleSearch.trim().toLocaleLowerCase();
@@ -384,6 +401,12 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
     setMseHistory([]);
   };
 
+  const changeSourceMode = (nextMode: AutoCreateTwroleSourceMode) => {
+    if (running || nextMode === sourceMode) return;
+    setSourceMode(nextMode);
+    resetGeneratedOutput();
+  };
+
   const toggleSourceTitle = (title: string, useTitle: boolean) => {
     setExcludedSourceTitles((current) => {
       const next = new Set(current);
@@ -419,7 +442,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
   };
 
   const convert = async () => {
-    if (!file || running || filteredDecoOptions.length === 0) return;
+    if (!file || running || sourceUnavailable) return;
     if (!workerAvailable) {
       const message = tr(
         'autoCreate.error.workerUnavailable',
@@ -446,7 +469,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
         : {
             stage: 'sources',
             step: 0,
-            total: Math.max(1, filteredDecoOptions.length),
+            total: Math.max(1, activeSourceCount),
             mse: 0,
             active: 0,
             accepted: 0,
@@ -460,6 +483,8 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
       const next = await runAutoCreateTwroleInWorker({
         targetFile: file,
         decoOptions: filteredDecoOptions,
+        sourceMode,
+        colorBlockPresets: sourceMode === 'colorBlock' ? colorBlockSourcePresets : [],
         settings,
         resumeSnapshot,
         signal: controller.signal,
@@ -583,6 +608,48 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
           </label>
         </div>
 
+        <div className="extra-section auto-create-source-mode">
+          <div className="extra-section-title">{tr('autoCreate.section.sourceMode', '素材模式')}</div>
+          <div className="extra-segmented auto-create-source-mode-list" role="tablist" aria-label={tr('autoCreate.sourceMode.label', 'AutoCreate 素材模式')}>
+            <button
+              type="button"
+              role="tab"
+              className={sourceMode === 'deco' ? 'selected' : ''}
+              aria-selected={sourceMode === 'deco'}
+              disabled={running}
+              onClick={() => changeSourceMode('deco')}
+            >
+              {tr('autoCreate.sourceMode.deco', 'Deco assets')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={sourceMode === 'colorBlock' ? 'selected' : ''}
+              aria-selected={sourceMode === 'colorBlock'}
+              disabled={running}
+              onClick={() => changeSourceMode('colorBlock')}
+            >
+              {tr('autoCreate.sourceMode.colorBlock', '只使用色塊')}
+            </button>
+          </div>
+          <div className="auto-create-filter-summary">
+            <span>
+              {sourceMode === 'colorBlock'
+                ? tr('autoCreate.sourceMode.colorBlockSummary', '使用目前陣營色塊：{count}', { count: colorBlockSourcePresets.length })
+                : tr('autoCreate.sourceMode.decoSummary', '使用 deco 素材：{count}', { count: filteredDecoOptions.length })}
+            </span>
+          </div>
+          {sourceMode === 'colorBlock' && colorBlockLoading ? (
+            <div className="extra-message warning auto-create-filter-warning">{tr('autoCreate.colorBlock.loading', '正在載入目前陣營色塊...')}</div>
+          ) : null}
+          {sourceMode === 'colorBlock' && colorBlockError ? (
+            <div className="extra-message error auto-create-filter-warning">{colorBlockError}</div>
+          ) : null}
+          {sourceMode === 'colorBlock' && !colorBlockLoading && colorBlockSourcePresets.length === 0 ? (
+            <div className="extra-message warning auto-create-filter-warning">{tr('autoCreate.colorBlock.empty', '目前陣營沒有可用色塊。')}</div>
+          ) : null}
+        </div>
+
         {!workerAvailable ? (
           <div className="extra-message warning auto-create-browser-note">
             {tr(
@@ -592,6 +659,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
           </div>
         ) : null}
 
+        {sourceMode === 'deco' ? (
         <div className="extra-section auto-create-source-filter">
           <div className="extra-section-title">{tr('autoCreate.section.sourceFilter', '素材 title 過濾')}</div>
           <div className="auto-create-filter-summary">
@@ -642,9 +710,10 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
             <div className="extra-message warning auto-create-filter-warning">{tr('autoCreate.filter.emptyWarning', '所有素材都被排除了，請至少保留一個 title。')}</div>
           ) : null}
         </div>
+        ) : null}
 
         <div className="extra-actions auto-create-actions">
-          <button type="button" className="primary-button save" disabled={!file || running || filteredDecoOptions.length === 0 || !workerAvailable} onClick={convert}>
+          <button type="button" className="primary-button save" disabled={!file || running || sourceUnavailable || !workerAvailable} onClick={convert}>
             {running
               ? stopping
                 ? tr('autoCreate.stopping', '停止中...')
@@ -697,7 +766,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
           </div>
           <div>
             <span>{t('autoCreate.stat.sources')}</span>
-            <strong>{formatNumber(result?.sourceCount ?? filteredDecoOptions.length)}</strong>
+            <strong>{formatNumber(result?.sourceCount ?? activeSourceCount)}</strong>
           </div>
           <div>
             <span>{t('autoCreate.stat.size')}</span>
@@ -726,11 +795,12 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
 }
 
 export function AutoCreateTwrolePanel(props: AutoCreateTwrolePanelProps) {
+  const sourceCount = props.colorBlockPresets?.presets.length ?? props.decoOptions.length;
   return (
     <section className="choice-list extra-panel auto-create-panel" aria-label={t('autoCreate.title')}>
       <header className="choice-list-header extra-panel-header">
         <strong>{t('autoCreate.title')}</strong>
-        <span>{t('autoCreate.sourceCount', { count: props.decoOptions.length })}</span>
+        <span>{t('autoCreate.sourceCount', { count: sourceCount })}</span>
       </header>
 
       <div className="extra-scroll">

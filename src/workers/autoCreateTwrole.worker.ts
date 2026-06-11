@@ -6,6 +6,7 @@ import {
   type AutoCreateTwroleResult,
   type AutoCreateTwroleSettings
 } from '../lib/conversion/autoCreateTwrole';
+import type { ColorBlockPreset } from '../mock/colorBlocks';
 import type { PartOption } from '../types/role';
 
 type WorkerStartMessage = {
@@ -13,6 +14,8 @@ type WorkerStartMessage = {
   id: string;
   targetFile: File;
   decoOptions: PartOption[];
+  sourceMode?: 'deco' | 'colorBlock';
+  colorBlockPresets?: ColorBlockPreset[];
   settings?: Partial<AutoCreateTwroleSettings>;
   resumeSnapshot?: AutoCreateTwroleCheckpoint['snapshot'] | null;
 };
@@ -68,6 +71,8 @@ scope.addEventListener('message', (event) => {
   void runAutoCreateTwrole({
     targetFile: message.targetFile,
     decoOptions: message.decoOptions,
+    sourceMode: message.sourceMode ?? 'deco',
+    colorBlockPresets: message.colorBlockPresets ?? [],
     settings: message.settings,
     resumeSnapshot: message.resumeSnapshot ?? null,
     signal: controller.signal,

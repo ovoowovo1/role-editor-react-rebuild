@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { t } from '../../i18n';
 import type { DecorationLayer, PartOption, RoleDocument } from '../../types/role';
+import type { AutoCreateColorBlockPresetState } from '../auto-create/AutoCreateTwrolePanel';
 import type { ImageToDecoConversionOptions } from '../../lib/conversion/imageToDeco';
 import type { InsertDraftSettings } from '../../lib/editor/editorInsertSettings';
 import {
@@ -15,6 +16,7 @@ import { useExtraImageConversion } from './useExtraImageConversion';
 
 export interface ExtraPanelProps {
   decoOptions: PartOption[];
+  colorBlockPresets?: AutoCreateColorBlockPresetState;
   role: RoleDocument;
   insertDraftSettings: InsertDraftSettings;
   brushFillActive: boolean;

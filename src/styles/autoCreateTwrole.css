@@ -39,6 +39,21 @@
   height: 16px;
 }
 
+.auto-create-source-mode {
+  margin-top: 12px;
+}
+
+.auto-create-source-mode-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.auto-create-source-mode-list button {
+  min-width: 0;
+}
+
 .auto-create-group-name {
   grid-template-columns: 122px minmax(0, 1fr);
 }

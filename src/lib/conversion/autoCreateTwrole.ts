@@ -1,6 +1,8 @@
 import type { DecorationLayer, PartOption } from '../../types/role';
+import type { ColorBlockPreset, ColorBlockDecoTemplate } from '../../mock/colorBlocks';
 import { DEFAULT_POSITION_RANGE } from '../../constants/editor';
 import { createId, round } from '../math';
+import { findOptionByCode } from '../../mock/options';
 
 const ALPHA_MSE_WEIGHT = 1.0;
 const ALPHA_THRESH_DEFAULT = 10;
@@ -107,6 +109,7 @@ export const DEFAULT_AUTO_CREATE_TWROLE_SETTINGS: AutoCreateTwroleSettings = {
 };
 
 export type AutoCreateTwroleProgressStage = 'sources' | 'run' | 'final';
+export type AutoCreateTwroleSourceMode = 'deco' | 'colorBlock';
 
 export interface AutoCreateTwroleProgress {
   stage: AutoCreateTwroleProgressStage;
@@ -157,8 +160,8 @@ export interface AutoCreateTwroleSnapshotTile {
   centerX: number;
   centerY: number;
   bbox: [left: number, top: number, right: number, bottom: number];
-  decoration: DecorationLayer;
-  legacy: AutoCreateTwroleLegacyDecoEntry;
+  decorations: DecorationLayer[];
+  legacy: AutoCreateTwroleLegacyDecoEntry[];
   gainMse: number;
 }
 
@@ -214,6 +217,8 @@ export function isAutoCreateTwroleStoppedError(error: unknown): error is AutoCre
 export interface RunAutoCreateTwroleOptions {
   targetFile: File;
   decoOptions: PartOption[];
+  sourceMode?: AutoCreateTwroleSourceMode;
+  colorBlockPresets?: ColorBlockPreset[];
   settings?: Partial<AutoCreateTwroleSettings>;
   resumeSnapshot?: AutoCreateTwroleSnapshot | null;
   signal?: AbortSignal;
@@ -239,7 +244,7 @@ interface TargetImageData {
 
 interface SourceTile {
   idx: number;
-  option: PartOption;
+  kind: AutoCreateTwroleSourceMode;
   code: string;
   assetId: string;
   label: string;
@@ -255,6 +260,19 @@ interface SourceTile {
   stdRgb: Vec3;
   alphaRatio: number;
   alphaSum: number;
+  members: SourceTileMember[];
+  uniformOnly: boolean;
+}
+
+interface SourceTileMember {
+  code: string;
+  assetId: string;
+  label: string;
+  x: number;
+  y: number;
+  scaleX: number;
+  scaleY: number;
+  rotation: number;
 }
 
 interface TransformedImage {
@@ -284,7 +302,7 @@ interface Candidate {
   centerY: number;
   rgba: TransformedImage;
   bbox: BBox;
-  draft: DecoDraft;
+  drafts: DecoDraft[];
   sseBefore: number;
   sseAfter: number;
   globalGainMse: number;
@@ -300,8 +318,8 @@ interface TileRecord {
   bbox: BBox;
   centerX: number;
   centerY: number;
-  decoration: DecorationLayer;
-  legacy: AutoCreateTwroleLegacyDecoEntry;
+  decorations: DecorationLayer[];
+  legacy: AutoCreateTwroleLegacyDecoEntry[];
   gainMse: number;
 }
 
@@ -690,26 +708,13 @@ function localCenterOffsetForOption(option: PartOption, size: SourceVisualSize):
   };
 }
 
-async function optionToSourceTile(option: PartOption, idx: number, settings: AutoCreateTwroleSettings): Promise<SourceTile | null> {
-  const atlas = option.atlas;
-  const image = await loadImage(atlas?.texture ?? option.icon);
-  const size = visualSizeForOption(option, image);
-  const localCenter = localCenterOffsetForOption(option, size);
-  const maxFrameSide = Math.max(size.frameWidth, size.frameHeight);
-  const thumbScale = Math.min(1, Math.max(1, settings.maxTileSize) / Math.max(1, maxFrameSide));
-  const thumbW = Math.max(1, Math.round(size.frameWidth * thumbScale));
-  const thumbH = Math.max(1, Math.round(size.frameHeight * thumbScale));
-  const canvas = createCanvas(thumbW, thumbH);
-  const context = get2d(canvas);
-  context.clearRect(0, 0, thumbW, thumbH);
-
-  if (atlas) {
-    context.drawImage(image as CanvasImageSource, atlas.x, atlas.y, atlas.width, atlas.height, 0, 0, thumbW, thumbH);
-  } else {
-    context.drawImage(image as CanvasImageSource, 0, 0, thumbW, thumbH);
-  }
-
-  const data = context.getImageData(0, 0, thumbW, thumbH).data;
+function sourceStatsFromCanvas(
+  canvas: AutoCreateCanvas,
+  thumbW: number,
+  thumbH: number,
+  settings: AutoCreateTwroleSettings
+): Pick<SourceTile, 'meanRgb' | 'stdRgb' | 'alphaRatio' | 'alphaSum'> | null {
+  const data = get2d(canvas).getImageData(0, 0, thumbW, thumbH).data;
   let alphaSum = 0;
   let visibleCount = 0;
   let weightSum = 0;
@@ -748,15 +753,43 @@ async function optionToSourceTile(option: PartOption, idx: number, settings: Aut
     varB += db * db * weight;
   }
 
-  const stdRgb: Vec3 = [
-    Math.sqrt(Math.max(0, varR / weightSum)),
-    Math.sqrt(Math.max(0, varG / weightSum)),
-    Math.sqrt(Math.max(0, varB / weightSum))
-  ];
+  return {
+    meanRgb,
+    stdRgb: [
+      Math.sqrt(Math.max(0, varR / weightSum)),
+      Math.sqrt(Math.max(0, varG / weightSum)),
+      Math.sqrt(Math.max(0, varB / weightSum))
+    ],
+    alphaRatio: visibleCount / Math.max(1, thumbW * thumbH),
+    alphaSum
+  };
+}
+
+async function optionToSourceTile(option: PartOption, idx: number, settings: AutoCreateTwroleSettings): Promise<SourceTile | null> {
+  const atlas = option.atlas;
+  const image = await loadImage(atlas?.texture ?? option.icon);
+  const size = visualSizeForOption(option, image);
+  const localCenter = localCenterOffsetForOption(option, size);
+  const maxFrameSide = Math.max(size.frameWidth, size.frameHeight);
+  const thumbScale = Math.min(1, Math.max(1, settings.maxTileSize) / Math.max(1, maxFrameSide));
+  const thumbW = Math.max(1, Math.round(size.frameWidth * thumbScale));
+  const thumbH = Math.max(1, Math.round(size.frameHeight * thumbScale));
+  const canvas = createCanvas(thumbW, thumbH);
+  const context = get2d(canvas);
+  context.clearRect(0, 0, thumbW, thumbH);
+
+  if (atlas) {
+    context.drawImage(image as CanvasImageSource, atlas.x, atlas.y, atlas.width, atlas.height, 0, 0, thumbW, thumbH);
+  } else {
+    context.drawImage(image as CanvasImageSource, 0, 0, thumbW, thumbH);
+  }
+
+  const stats = sourceStatsFromCanvas(canvas, thumbW, thumbH, settings);
+  if (!stats) return null;
 
   return {
     idx,
-    option,
+    kind: 'deco',
     code: option.code,
     assetId: option.id,
     label: option.label,
@@ -768,15 +801,214 @@ async function optionToSourceTile(option: PartOption, idx: number, settings: Aut
     sFactor: Math.max(1.0e-9, thumbW / Math.max(1, size.width)),
     localCenterX: localCenter.x,
     localCenterY: localCenter.y,
-    meanRgb,
-    stdRgb,
-    alphaRatio: visibleCount / Math.max(1, thumbW * thumbH),
-    alphaSum
+    ...stats,
+    members: [{
+      code: option.code,
+      assetId: option.id,
+      label: option.label,
+      x: 0,
+      y: 0,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0
+    }],
+    uniformOnly: false
+  };
+}
+
+interface ColorBlockResolvedMember {
+  template: ColorBlockDecoTemplate;
+  option: PartOption;
+  image: AutoCreateImage;
+  size: SourceVisualSize;
+}
+
+interface ColorBlockSourceResult {
+  tile: SourceTile | null;
+  warnings: string[];
+}
+
+function optionLocalTopLeft(option: PartOption, size: SourceVisualSize): { x: number; y: number } {
+  const atlas = option.atlas;
+  if (!atlas) return { x: -size.width / 2, y: -size.height / 2 };
+  const pivotX = atlas.runtimePivotX ?? atlas.pivotX ?? size.frameWidth / 2;
+  const pivotY = atlas.runtimePivotY ?? atlas.pivotY ?? size.frameHeight / 2;
+  const displayScaleX = size.width / Math.max(1, size.frameWidth);
+  const displayScaleY = size.height / Math.max(1, size.frameHeight);
+  return { x: -pivotX * displayScaleX, y: -pivotY * displayScaleY };
+}
+
+function transformLocalPoint(
+  x: number,
+  y: number,
+  originX: number,
+  originY: number,
+  scaleX: number,
+  scaleY: number,
+  rotationRad: number
+): { x: number; y: number } {
+  const sx = x * scaleX;
+  const sy = y * scaleY;
+  const cos = Math.cos(rotationRad);
+  const sin = Math.sin(rotationRad);
+  return {
+    x: originX + sx * cos - sy * sin,
+    y: originY + sx * sin + sy * cos
+  };
+}
+
+function expandBounds(bounds: BBox | null, point: { x: number; y: number }): BBox {
+  if (!bounds) return [point.x, point.y, point.x, point.y];
+  return [
+    Math.min(bounds[0], point.x),
+    Math.min(bounds[1], point.y),
+    Math.max(bounds[2], point.x),
+    Math.max(bounds[3], point.y)
+  ];
+}
+
+function colorBlockVisualBounds(members: readonly ColorBlockResolvedMember[]): BBox | null {
+  let bounds: BBox | null = null;
+  for (const member of members) {
+    const item = member.template;
+    const topLeft = optionLocalTopLeft(member.option, member.size);
+    const corners = [
+      [topLeft.x, topLeft.y],
+      [topLeft.x + member.size.width, topLeft.y],
+      [topLeft.x, topLeft.y + member.size.height],
+      [topLeft.x + member.size.width, topLeft.y + member.size.height]
+    ] as const;
+    for (const [x, y] of corners) {
+      bounds = expandBounds(bounds, transformLocalPoint(x, y, item.x, item.y, item.sx, item.sy, item.r));
+    }
+  }
+  if (!bounds) return null;
+  if (bounds[2] - bounds[0] <= 1.0e-6 || bounds[3] - bounds[1] <= 1.0e-6) return null;
+  return bounds;
+}
+
+function drawColorBlockMember(
+  context: AutoCreateCanvas2D,
+  member: ColorBlockResolvedMember,
+  thumbScale: number,
+  bounds: BBox
+): void {
+  const item = member.template;
+  const topLeft = optionLocalTopLeft(member.option, member.size);
+  const atlas = member.option.atlas;
+
+  context.save();
+  context.setTransform(thumbScale, 0, 0, thumbScale, -bounds[0] * thumbScale, -bounds[1] * thumbScale);
+  context.translate(item.x, item.y);
+  context.rotate(item.r);
+  context.scale(item.sx, item.sy);
+  if (atlas) {
+    context.drawImage(
+      member.image as CanvasImageSource,
+      atlas.x,
+      atlas.y,
+      atlas.width,
+      atlas.height,
+      topLeft.x,
+      topLeft.y,
+      member.size.width,
+      member.size.height
+    );
+  } else {
+    context.drawImage(member.image as CanvasImageSource, topLeft.x, topLeft.y, member.size.width, member.size.height);
+  }
+  context.restore();
+}
+
+async function colorBlockPresetToSourceTile(
+  preset: ColorBlockPreset,
+  idx: number,
+  settings: AutoCreateTwroleSettings
+): Promise<ColorBlockSourceResult> {
+  const warnings: string[] = [];
+  const members: ColorBlockResolvedMember[] = [];
+
+  for (const item of preset.deco) {
+    const option = findOptionByCode('deco', item.c);
+    if (!option) {
+      warnings.push(`Skipped missing color block deco ${item.c} in ${preset.label}.`);
+      continue;
+    }
+    try {
+      const image = await loadImage(option.atlas?.texture ?? option.icon);
+      members.push({ template: item, option, image, size: visualSizeForOption(option, image) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`Skipped color block deco ${item.c} in ${preset.label}: ${message}`);
+    }
+  }
+
+  if (!members.length) {
+    warnings.push(`Skipped empty color block preset: ${preset.label}.`);
+    return { tile: null, warnings };
+  }
+
+  const bounds = colorBlockVisualBounds(members);
+  if (!bounds) {
+    warnings.push(`Skipped zero-size color block preset: ${preset.label}.`);
+    return { tile: null, warnings };
+  }
+
+  const origW = Math.max(1, bounds[2] - bounds[0]);
+  const origH = Math.max(1, bounds[3] - bounds[1]);
+  const thumbScale = Math.min(1, Math.max(1, settings.maxTileSize) / Math.max(1, origW, origH));
+  const thumbW = Math.max(1, Math.ceil(origW * thumbScale));
+  const thumbH = Math.max(1, Math.ceil(origH * thumbScale));
+  const canvas = createCanvas(thumbW, thumbH);
+  const context = get2d(canvas);
+  context.clearRect(0, 0, thumbW, thumbH);
+
+  for (const member of members) {
+    drawColorBlockMember(context, member, thumbScale, bounds);
+  }
+
+  const stats = sourceStatsFromCanvas(canvas, thumbW, thumbH, settings);
+  if (!stats) {
+    warnings.push(`Skipped transparent color block preset: ${preset.label}.`);
+    return { tile: null, warnings };
+  }
+
+  return {
+    tile: {
+      idx,
+      kind: 'colorBlock',
+      code: `colorBlock:${preset.id}`,
+      assetId: preset.id,
+      label: preset.label,
+      canvas,
+      origW,
+      origH,
+      thumbW,
+      thumbH,
+      sFactor: Math.max(1.0e-9, thumbScale),
+      localCenterX: (bounds[0] + bounds[2]) / 2,
+      localCenterY: (bounds[1] + bounds[3]) / 2,
+      ...stats,
+      members: members.map((member) => ({
+        code: member.template.c,
+        assetId: member.option.id,
+        label: member.option.label,
+        x: member.template.x,
+        y: member.template.y,
+        scaleX: member.template.sx,
+        scaleY: member.template.sy,
+        rotation: (member.template.r * 180) / Math.PI
+      })),
+      uniformOnly: true
+    },
+    warnings
   };
 }
 
 async function loadSourceTiles(
   options: PartOption[],
+  colorBlockPresets: ColorBlockPreset[],
+  sourceMode: AutoCreateTwroleSourceMode,
   settings: AutoCreateTwroleSettings,
   signal?: AbortSignal,
   onProgress?: (done: number, total: number) => void
@@ -784,25 +1016,42 @@ async function loadSourceTiles(
   const sources: SourceTile[] = [];
   const warnings: string[] = [];
   let idx = 0;
+  const total = sourceMode === 'colorBlock' ? colorBlockPresets.length : options.length;
 
-  for (let i = 0; i < options.length; i += 1) {
+  for (let i = 0; i < total; i += 1) {
     throwIfAborted(signal);
-    const option = options[i];
     try {
-      const tile = await optionToSourceTile(option, idx, settings);
-      if (tile) {
-        sources.push(tile);
-        idx += 1;
+      if (sourceMode === 'colorBlock') {
+        const preset = colorBlockPresets[i];
+        const result = await colorBlockPresetToSourceTile(preset, idx, settings);
+        warnings.push(...result.warnings);
+        if (result.tile) {
+          sources.push(result.tile);
+          idx += 1;
+        }
       } else {
-        warnings.push(`Skipped empty-alpha source: ${option.label || option.code}`);
+        const option = options[i];
+        const tile = await optionToSourceTile(option, idx, settings);
+        if (tile) {
+          sources.push(tile);
+          idx += 1;
+        } else {
+          warnings.push(`Skipped empty-alpha source: ${option.label || option.code}`);
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      warnings.push(`Skipped source ${option.label || option.code}: ${message}`);
+      if (sourceMode === 'colorBlock') {
+        const preset = colorBlockPresets[i];
+        warnings.push(`Skipped color block preset ${preset.label}: ${message}`);
+      } else {
+        const option = options[i];
+        warnings.push(`Skipped source ${option.label || option.code}: ${message}`);
+      }
     }
 
     if (i % 12 === 0) {
-      onProgress?.(i + 1, options.length);
+      onProgress?.(i + 1, total);
       await nextFrame();
     }
   }
@@ -1179,37 +1428,45 @@ function rolePositionForVisualCenter(
   };
 }
 
-function buildDecoDraft(source: SourceTile, centerX: number, centerY: number, sxInternal: number, syInternal: number, rDeg: number, width: number, height: number): DecoDraft {
+function buildDecoDrafts(source: SourceTile, centerX: number, centerY: number, sxInternal: number, syInternal: number, rDeg: number, width: number, height: number): DecoDraft[] {
   const roleScale = roleExportScaleForTarget(width, height);
   const rawScaleX = sxInternal * source.sFactor * roleScale;
   const rawScaleY = syInternal * source.sFactor * roleScale;
-  const scaleX = round(rawScaleX, 4);
-  const scaleY = round(rawScaleY, 4);
   const desired = targetCenterCoords(centerX, centerY, width, height);
   const desiredRoleX = desired.x * roleScale;
   const desiredRoleY = desired.y * roleScale;
   const { x, y } = rolePositionForVisualCenter(source, desiredRoleX, desiredRoleY, rawScaleX, rawScaleY, rDeg);
-  const roleX = round(x, 2);
-  const roleY = round(y, 2);
-  const rotation = round(rDeg, 3);
-  return {
-    code: source.code,
-    assetId: source.assetId,
-    name: source.label,
-    x: roleX,
-    y: roleY,
-    scaleX,
-    scaleY,
-    rotation,
-    legacy: {
-      c: source.code,
+  const rad = (rDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+
+  return source.members.map((member) => {
+    const memberX = member.x * rawScaleX;
+    const memberY = member.y * rawScaleY;
+    const roleX = round(x + memberX * cos - memberY * sin, 2);
+    const roleY = round(y + memberX * sin + memberY * cos, 2);
+    const scaleX = round(member.scaleX * rawScaleX, 4);
+    const scaleY = round(member.scaleY * rawScaleY, 4);
+    const rotation = round(member.rotation + rDeg, 3);
+    return {
+      code: member.code,
+      assetId: member.assetId,
+      name: member.label,
       x: roleX,
       y: roleY,
-      sx: scaleX,
-      sy: scaleY,
-      r: round((rDeg * Math.PI) / 180, 6)
-    }
-  };
+      scaleX,
+      scaleY,
+      rotation,
+      legacy: {
+        c: member.code,
+        x: roleX,
+        y: roleY,
+        sx: scaleX,
+        sy: scaleY,
+        r: round((rotation * Math.PI) / 180, 6)
+      }
+    };
+  });
 }
 
 function decorationFromDraft(draft: DecoDraft): DecorationLayer {
@@ -1317,9 +1574,9 @@ function proposeCandidate(
   finalScale = clamp(finalScale, minPx / maxOrig, 2);
 
   const flipProb = options.flipProb ?? settings.flipProb;
-  const sxSign = rng.next() < flipProb ? -1 : 1;
-  const sySign = rng.next() < flipProb ? -1 : 1;
-  const aspectJitter = Math.exp(rng.normal(0, 0.06));
+  const sxSign = source.uniformOnly ? 1 : rng.next() < flipProb ? -1 : 1;
+  const sySign = source.uniformOnly ? 1 : rng.next() < flipProb ? -1 : 1;
+  const aspectJitter = source.uniformOnly ? 1 : Math.exp(rng.normal(0, 0.06));
   const finalSx = sxSign * finalScale;
   const finalSy = sySign * finalScale * aspectJitter;
   const sxInternal = finalSx / source.sFactor;
@@ -1362,7 +1619,7 @@ function proposeCandidate(
     centerY,
     rgba,
     bbox: [left, top, right, bottom],
-    draft: buildDecoDraft(source, centerX, centerY, sxInternal, syInternal, rDeg, targetWidth, targetHeight),
+    drafts: buildDecoDrafts(source, centerX, centerY, sxInternal, syInternal, rDeg, targetWidth, targetHeight),
     sseBefore: 0,
     sseAfter: 0,
     globalGainMse: -1.0e30,
@@ -1391,7 +1648,8 @@ class ColorLearningCollage {
     private readonly width: number,
     private readonly height: number,
     private readonly rng: SeededRandom,
-    private readonly settings: AutoCreateTwroleSettings
+    private readonly settings: AutoCreateTwroleSettings,
+    private readonly sourceMode: AutoCreateTwroleSourceMode
   ) {
     this.canvas = new Float32Array(width * height * 4);
     const maskCount = Math.max(1, mask.reduce((sum, value) => sum + (value ? 1 : 0), 0));
@@ -1435,8 +1693,8 @@ class ColorLearningCollage {
         bbox,
         centerX: tile.centerX,
         centerY: tile.centerY,
-        decoration: { ...tile.decoration },
-        legacy: { ...tile.legacy },
+        decorations: tile.decorations.map((decoration) => ({ ...decoration })),
+        legacy: tile.legacy.map((legacy) => ({ ...legacy })),
         gainMse: tile.gainMse
       });
     }
@@ -1469,7 +1727,7 @@ class ColorLearningCollage {
       sourceWidth: target.sourceWidth,
       sourceHeight: target.sourceHeight,
       sourceCount: this.sources.length,
-      sourceSignature: this.sources.map((source) => source.assetId + ':' + source.code).join('|'),
+      sourceSignature: createAutoCreateTwroleSourceSignature(this.sourceMode, this.sources),
       step: Math.max(0, Math.round(step)),
       totalSteps: Math.max(1, Math.round(totalSteps)),
       seed,
@@ -1491,8 +1749,8 @@ class ColorLearningCollage {
           centerX: tile.centerX,
           centerY: tile.centerY,
           bbox: [...tile.bbox] as [number, number, number, number],
-          decoration: { ...tile.decoration },
-          legacy: { ...tile.legacy },
+          decorations: tile.decorations.map((decoration) => ({ ...decoration })),
+          legacy: tile.legacy.map((legacy) => ({ ...legacy })),
           gainMse: tile.gainMse
         })),
       warnings: [...warnings]
@@ -1509,11 +1767,11 @@ class ColorLearningCollage {
       .filter((tile) => tile.active)
       .slice()
       .reverse()
-      .map((tile) => tile.decoration);
+      .flatMap((tile) => tile.decorations.slice().reverse());
   }
 
   exportLegacyDeco(): AutoCreateTwroleLegacyDecoEntry[] {
-    return this.tiles.filter((tile) => tile.active).map((tile) => tile.legacy);
+    return this.tiles.filter((tile) => tile.active).flatMap((tile) => tile.legacy);
   }
 
   saveMemory(): void {
@@ -1714,8 +1972,8 @@ class ColorLearningCollage {
       bbox: candidate.bbox,
       centerX: candidate.centerX,
       centerY: candidate.centerY,
-      decoration: decorationFromDraft(candidate.draft),
-      legacy: candidate.draft.legacy,
+      decorations: candidate.drafts.map(decorationFromDraft),
+      legacy: candidate.drafts.map((draft) => draft.legacy),
       gainMse: candidate.globalGainMse
     };
   }
@@ -2008,9 +2266,18 @@ function createProgress(collage: ColorLearningCollage, stage: AutoCreateTwrolePr
   };
 }
 
+export function createAutoCreateTwroleSourceSignature(
+  sourceMode: AutoCreateTwroleSourceMode,
+  sources: readonly { assetId: string; code: string }[]
+): string {
+  return `${sourceMode}|${sources.map((source) => source.assetId + ':' + source.code).join('|')}`;
+}
+
 export async function runAutoCreateTwrole({
   targetFile,
   decoOptions,
+  sourceMode: requestedSourceMode = 'deco',
+  colorBlockPresets = [],
   settings: rawSettings,
   resumeSnapshot,
   signal,
@@ -2023,7 +2290,8 @@ export async function runAutoCreateTwrole({
   const target = await loadTargetImage(targetFile, settings);
   throwIfAborted(signal);
 
-  const sourceLoad = await loadSourceTiles(decoOptions, settings, signal, (done, total) => {
+  const sourceMode: AutoCreateTwroleSourceMode = requestedSourceMode === 'colorBlock' ? 'colorBlock' : 'deco';
+  const sourceLoad = await loadSourceTiles(decoOptions, colorBlockPresets, sourceMode, settings, signal, (done, total) => {
     onProgress?.({
       stage: 'sources',
       step: done,
@@ -2039,13 +2307,17 @@ export async function runAutoCreateTwrole({
   });
 
   if (!sourceLoad.sources.length) {
-    throw new Error('No usable deco sources were found. Check the current deco palette and atlas PNG assets.');
+    throw new Error(
+      sourceMode === 'colorBlock'
+        ? 'No usable color block sources were found. Check the current camp presets and atlas PNG assets.'
+        : 'No usable deco sources were found. Check the current deco palette and atlas PNG assets.'
+    );
   }
 
   const totalSteps = Math.max(1, Math.round(settings.tiles));
   const logEvery = Math.max(1, Math.round(settings.logEvery));
   const exportEvery = Math.round(settings.exportEvery);
-  const sourceSignature = sourceLoad.sources.map((source) => source.assetId + ':' + source.code).join('|');
+  const sourceSignature = createAutoCreateTwroleSourceSignature(sourceMode, sourceLoad.sources);
   const canResume = Boolean(
     resumeSnapshot &&
       resumeSnapshot.version === AUTO_CREATE_SNAPSHOT_VERSION &&
@@ -2075,7 +2347,8 @@ export async function runAutoCreateTwrole({
     target.width,
     target.height,
     rng,
-    settings
+    settings,
+    sourceMode
   );
 
   if (canResume && resumeSnapshot) {

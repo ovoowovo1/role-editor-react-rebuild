@@ -20,6 +20,7 @@ const toolTabs: ExtraPanelToolTab[] = ['standard', 'autoCreate'];
 
 export function ExtraPanel({
   decoOptions,
+  colorBlockPresets,
   role,
   insertDraftSettings,
   brushFillActive,
@@ -97,6 +98,7 @@ export function ExtraPanel({
           >
             <AutoCreateTwrolePanelContent
               decoOptions={decoOptions}
+              colorBlockPresets={colorBlockPresets}
               role={role}
               insertDraftSettings={insertDraftSettings}
               onInsert={onInsert}

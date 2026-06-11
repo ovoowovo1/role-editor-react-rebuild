@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AutoCreateTwroleCheckpoint, AutoCreateTwroleResult } from './autoCreateTwrole';
 import { isAutoCreateTwroleStoppedError } from './autoCreateTwrole';
 import { runAutoCreateTwroleInWorker } from './autoCreateTwroleWorkerClient';
+import type { ColorBlockPreset } from '../../mock/colorBlocks';
 
 const result: AutoCreateTwroleResult = {
   decorations: [
@@ -124,5 +125,60 @@ describe('autoCreateTwrole worker client', () => {
       return true;
     });
     expect(onCheckpoint).toHaveBeenCalledWith(checkpoint);
+  });
+
+  it('passes color block source mode and presets to the worker', async () => {
+    const posted: unknown[] = [];
+    const colorBlockPresets: ColorBlockPreset[] = [
+      {
+        id: 'preset-1',
+        camp: 'third',
+        name: 'Preset 1',
+        label: 'Preset 1',
+        color: '#000000',
+        deco: [{ c: 'deco_code', x: 0, y: 0, sx: 1, sy: 1, r: 0 }]
+      }
+    ];
+
+    class FakeWorker {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+
+      constructor(_url: URL, _options: WorkerOptions) {}
+
+      postMessage(message: { type: string; id: string }): void {
+        posted.push(message);
+        if (message.type !== 'start') return;
+        queueMicrotask(() => {
+          this.onmessage?.({
+            data: {
+              type: 'done',
+              id: message.id,
+              result
+            }
+          } as MessageEvent);
+        });
+      }
+
+      terminate(): void {}
+    }
+
+    vi.stubGlobal('Worker', FakeWorker);
+    vi.stubGlobal('OffscreenCanvas', class {});
+    vi.stubGlobal('createImageBitmap', vi.fn());
+
+    await expect(runAutoCreateTwroleInWorker({
+      targetFile: {} as File,
+      decoOptions: [],
+      sourceMode: 'colorBlock',
+      colorBlockPresets,
+      settings: { tiles: 10 }
+    })).resolves.toBe(result);
+
+    expect(posted[0]).toMatchObject({
+      type: 'start',
+      sourceMode: 'colorBlock',
+      colorBlockPresets
+    });
   });
 });

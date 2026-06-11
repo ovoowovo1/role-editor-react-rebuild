@@ -36,6 +36,7 @@ export function EditorSourcePanel({
     return (
       <ExtraPanel
         decoOptions={editor.visibleOptionsByTab.deco}
+        colorBlockPresets={colorBlockPresets}
         role={editor.role}
         insertDraftSettings={editor.insertDraftSettings}
         brushFillActive={shell.brushFillActive}
