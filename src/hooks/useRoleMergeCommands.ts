@@ -3,7 +3,9 @@ import type { MutableRefObject } from 'react';
 import type { DecorationLayer, RoleDocument } from '../types/role';
 import { settingsForScope, type InsertDraftSettings } from '../lib/editor/editorInsertSettings';
 import {
+  type DecorationBatchGroupDraft,
   insertDecorationBatchIntoRole,
+  insertGroupedDecorationBatchIntoRole,
   mergeImportedDecorationsIntoRole
 } from '../lib/editor/editorImportMerge';
 
@@ -67,8 +69,21 @@ export function useRoleMergeCommands({
     [commitRole, insertDraftSettings, restoreSelection, roleRef]
   );
 
+  const insertGroupedDecorationBatch = useCallback(
+    (decorations: DecorationLayer[], groups: DecorationBatchGroupDraft[], groupName: string) => {
+      const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
+      const result = insertGroupedDecorationBatchIntoRole(roleRef.current, decorations, groups, groupName, settings);
+      if (!result) return 0;
+      commitRole(result.role);
+      restoreSelection(result.copiedIds);
+      return result.copiedIds.length;
+    },
+    [commitRole, insertDraftSettings, restoreSelection, roleRef]
+  );
+
   return {
     mergeImportedRole,
-    insertDecorationBatch
+    insertDecorationBatch,
+    insertGroupedDecorationBatch
   };
 }

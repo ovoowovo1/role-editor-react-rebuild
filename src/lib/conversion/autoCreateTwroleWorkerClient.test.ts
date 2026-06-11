@@ -20,6 +20,7 @@ const result: AutoCreateTwroleResult = {
       opacity: 1
     }
   ],
+  groups: [],
   exportJson: { deco: [{ c: 'deco_code', x: 1, y: 2, sx: 1, sy: 1, r: 0 }] },
   previewDataUrl: 'data:image/png;base64,stub',
   targetWidth: 16,

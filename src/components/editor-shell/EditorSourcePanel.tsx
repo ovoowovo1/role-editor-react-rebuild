@@ -46,6 +46,7 @@ export function EditorSourcePanel({
         onBrushFillBrushSizeChange={shell.setBrushFillBrushSize}
         onBrushFillClear={shell.clearBrushFillMask}
         onInsert={editor.insertDecorationBatch}
+        onInsertGrouped={editor.insertGroupedDecorationBatch}
         onStatus={setStatus}
       />
     );

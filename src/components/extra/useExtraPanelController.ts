@@ -4,6 +4,7 @@ import type { DecorationLayer, PartOption, RoleDocument } from '../../types/role
 import type { AutoCreateColorBlockPresetState } from '../auto-create/AutoCreateTwrolePanel';
 import type { ImageToDecoConversionOptions } from '../../lib/conversion/imageToDeco';
 import type { InsertDraftSettings } from '../../lib/editor/editorInsertSettings';
+import type { DecorationBatchGroupDraft } from '../../lib/editor/editorImportMerge';
 import {
   type BrushFillMask
 } from '../../lib/conversion/brushFillToDeco';
@@ -26,6 +27,7 @@ export interface ExtraPanelProps {
   onBrushFillBrushSizeChange(size: number): void;
   onBrushFillClear(): void;
   onInsert(decorations: DecorationLayer[], groupName: string): number;
+  onInsertGrouped?(decorations: DecorationLayer[], groups: DecorationBatchGroupDraft[], groupName: string): number;
   onStatus(message: string): void;
 }
 

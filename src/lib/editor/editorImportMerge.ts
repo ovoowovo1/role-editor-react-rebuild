@@ -5,6 +5,11 @@ import { syncGroups } from './editorRoleUtils';
 import { descendantLayerIdsForGroup, membersForGroup } from './groupTree';
 import { nextGroupId } from './headLayerMutations';
 
+export interface DecorationBatchGroupDraft {
+  name?: string;
+  itemIds: string[];
+}
+
 export function nextGroupName(role: RoleDocument): string {
   return `Group ${(role.groups ?? []).length + 1}`;
 }
@@ -115,6 +120,56 @@ export function insertDecorationBatchIntoRole(
       collapsed: false
     });
   }
+
+  return {
+    role: syncGroups({
+      ...baseRole,
+      groups,
+      updatedAt: new Date().toISOString()
+    }),
+    copiedIds
+  };
+}
+
+export function insertGroupedDecorationBatchIntoRole(
+  role: RoleDocument,
+  decorations: DecorationLayer[],
+  groupDrafts: DecorationBatchGroupDraft[],
+  groupName: string,
+  settings: InsertDraftSettings
+): { role: RoleDocument; copiedIds: string[] } | null {
+  const idMap = new Map<string, string>();
+  const copied = decorations.map((item) => {
+    const next = copyDecoration(item);
+    idMap.set(item.id, next.id);
+    return next;
+  });
+  if (!copied.length) return null;
+
+  const baseRole = insertDecorations(role, copied, settings);
+  const copiedIds = copied.map((item) => item.id);
+  const groups: DecorationGroup[] = [...(baseRole.groups ?? [])];
+
+  groupDrafts.forEach((draft, index) => {
+    const seen = new Set<string>();
+    const itemIds = draft.itemIds
+      .map((id) => idMap.get(id))
+      .filter((id): id is string => Boolean(id))
+      .filter((id) => {
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+    if (itemIds.length < 2) return;
+    groups.push({
+      id: createId('group'),
+      name: draft.name?.trim() || `${groupName.trim() || nextGroupName(baseRole)} ${index + 1}`,
+      itemIds,
+      members: itemIds.map((id) => ({ type: 'layer', id })),
+      visible: true,
+      collapsed: false
+    });
+  });
 
   return {
     role: syncGroups({

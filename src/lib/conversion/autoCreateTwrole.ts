@@ -140,8 +140,16 @@ export interface AutoCreateTwroleLegacyDecoEntry {
   r: number;
 }
 
+export interface AutoCreateTwroleResultGroup {
+  name: string;
+  itemIds: string[];
+  sourceId: number;
+  sourceCode: string;
+}
+
 export interface AutoCreateTwroleResult {
   decorations: DecorationLayer[];
+  groups: AutoCreateTwroleResultGroup[];
   exportJson: { deco: AutoCreateTwroleLegacyDecoEntry[] };
   previewDataUrl: string;
   targetWidth: number;
@@ -328,6 +336,17 @@ interface TileRecord {
   decorations: DecorationLayer[];
   legacy: AutoCreateTwroleLegacyDecoEntry[];
   gainMse: number;
+}
+
+interface AutoCreateGroupExportTile {
+  active: boolean;
+  sourceId: number;
+  decorations: readonly Pick<DecorationLayer, 'id'>[];
+}
+
+interface AutoCreateGroupExportSource {
+  code: string;
+  label: string;
 }
 
 type BBox = [left: number, top: number, right: number, bottom: number];
@@ -1462,6 +1481,48 @@ export function autoCreateMaxSourceScaleForMode(sourceMode: AutoCreateTwroleSour
   return sourceMode === 'colorBlock' ? ORIGINAL_DECO_MAX_SCALE : DEFAULT_DECO_AUTO_CREATE_MAX_SCALE;
 }
 
+export function wouldExceedAutoCreateLayerBudget(
+  activeLayerCount: number,
+  incomingLayerCount: number,
+  tileBudget: number,
+  replacedLayerCount = 0
+): boolean {
+  const budget = Math.max(0, Math.round(tileBudget));
+  if (budget <= 0) return false;
+  const nextLayerCount = Math.max(0, Math.round(activeLayerCount)) -
+    Math.max(0, Math.round(replacedLayerCount)) +
+    Math.max(0, Math.round(incomingLayerCount));
+  return nextLayerCount > budget;
+}
+
+export function createAutoCreateTwroleResultGroups(
+  sourceMode: AutoCreateTwroleSourceMode,
+  tiles: readonly AutoCreateGroupExportTile[],
+  sources: readonly AutoCreateGroupExportSource[]
+): AutoCreateTwroleResultGroup[] {
+  if (sourceMode !== 'colorBlock') return [];
+  return tiles
+    .filter((tile) => tile.active)
+    .slice()
+    .reverse()
+    .map((tile, index): AutoCreateTwroleResultGroup | null => {
+      const itemIds = tile.decorations
+        .slice()
+        .reverse()
+        .map((decoration) => decoration.id);
+      if (itemIds.length < 2) return null;
+      const source = sources[tile.sourceId];
+      const sourceCode = source?.code ?? `colorBlock:${tile.sourceId}`;
+      return {
+        name: source?.label?.trim() || sourceCode || `Color Block ${index + 1}`,
+        itemIds,
+        sourceId: tile.sourceId,
+        sourceCode
+      };
+    })
+    .filter((group): group is AutoCreateTwroleResultGroup => group !== null);
+}
+
 function buildDecoDrafts(source: SourceTile, centerX: number, centerY: number, sxInternal: number, syInternal: number, rDeg: number, width: number, height: number): DecoDraft[] {
   const roleScale = roleExportScaleForTarget(width, height);
   const rawScaleX = sxInternal * source.sFactor * roleScale;
@@ -1699,8 +1760,12 @@ class ColorLearningCollage {
     return this.errors.totalSse / Math.max(1, this.globalDen);
   }
 
-  activeCount(): number {
+  activeTileCount(): number {
     return this.tiles.reduce((sum, tile) => sum + (tile.active ? 1 : 0), 0);
+  }
+
+  activeLayerCount(): number {
+    return this.tiles.reduce((sum, tile) => sum + (tile.active ? tile.decorations.length : 0), 0);
   }
 
   restoreFromSnapshot(snapshot: AutoCreateTwroleSnapshot): void {
@@ -1807,6 +1872,10 @@ class ColorLearningCollage {
 
   exportLegacyDeco(): AutoCreateTwroleLegacyDecoEntry[] {
     return this.tiles.filter((tile) => tile.active).flatMap((tile) => tile.legacy);
+  }
+
+  exportGroups(): AutoCreateTwroleResultGroup[] {
+    return createAutoCreateTwroleResultGroups(this.sourceMode, this.tiles, this.sources);
   }
 
   saveMemory(): void {
@@ -2023,15 +2092,33 @@ class ColorLearningCollage {
     this.memory.noteTrial(source.code, color, true, candidate.globalGainMse);
   }
 
+  private canAddCandidate(candidate: Candidate): boolean {
+    return !wouldExceedAutoCreateLayerBudget(this.activeLayerCount(), candidate.drafts.length, this.settings.tileBudget);
+  }
+
+  private canReplaceCandidate(old: TileRecord, candidate: Candidate): boolean {
+    return !wouldExceedAutoCreateLayerBudget(
+      this.activeLayerCount(),
+      candidate.drafts.length,
+      this.settings.tileBudget,
+      old.decorations.length
+    );
+  }
+
   tryAdd(step: number, totalSteps: number): boolean {
-    if (this.settings.tileBudget > 0 && this.activeCount() >= this.settings.tileBudget) return false;
+    if (this.settings.tileBudget > 0 && this.activeLayerCount() >= this.settings.tileBudget) return false;
     const progress = step / Math.max(1, totalSteps);
     const candidates = this.generateAddCandidates(progress);
     if (!candidates.length) {
       this.rejected += 1;
       return false;
     }
-    const best = candidates.reduce((current, candidate) => (candidate.score > current.score ? candidate : current), candidates[0]);
+    const affordableCandidates = candidates.filter((candidate) => this.canAddCandidate(candidate));
+    if (!affordableCandidates.length) {
+      this.rejected += 1;
+      return false;
+    }
+    const best = affordableCandidates.reduce((current, candidate) => (candidate.score > current.score ? candidate : current), affordableCandidates[0]);
     const targetColor = this.focusGradientColor(best.centerX, best.centerY).color;
     const source = this.sources[best.sourceId];
     if (best.score > 0) {
@@ -2242,6 +2329,7 @@ class ColorLearningCollage {
         centerJitterPx: Math.max(1, this.settings.errorCellSize * 0.1)
       });
       if (!candidate) continue;
+      if (!this.canReplaceCandidate(old, candidate)) continue;
       const union = bboxClip([
         Math.min(old.bbox[0], candidate.bbox[0]),
         Math.min(old.bbox[1], candidate.bbox[1]),
@@ -2292,7 +2380,7 @@ function createProgress(collage: ColorLearningCollage, stage: AutoCreateTwrolePr
     step,
     total,
     mse: collage.currentMse(),
-    active: collage.activeCount(),
+    active: collage.activeLayerCount(),
     accepted: collage.accepted,
     rejected: collage.rejected,
     pruned: collage.pruned,
@@ -2394,6 +2482,7 @@ export async function runAutoCreateTwrole({
     const decorations = collage.exportDecorations();
     return {
       decorations,
+      groups: collage.exportGroups(),
       exportJson: { deco: collage.exportLegacyDeco() },
       previewDataUrl: await collage.previewDataUrl(),
       targetWidth: target.width,
@@ -2444,17 +2533,17 @@ export async function runAutoCreateTwrole({
     }
 
     let didWork = false;
-    const active = collage.activeCount();
+    const active = collage.activeLayerCount();
 
     if (settings.tileBudget > 0 && active >= settings.tileBudget) {
       if (step % 2 === 0) didWork = collage.tryReplaceOnce(step, totalSteps);
       if (!didWork) didWork = collage.tryPruneOnce();
     } else {
       didWork = collage.tryAdd(step, totalSteps);
-      if (step % Math.max(1, Math.round(settings.removeEvery)) === 0 && collage.activeCount() > 0) {
+      if (step % Math.max(1, Math.round(settings.removeEvery)) === 0 && collage.activeTileCount() > 0) {
         collage.tryPrune(settings.pruneRounds);
       }
-      if (step % Math.max(1, Math.round(settings.replaceEvery)) === 0 && collage.activeCount() > 0) {
+      if (step % Math.max(1, Math.round(settings.replaceEvery)) === 0 && collage.activeTileCount() > 0) {
         collage.tryReplaceOnce(step, totalSteps);
       }
     }

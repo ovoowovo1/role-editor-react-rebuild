@@ -30,6 +30,7 @@ export function ExtraPanel({
   onBrushFillBrushSizeChange,
   onBrushFillClear,
   onInsert,
+  onInsertGrouped,
   onStatus
 }: ExtraPanelProps) {
   const [toolTab, setToolTab] = useState<ExtraPanelToolTab>('standard');
@@ -102,6 +103,7 @@ export function ExtraPanel({
               role={role}
               insertDraftSettings={insertDraftSettings}
               onInsert={onInsert}
+              onInsertGrouped={onInsertGrouped}
               onStatus={onStatus}
             />
           </div>

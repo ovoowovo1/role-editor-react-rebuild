@@ -106,6 +106,7 @@ export function useRoleEditor() {
     newDesign: commands.newDesign,
     importRole: commands.importRole,
     mergeImportedRole: commands.mergeImportedRole,
-    insertDecorationBatch: commands.insertDecorationBatch
+    insertDecorationBatch: commands.insertDecorationBatch,
+    insertGroupedDecorationBatch: commands.insertGroupedDecorationBatch
   };
 }

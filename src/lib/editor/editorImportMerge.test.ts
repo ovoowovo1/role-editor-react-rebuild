@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DecorationGroup, DecorationLayer, RoleDocument } from '../../types/role';
 import { DEFAULT_INSERT_SETTINGS } from './editorInsertSettings';
-import { insertDecorationBatchIntoRole, mergeImportedDecorationsIntoRole } from './editorImportMerge';
+import { insertDecorationBatchIntoRole, insertGroupedDecorationBatchIntoRole, mergeImportedDecorationsIntoRole } from './editorImportMerge';
 
 function layer(id: string): DecorationLayer {
   return {
@@ -77,5 +77,48 @@ describe('editor import merge helpers', () => {
       name: 'Batch',
       itemIds: result?.copiedIds
     });
+  });
+
+  it('inserts grouped decoration batches and remaps every group member id', () => {
+    const result = insertGroupedDecorationBatchIntoRole(
+      role(),
+      [layer('a'), layer('b'), layer('c'), layer('d'), layer('e')],
+      [
+        { name: 'Block 1', itemIds: ['a', 'b'] },
+        { name: 'Block 2', itemIds: ['c', 'd', 'e'] }
+      ],
+      'AutoCreate',
+      DEFAULT_INSERT_SETTINGS
+    );
+
+    expect(result?.copiedIds).toHaveLength(5);
+    expect(result?.role.groups).toHaveLength(2);
+    expect(result?.role.groups[0]).toMatchObject({
+      name: 'Block 1',
+      itemIds: result?.copiedIds.slice(0, 2),
+      members: result?.copiedIds.slice(0, 2).map((id) => ({ type: 'layer', id }))
+    });
+    expect(result?.role.groups[1]).toMatchObject({
+      name: 'Block 2',
+      itemIds: result?.copiedIds.slice(2, 5),
+      members: result?.copiedIds.slice(2, 5).map((id) => ({ type: 'layer', id }))
+    });
+    expect(result?.role.groups[0].itemIds).not.toContain('a');
+  });
+
+  it('skips grouped decoration drafts with fewer than two valid copied layers', () => {
+    const result = insertGroupedDecorationBatchIntoRole(
+      role(),
+      [layer('a'), layer('b')],
+      [
+        { name: 'Single', itemIds: ['a'] },
+        { name: 'Missing', itemIds: ['b', 'missing'] }
+      ],
+      'AutoCreate',
+      DEFAULT_INSERT_SETTINGS
+    );
+
+    expect(result?.copiedIds).toHaveLength(2);
+    expect(result?.role.groups).toEqual([]);
   });
 });

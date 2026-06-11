@@ -26,7 +26,7 @@ import {
 } from '../../lib/conversion/autoCreateTwrole';
 import { canRunAutoCreateTwroleWorker, runAutoCreateTwroleInWorker } from '../../lib/conversion/autoCreateTwroleWorkerClient';
 import { settingsForScope, type InsertDraftSettings } from '../../lib/editor/editorInsertSettings';
-import { insertDecorationBatchIntoRole } from '../../lib/editor/editorImportMerge';
+import { insertDecorationBatchIntoRole, insertGroupedDecorationBatchIntoRole, type DecorationBatchGroupDraft } from '../../lib/editor/editorImportMerge';
 import { createTwroleBlobWithThumb } from '../../lib/serialization/legacyTwroleExport';
 import { AssetPreview } from '../AssetPreview';
 import { colorBlockPresetItems } from './autoCreateColorBlockSources';
@@ -37,6 +37,7 @@ export interface AutoCreateTwrolePanelProps {
   role: RoleDocument;
   insertDraftSettings: InsertDraftSettings;
   onInsert(decorations: DecorationLayer[], groupName: string): number;
+  onInsertGrouped?(decorations: DecorationLayer[], groups: DecorationBatchGroupDraft[], groupName: string): number;
   onStatus(message: string): void;
 }
 
@@ -250,7 +251,7 @@ function AutoCreateMseChart({ points }: AutoCreateMseChartProps) {
   );
 }
 
-export function AutoCreateTwrolePanelContent({ decoOptions, colorBlockPresets, role, insertDraftSettings, onInsert, onStatus }: AutoCreateTwrolePanelProps) {
+export function AutoCreateTwrolePanelContent({ decoOptions, colorBlockPresets, role, insertDraftSettings, onInsert, onInsertGrouped, onStatus }: AutoCreateTwrolePanelProps) {
   const [settings, setSettings] = useState<AutoCreateTwroleSettings>(DEFAULT_AUTO_CREATE_TWROLE_SETTINGS);
   const [sourceMode, setSourceMode] = useState<AutoCreateTwroleSourceMode>('deco');
   const [file, setFile] = useState<File | null>(null);
@@ -586,7 +587,10 @@ export function AutoCreateTwrolePanelContent({ decoOptions, colorBlockPresets, r
 
   const insert = () => {
     if (!result || inserted) return;
-    const count = onInsert(result.decorations, t('autoCreate.groupName.default'));
+    const groupName = t('autoCreate.groupName.default');
+    const count = sourceMode === 'colorBlock' && result.groups.length > 0 && onInsertGrouped
+      ? onInsertGrouped(result.decorations, result.groups, groupName)
+      : onInsert(result.decorations, groupName);
     if (count <= 0) return;
     setInserted(true);
     onStatus(t('status.autoCreateInserted', { count }));
@@ -600,7 +604,10 @@ export function AutoCreateTwrolePanelContent({ decoOptions, colorBlockPresets, r
   const downloadTwrole = async () => {
     if (!result) return;
     const scopedSettings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
-    const merged = insertDecorationBatchIntoRole(role, result.decorations, t('autoCreate.groupName.default'), scopedSettings);
+    const groupName = t('autoCreate.groupName.default');
+    const merged = sourceMode === 'colorBlock' && result.groups.length > 0
+      ? insertGroupedDecorationBatchIntoRole(role, result.decorations, result.groups, groupName, scopedSettings)
+      : insertDecorationBatchIntoRole(role, result.decorations, groupName, scopedSettings);
     if (!merged) return;
     const baseName = file?.name.replace(/\.[^.]+$/, '') || 'auto-create';
     try {
