@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { t } from '../i18n';
-import { findOptionByCode } from '../mock/options';
 import type { ColorBlockPreset } from '../mock/colorBlocks';
 import { AssetPreview } from './AssetPreview';
+import { colorBlockPreviewOptions } from './auto-create/autoCreateColorBlockSources';
 
 interface ColorBlockGridProps {
   presets: ColorBlockPreset[];
@@ -16,11 +16,7 @@ export function ColorBlockGrid({ presets, loading = false, error, onPick }: Colo
     () =>
       new Map(
         presets.map((preset) => {
-          const options = preset.deco
-            .map((item) => findOptionByCode('deco', item.c))
-            .filter((item): item is NonNullable<typeof item> => Boolean(item));
-          const unique = options.filter((item, index) => options.findIndex((other) => other.code === item.code) === index);
-          return [preset.id, unique.slice(0, 4)] as const;
+          return [preset.id, colorBlockPreviewOptions(preset)] as const;
         })
       ),
     [presets]

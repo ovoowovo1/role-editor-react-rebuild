@@ -174,6 +174,10 @@
   margin-top: 12px;
 }
 
+.auto-create-color-block-filter {
+  margin-top: 12px;
+}
+
 .auto-create-filter-summary {
   display: grid;
   gap: 4px;
@@ -271,4 +275,70 @@
 
 .auto-create-filter-warning {
   margin-top: 8px;
+}
+
+.auto-create-color-block-list {
+  display: grid;
+  gap: 5px;
+  max-height: 260px;
+  overflow: auto;
+  margin-top: 10px;
+  padding: 6px;
+  border: 1px solid rgba(232, 251, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.auto-create-color-block-row {
+  display: grid;
+  grid-template-columns: 18px 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 6px;
+  border-radius: 6px;
+  color: #e8fbff;
+  font-size: 12px;
+}
+
+.auto-create-color-block-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.auto-create-color-block-row.excluded {
+  color: rgba(232, 251, 255, 0.46);
+}
+
+.auto-create-color-block-row input {
+  width: 15px;
+  height: 15px;
+}
+
+.auto-create-color-block-swatch {
+  width: 48px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.auto-create-color-block-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.auto-create-color-block-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auto-create-color-block-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 18px;
 }

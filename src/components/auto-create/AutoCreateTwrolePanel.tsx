@@ -28,6 +28,8 @@ import { canRunAutoCreateTwroleWorker, runAutoCreateTwroleInWorker } from '../..
 import { settingsForScope, type InsertDraftSettings } from '../../lib/editor/editorInsertSettings';
 import { insertDecorationBatchIntoRole } from '../../lib/editor/editorImportMerge';
 import { createTwroleBlobWithThumb } from '../../lib/serialization/legacyTwroleExport';
+import { AssetPreview } from '../AssetPreview';
+import { colorBlockPresetItems } from './autoCreateColorBlockSources';
 
 export interface AutoCreateTwrolePanelProps {
   decoOptions: PartOption[];
@@ -264,6 +266,8 @@ export function AutoCreateTwrolePanelContent({ decoOptions, colorBlockPresets, r
   const workerAvailable = useMemo(() => canRunAutoCreateTwroleWorker(), []);
   const [sourceTitleSearch, setSourceTitleSearch] = useState('');
   const [excludedSourceTitles, setExcludedSourceTitles] = useState<string[]>([]);
+  const [colorBlockPresetSearch, setColorBlockPresetSearch] = useState('');
+  const [excludedColorBlockPresetIds, setExcludedColorBlockPresetIds] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -304,9 +308,27 @@ export function AutoCreateTwrolePanelContent({ decoOptions, colorBlockPresets, r
   const colorBlockSourcePresets = colorBlockPresets?.presets ?? [];
   const colorBlockLoading = colorBlockPresets?.loading ?? false;
   const colorBlockError = colorBlockPresets?.error ?? null;
-  const activeSourceCount = sourceMode === 'colorBlock' ? colorBlockSourcePresets.length : filteredDecoOptions.length;
+  const availableColorBlockPresetIdSet = useMemo(() => new Set(colorBlockSourcePresets.map((preset) => preset.id)), [colorBlockSourcePresets]);
+
+  useEffect(() => {
+    setExcludedColorBlockPresetIds((current) => {
+      const next = current.filter((id) => availableColorBlockPresetIdSet.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [availableColorBlockPresetIdSet]);
+
+  const excludedColorBlockPresetIdSet = useMemo(() => new Set(excludedColorBlockPresetIds), [excludedColorBlockPresetIds]);
+  const filteredColorBlockPresets = useMemo(
+    () => colorBlockSourcePresets.filter((preset) => !excludedColorBlockPresetIdSet.has(preset.id)),
+    [colorBlockSourcePresets, excludedColorBlockPresetIdSet]
+  );
+  const visibleColorBlockPresetItems = useMemo(
+    () => colorBlockPresetItems(colorBlockSourcePresets, colorBlockPresetSearch, excludedColorBlockPresetIdSet),
+    [colorBlockPresetSearch, colorBlockSourcePresets, excludedColorBlockPresetIdSet]
+  );
+  const activeSourceCount = sourceMode === 'colorBlock' ? filteredColorBlockPresets.length : filteredDecoOptions.length;
   const sourceUnavailable = sourceMode === 'colorBlock'
-    ? colorBlockLoading || colorBlockSourcePresets.length === 0
+    ? colorBlockLoading || filteredColorBlockPresets.length === 0
     : filteredDecoOptions.length === 0;
 
   const visibleSourceTitleItems = useMemo(() => {
@@ -441,6 +463,40 @@ export function AutoCreateTwrolePanelContent({ decoOptions, colorBlockPresets, r
     resetGeneratedOutput();
   };
 
+  const toggleColorBlockPreset = (presetId: string, usePreset: boolean) => {
+    setExcludedColorBlockPresetIds((current) => {
+      const next = new Set(current);
+      if (usePreset) {
+        next.delete(presetId);
+      } else {
+        next.add(presetId);
+      }
+      return Array.from(next).sort(sortTitles);
+    });
+    resetGeneratedOutput();
+  };
+
+  const useAllColorBlockPresets = () => {
+    setExcludedColorBlockPresetIds([]);
+    resetGeneratedOutput();
+  };
+
+  const useVisibleColorBlockPresets = () => {
+    const visible = new Set(visibleColorBlockPresetItems.map((item) => item.preset.id));
+    setExcludedColorBlockPresetIds((current) => current.filter((id) => !visible.has(id)));
+    resetGeneratedOutput();
+  };
+
+  const excludeVisibleColorBlockPresets = () => {
+    if (visibleColorBlockPresetItems.length === 0) return;
+    setExcludedColorBlockPresetIds((current) => {
+      const next = new Set(current);
+      for (const item of visibleColorBlockPresetItems) next.add(item.preset.id);
+      return Array.from(next).sort(sortTitles);
+    });
+    resetGeneratedOutput();
+  };
+
   const convert = async () => {
     if (!file || running || sourceUnavailable) return;
     if (!workerAvailable) {
@@ -484,7 +540,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, colorBlockPresets, r
         targetFile: file,
         decoOptions: filteredDecoOptions,
         sourceMode,
-        colorBlockPresets: sourceMode === 'colorBlock' ? colorBlockSourcePresets : [],
+        colorBlockPresets: sourceMode === 'colorBlock' ? filteredColorBlockPresets : [],
         settings,
         resumeSnapshot,
         signal: controller.signal,
@@ -635,7 +691,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, colorBlockPresets, r
           <div className="auto-create-filter-summary">
             <span>
               {sourceMode === 'colorBlock'
-                ? tr('autoCreate.sourceMode.colorBlockSummary', '使用目前陣營色塊：{count}', { count: colorBlockSourcePresets.length })
+                ? tr('autoCreate.sourceMode.colorBlockSummary', '使用目前陣營色塊：{count}', { count: filteredColorBlockPresets.length })
                 : tr('autoCreate.sourceMode.decoSummary', '使用 deco 素材：{count}', { count: filteredDecoOptions.length })}
             </span>
           </div>
@@ -708,6 +764,75 @@ export function AutoCreateTwrolePanelContent({ decoOptions, colorBlockPresets, r
           </div>
           {filteredDecoOptions.length === 0 ? (
             <div className="extra-message warning auto-create-filter-warning">{tr('autoCreate.filter.emptyWarning', '所有素材都被排除了，請至少保留一個 title。')}</div>
+          ) : null}
+        </div>
+        ) : null}
+
+        {sourceMode === 'colorBlock' ? (
+        <div className="extra-section auto-create-color-block-filter">
+          <div className="extra-section-title">{tr('autoCreate.section.colorBlockFilter', '色塊過濾')}</div>
+          <div className="auto-create-filter-summary">
+            <span>{tr('autoCreate.colorBlockFilter.sourceSummary', '使用色塊：{enabled} / {total}', { enabled: filteredColorBlockPresets.length, total: colorBlockSourcePresets.length })}</span>
+            <span>{tr('autoCreate.colorBlockFilter.visibleSummary', '目前顯示：{count}', { count: visibleColorBlockPresetItems.length })}</span>
+          </div>
+          <input
+            className="auto-create-filter-search"
+            type="search"
+            value={colorBlockPresetSearch}
+            disabled={running}
+            placeholder={tr('autoCreate.colorBlockFilter.searchPlaceholder', '搜尋色塊名稱 / id / deco code')}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setColorBlockPresetSearch(event.currentTarget.value)}
+          />
+          <div className="auto-create-filter-actions">
+            <button type="button" className="primary-button subtle" disabled={running || excludedColorBlockPresetIds.length === 0} onClick={useAllColorBlockPresets}>
+              {tr('autoCreate.filter.useAll', '使用全部')}
+            </button>
+            <button type="button" className="primary-button subtle" disabled={running || visibleColorBlockPresetItems.length === 0} onClick={useVisibleColorBlockPresets}>
+              {tr('autoCreate.filter.useVisible', '使用目前顯示')}
+            </button>
+            <button type="button" className="primary-button subtle" disabled={running || visibleColorBlockPresetItems.length === 0} onClick={excludeVisibleColorBlockPresets}>
+              {tr('autoCreate.filter.excludeVisible', '排除目前顯示')}
+            </button>
+          </div>
+          <div className="auto-create-color-block-list" role="list" aria-label={tr('autoCreate.colorBlockFilter.listLabel', 'AutoCreate 可使用的色塊')}>
+            {visibleColorBlockPresetItems.length ? (
+              visibleColorBlockPresetItems.map((item) => {
+                const { preset } = item;
+                return (
+                  <label
+                    key={preset.id}
+                    className={item.enabled ? 'auto-create-color-block-row' : 'auto-create-color-block-row excluded'}
+                    title={`${preset.label} (${t('colorBlock.decoCount', { count: preset.deco.length })})`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={item.enabled}
+                      disabled={running}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) => toggleColorBlockPreset(preset.id, event.currentTarget.checked)}
+                    />
+                    <span
+                      className="auto-create-color-block-swatch"
+                      style={{ background: preset.color }}
+                      aria-hidden
+                    />
+                    <span className="auto-create-color-block-body">
+                      <span className="auto-create-color-block-name">{preset.label}</span>
+                      <span className="auto-create-color-block-preview-row">
+                        {item.previewOptions.map((option) => (
+                          <AssetPreview key={option.id} option={option} size={18} />
+                        ))}
+                      </span>
+                    </span>
+                    <span className="auto-create-title-count">{preset.deco.length}</span>
+                  </label>
+                );
+              })
+            ) : (
+              <div className="auto-create-title-empty">{tr('autoCreate.colorBlockFilter.noMatch', '找不到符合的色塊。')}</div>
+            )}
+          </div>
+          {colorBlockSourcePresets.length > 0 && filteredColorBlockPresets.length === 0 ? (
+            <div className="extra-message warning auto-create-filter-warning">{tr('autoCreate.colorBlockFilter.emptyWarning', '所有色塊都被排除了，請至少保留一個色塊。')}</div>
           ) : null}
         </div>
         ) : null}
