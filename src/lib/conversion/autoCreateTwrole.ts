@@ -1,5 +1,6 @@
 import type { DecorationLayer, PartOption } from '../../types/role';
 import type { ColorBlockPreset, ColorBlockDecoTemplate } from '../../mock/colorBlocks';
+import { applyGroupParentToItem, type DecoGroupSnapshot } from '../editor/decoGroupTransform';
 import {
   DEFAULT_POSITION_RANGE,
   ORIGINAL_DECO_MAX_RATIO,
@@ -276,10 +277,11 @@ interface SourceTile {
   alphaRatio: number;
   alphaSum: number;
   members: SourceTileMember[];
-  uniformOnly: boolean;
+  allowFlip: boolean;
+  ratioSearch: boolean;
 }
 
-interface SourceTileMember {
+export interface SourceTileMember {
   code: string;
   assetId: string;
   label: string;
@@ -296,7 +298,7 @@ interface TransformedImage {
   data: Float32Array; // straight RGBA, 0..255
 }
 
-interface DecoDraft {
+export interface DecoDraft {
   code: string;
   assetId: string;
   name: string;
@@ -336,6 +338,13 @@ interface TileRecord {
   decorations: DecorationLayer[];
   legacy: AutoCreateTwroleLegacyDecoEntry[];
   gainMse: number;
+}
+
+export interface AutoCreateColorBlockTransformSource {
+  kind: AutoCreateTwroleSourceMode;
+  members: SourceTileMember[];
+  localCenterX: number;
+  localCenterY: number;
 }
 
 interface AutoCreateGroupExportTile {
@@ -838,7 +847,8 @@ async function optionToSourceTile(option: PartOption, idx: number, settings: Aut
       scaleY: 1,
       rotation: 0
     }],
-    uniformOnly: false
+    allowFlip: true,
+    ratioSearch: true
   };
 }
 
@@ -1025,7 +1035,8 @@ async function colorBlockPresetToSourceTile(
         scaleY: member.template.sy,
         rotation: (member.template.r * 180) / Math.PI
       })),
-      uniformOnly: true
+      allowFlip: false,
+      ratioSearch: true
     },
     warnings
   };
@@ -1523,6 +1534,84 @@ export function createAutoCreateTwroleResultGroups(
     .filter((group): group is AutoCreateTwroleResultGroup => group !== null);
 }
 
+function draftFromDerivedTransform(
+  sourceMode: AutoCreateTwroleSourceMode,
+  member: SourceTileMember,
+  x: number,
+  y: number,
+  scaleX: number,
+  scaleY: number,
+  rotation: number
+): DecoDraft {
+  const scales = clampAutoCreateOutputScales(sourceMode, scaleX, scaleY);
+  const roleX = round(x, 2);
+  const roleY = round(y, 2);
+  const nextScaleX = round(scales.scaleX, 4);
+  const nextScaleY = round(scales.scaleY, 4);
+  const nextRotation = round(rotation, 3);
+  return {
+    code: member.code,
+    assetId: member.assetId,
+    name: member.label,
+    x: roleX,
+    y: roleY,
+    scaleX: nextScaleX,
+    scaleY: nextScaleY,
+    rotation: nextRotation,
+    legacy: {
+      c: member.code,
+      x: roleX,
+      y: roleY,
+      sx: nextScaleX,
+      sy: nextScaleY,
+      r: round((nextRotation * Math.PI) / 180, 6)
+    }
+  };
+}
+
+export function buildColorBlockDecoDraftsForTransform(
+  source: AutoCreateColorBlockTransformSource,
+  desiredRoleX: number,
+  desiredRoleY: number,
+  rawScaleX: number,
+  rawScaleY: number,
+  rDeg: number
+): DecoDraft[] {
+  const items: DecoGroupSnapshot['items'] = {};
+  source.members.forEach((member, index) => {
+    items[String(index)] = {
+      relX: member.x - source.localCenterX,
+      relY: member.y - source.localCenterY,
+      scaleX: member.scaleX,
+      scaleY: member.scaleY,
+      rotation: member.rotation
+    };
+  });
+
+  const snapshot: DecoGroupSnapshot = {
+    key: source.members.map((_, index) => String(index)).join('|'),
+    centroidX: source.localCenterX,
+    centroidY: source.localCenterY,
+    firstId: '0',
+    items
+  };
+  const parent = {
+    scaleX: rawScaleX,
+    scaleY: rawScaleY,
+    rotationDeg: rDeg,
+    dx: desiredRoleX - source.localCenterX,
+    dy: desiredRoleY - source.localCenterY
+  };
+
+  return source.members.map((member, index) => {
+    const derived = applyGroupParentToItem(parent, snapshot, String(index));
+    if (!derived) {
+      return draftFromDerivedTransform(source.kind, member, desiredRoleX, desiredRoleY, member.scaleX * rawScaleX, member.scaleY * rawScaleY, member.rotation + rDeg);
+    }
+    return draftFromDerivedTransform(source.kind, member, derived.x, derived.y, derived.scaleX, derived.scaleY, derived.rotation);
+  });
+}
+
 function buildDecoDrafts(source: SourceTile, centerX: number, centerY: number, sxInternal: number, syInternal: number, rDeg: number, width: number, height: number): DecoDraft[] {
   const roleScale = roleExportScaleForTarget(width, height);
   const rawScaleX = sxInternal * source.sFactor * roleScale;
@@ -1530,6 +1619,10 @@ function buildDecoDrafts(source: SourceTile, centerX: number, centerY: number, s
   const desired = targetCenterCoords(centerX, centerY, width, height);
   const desiredRoleX = desired.x * roleScale;
   const desiredRoleY = desired.y * roleScale;
+  if (source.kind === 'colorBlock') {
+    return buildColorBlockDecoDraftsForTransform(source, desiredRoleX, desiredRoleY, rawScaleX, rawScaleY, rDeg);
+  }
+
   const { x, y } = rolePositionForVisualCenter(source, desiredRoleX, desiredRoleY, rawScaleX, rawScaleY, rDeg);
   const rad = (rDeg * Math.PI) / 180;
   const cos = Math.cos(rad);
@@ -1540,28 +1633,7 @@ function buildDecoDrafts(source: SourceTile, centerX: number, centerY: number, s
     const memberY = member.y * rawScaleY;
     const roleX = round(x + memberX * cos - memberY * sin, 2);
     const roleY = round(y + memberX * sin + memberY * cos, 2);
-    const scales = clampAutoCreateOutputScales(source.kind, member.scaleX * rawScaleX, member.scaleY * rawScaleY);
-    const scaleX = round(scales.scaleX, 4);
-    const scaleY = round(scales.scaleY, 4);
-    const rotation = round(member.rotation + rDeg, 3);
-    return {
-      code: member.code,
-      assetId: member.assetId,
-      name: member.label,
-      x: roleX,
-      y: roleY,
-      scaleX,
-      scaleY,
-      rotation,
-      legacy: {
-        c: member.code,
-        x: roleX,
-        y: roleY,
-        sx: scaleX,
-        sy: scaleY,
-        r: round((rotation * Math.PI) / 180, 6)
-      }
-    };
+    return draftFromDerivedTransform(source.kind, member, roleX, roleY, member.scaleX * rawScaleX, member.scaleY * rawScaleY, member.rotation + rDeg);
   });
 }
 
@@ -1630,6 +1702,45 @@ function autoMaxRenderedPx(width: number, height: number): number {
   return Math.max(32, Math.min(160, Math.round(Math.min(width, height) * 0.18)));
 }
 
+export function autoCreateDefaultMaxRenderedPxForMode(
+  sourceMode: AutoCreateTwroleSourceMode,
+  width: number,
+  height: number
+): number {
+  const legacyMax = autoMaxRenderedPx(width, height);
+  if (sourceMode !== 'colorBlock') return legacyMax;
+  return Math.max(legacyMax, Math.min(360, Math.round(Math.min(width, height) * 0.45)));
+}
+
+export function autoCreateAspectRatioForMode(sourceMode: AutoCreateTwroleSourceMode, normalSample: number): number {
+  const sigma = sourceMode === 'colorBlock' ? 0.85 : 0.06;
+  const ratio = Math.exp(normalSample * sigma);
+  return sourceMode === 'colorBlock' ? clamp(ratio, ORIGINAL_DECO_MIN_RATIO, ORIGINAL_DECO_MAX_RATIO) : ratio;
+}
+
+function autoCreateSizePxForMode(
+  sourceMode: AutoCreateTwroleSourceMode,
+  targetWidth: number,
+  targetHeight: number,
+  progress: number,
+  rng: SeededRandom,
+  minPx: number,
+  maxPx: number
+): number {
+  const minDim = Math.max(1, Math.min(targetWidth, targetHeight));
+  if (sourceMode === 'colorBlock') {
+    const early = Math.min(maxPx, Math.max(32, minDim * 0.34));
+    const late = Math.max(minPx, Math.min(maxPx, Math.max(24, minDim * 0.11)));
+    const base = early * (1 - progress) ** 0.55 + late * progress ** 0.55;
+    return base * Math.exp(rng.normal(0, 0.62));
+  }
+
+  const early = Math.min(maxPx, Math.max(18, minDim * 0.13));
+  const late = Math.max(minPx, Math.min(24, minDim * 0.035));
+  const base = early * (1 - progress) ** 0.75 + late * progress ** 0.75;
+  return base * Math.exp(rng.normal(0, 0.5));
+}
+
 function proposeCandidate(
   sources: readonly SourceTile[],
   sourceId: number,
@@ -1650,18 +1761,17 @@ function proposeCandidate(
   } = {}
 ): Candidate | null {
   const source = sources[sourceId];
-  const maxPx = options.maxRenderedPx && options.maxRenderedPx > 0 ? options.maxRenderedPx : autoMaxRenderedPx(targetWidth, targetHeight);
+  const maxPx = options.maxRenderedPx && options.maxRenderedPx > 0
+    ? options.maxRenderedPx
+    : autoCreateDefaultMaxRenderedPxForMode(source.kind, targetWidth, targetHeight);
   const minPx = Math.max(2, Math.round(settings.minRenderedPx));
   let sizePx: number;
 
   if (options.desiredPx == null) {
-    const minDim = Math.max(1, Math.min(targetWidth, targetHeight));
-    const early = Math.min(maxPx, Math.max(18, minDim * 0.13));
-    const late = Math.max(minPx, Math.min(24, minDim * 0.035));
-    const base = early * (1 - progress) ** 0.75 + late * progress ** 0.75;
-    sizePx = base * Math.exp(rng.normal(0, 0.5));
+    sizePx = autoCreateSizePxForMode(source.kind, targetWidth, targetHeight, progress, rng, minPx, maxPx);
   } else {
-    sizePx = options.desiredPx * Math.exp(rng.normal(0, 0.22));
+    const sigma = source.kind === 'colorBlock' ? 0.36 : 0.22;
+    sizePx = options.desiredPx * Math.exp(rng.normal(0, sigma));
   }
 
   sizePx = clamp(sizePx, minPx, maxPx);
@@ -1670,9 +1780,9 @@ function proposeCandidate(
   finalScale = clamp(finalScale, Math.max(ORIGINAL_DECO_MIN_SCALE, minPx / maxOrig), autoCreateMaxSourceScaleForMode(source.kind));
 
   const flipProb = options.flipProb ?? settings.flipProb;
-  const sxSign = source.uniformOnly ? 1 : rng.next() < flipProb ? -1 : 1;
-  const sySign = source.uniformOnly ? 1 : rng.next() < flipProb ? -1 : 1;
-  const aspectJitter = source.uniformOnly ? 1 : Math.exp(rng.normal(0, 0.06));
+  const sxSign = source.allowFlip && rng.next() < flipProb ? -1 : 1;
+  const sySign = source.allowFlip && rng.next() < flipProb ? -1 : 1;
+  const aspectJitter = source.ratioSearch ? autoCreateAspectRatioForMode(source.kind, rng.normal(0, 1)) : 1;
   const finalSx = sxSign * finalScale;
   const finalSy = sySign * finalScale * aspectJitter;
   const sxInternal = finalSx / source.sFactor;
@@ -2031,7 +2141,7 @@ class ColorLearningCollage {
       const sourceId = sourceIds[this.rng.weightedIndex(poolScores)];
       let desiredPx: number | undefined;
       let maxRenderedPx = this.settings.maxRenderedPx;
-      if (isGradient) {
+      if (isGradient && this.sourceMode !== 'colorBlock') {
         desiredPx = Math.max(this.settings.minRenderedPx, this.settings.gradientOriginalMaxPx);
         const autoMax = maxRenderedPx > 0 ? maxRenderedPx : autoMaxRenderedPx(this.width, this.height);
         maxRenderedPx = Math.min(autoMax, this.settings.gradientOriginalMaxPx);

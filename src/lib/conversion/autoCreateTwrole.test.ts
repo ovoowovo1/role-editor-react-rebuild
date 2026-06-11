@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  autoCreateAspectRatioForMode,
+  autoCreateDefaultMaxRenderedPxForMode,
   autoCreateMaxSourceScaleForMode,
+  buildColorBlockDecoDraftsForTransform,
   clampAutoCreateOutputScales,
   createAutoCreateTwroleResultGroups,
   createAutoCreateTwroleSourceSignature,
@@ -33,6 +36,42 @@ describe('autoCreateTwrole editor scale limits', () => {
     expect(clampAutoCreateOutputScales('colorBlock', 6, 60)).toEqual({ scaleX: 5, scaleY: 25 });
     expect(clampAutoCreateOutputScales('colorBlock', 3, 0.0001)).toEqual({ scaleX: 3, scaleY: 0.003 });
     expect(clampAutoCreateOutputScales('deco', 6, 60)).toEqual({ scaleX: 6, scaleY: 60 });
+  });
+});
+
+describe('autoCreateTwrole color block scale and ratio search', () => {
+  it('uses wider ratio search and larger default rendered bounds for color blocks', () => {
+    expect(autoCreateAspectRatioForMode('deco', 2)).toBeCloseTo(Math.exp(0.12));
+    expect(autoCreateAspectRatioForMode('colorBlock', 0)).toBe(1);
+    expect(autoCreateAspectRatioForMode('colorBlock', 2)).toBe(5);
+    expect(autoCreateAspectRatioForMode('colorBlock', -10)).toBe(0.001);
+    expect(autoCreateDefaultMaxRenderedPxForMode('colorBlock', 512, 512)).toBeGreaterThan(
+      autoCreateDefaultMaxRenderedPxForMode('deco', 512, 512)
+    );
+  });
+
+  it('exports color block non-uniform parent scale using editor group transform semantics', () => {
+    const drafts = buildColorBlockDecoDraftsForTransform(
+      {
+        kind: 'colorBlock',
+        localCenterX: 10,
+        localCenterY: 0,
+        members: [
+          { code: 'left', assetId: 'left', label: 'Left', x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+          { code: 'right', assetId: 'right', label: 'Right', x: 20, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }
+        ]
+      },
+      100,
+      50,
+      3,
+      1.5,
+      90
+    );
+
+    expect(drafts.map((draft) => ({ x: draft.x, y: draft.y, scaleX: draft.scaleX, scaleY: draft.scaleY, rotation: draft.rotation }))).toEqual([
+      { x: 100, y: 20, scaleX: 3, scaleY: 1.5, rotation: 90 },
+      { x: 100, y: 80, scaleX: 3, scaleY: 1.5, rotation: 90 }
+    ]);
   });
 });
 
