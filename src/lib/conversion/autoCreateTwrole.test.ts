@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createAutoCreateTwroleSourceSignature } from './autoCreateTwrole';
+import {
+  autoCreateMaxSourceScaleForMode,
+  clampAutoCreateOutputScales,
+  createAutoCreateTwroleSourceSignature
+} from './autoCreateTwrole';
 
 describe('autoCreateTwrole source signatures', () => {
   const sources = [
@@ -13,5 +17,18 @@ describe('autoCreateTwrole source signatures', () => {
     expect(createAutoCreateTwroleSourceSignature('deco', sources)).not.toBe(
       createAutoCreateTwroleSourceSignature('colorBlock', sources)
     );
+  });
+});
+
+describe('autoCreateTwrole editor scale limits', () => {
+  it('keeps deco source candidates at the legacy max while color blocks use editor scale max', () => {
+    expect(autoCreateMaxSourceScaleForMode('deco')).toBe(2);
+    expect(autoCreateMaxSourceScaleForMode('colorBlock')).toBe(5);
+  });
+
+  it('clamps color block output scale and ratio using editor rules', () => {
+    expect(clampAutoCreateOutputScales('colorBlock', 6, 60)).toEqual({ scaleX: 5, scaleY: 25 });
+    expect(clampAutoCreateOutputScales('colorBlock', 3, 0.0001)).toEqual({ scaleX: 3, scaleY: 0.003 });
+    expect(clampAutoCreateOutputScales('deco', 6, 60)).toEqual({ scaleX: 6, scaleY: 60 });
   });
 });

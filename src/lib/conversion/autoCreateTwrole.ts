@@ -1,6 +1,12 @@
 import type { DecorationLayer, PartOption } from '../../types/role';
 import type { ColorBlockPreset, ColorBlockDecoTemplate } from '../../mock/colorBlocks';
-import { DEFAULT_POSITION_RANGE } from '../../constants/editor';
+import {
+  DEFAULT_POSITION_RANGE,
+  ORIGINAL_DECO_MAX_RATIO,
+  ORIGINAL_DECO_MAX_SCALE,
+  ORIGINAL_DECO_MIN_RATIO,
+  ORIGINAL_DECO_MIN_SCALE
+} from '../../constants/editor';
 import { createId, round } from '../math';
 import { findOptionByCode } from '../../mock/options';
 
@@ -23,6 +29,7 @@ const AUTO_CREATE_SNAPSHOT_VERSION = 1;
 const DEFAULT_ROLE_EXPORT_MAX_SIDE = DEFAULT_POSITION_RANGE * 2;
 const DEFAULT_MEMORY_NAME = 'experience_color_memory.json';
 const AUTO_CREATE_EXPERIENCE_STORAGE_PREFIX = 'auto-create-twrole:';
+const DEFAULT_DECO_AUTO_CREATE_MAX_SCALE = 2;
 
 export interface AutoCreateTwroleSettings {
   // These names mirror the Python worker CLI. The React panel only exposes the
@@ -1428,6 +1435,33 @@ function rolePositionForVisualCenter(
   };
 }
 
+function signForScale(value: number): number {
+  return value < 0 ? -1 : 1;
+}
+
+export function clampAutoCreateOutputScales(
+  sourceMode: AutoCreateTwroleSourceMode,
+  scaleX: number,
+  scaleY: number
+): { scaleX: number; scaleY: number } {
+  if (sourceMode !== 'colorBlock') return { scaleX, scaleY };
+
+  const signX = signForScale(scaleX);
+  const signY = signForScale(scaleY);
+  const clampedScaleXAbs = clamp(Math.abs(scaleX), ORIGINAL_DECO_MIN_SCALE, ORIGINAL_DECO_MAX_SCALE);
+  const rawRatio = Math.abs(scaleY / (scaleX || signX * ORIGINAL_DECO_MIN_SCALE));
+  const clampedRatio = clamp(rawRatio, ORIGINAL_DECO_MIN_RATIO, ORIGINAL_DECO_MAX_RATIO);
+
+  return {
+    scaleX: signX * clampedScaleXAbs,
+    scaleY: signY * clampedScaleXAbs * clampedRatio
+  };
+}
+
+export function autoCreateMaxSourceScaleForMode(sourceMode: AutoCreateTwroleSourceMode): number {
+  return sourceMode === 'colorBlock' ? ORIGINAL_DECO_MAX_SCALE : DEFAULT_DECO_AUTO_CREATE_MAX_SCALE;
+}
+
 function buildDecoDrafts(source: SourceTile, centerX: number, centerY: number, sxInternal: number, syInternal: number, rDeg: number, width: number, height: number): DecoDraft[] {
   const roleScale = roleExportScaleForTarget(width, height);
   const rawScaleX = sxInternal * source.sFactor * roleScale;
@@ -1445,8 +1479,9 @@ function buildDecoDrafts(source: SourceTile, centerX: number, centerY: number, s
     const memberY = member.y * rawScaleY;
     const roleX = round(x + memberX * cos - memberY * sin, 2);
     const roleY = round(y + memberX * sin + memberY * cos, 2);
-    const scaleX = round(member.scaleX * rawScaleX, 4);
-    const scaleY = round(member.scaleY * rawScaleY, 4);
+    const scales = clampAutoCreateOutputScales(source.kind, member.scaleX * rawScaleX, member.scaleY * rawScaleY);
+    const scaleX = round(scales.scaleX, 4);
+    const scaleY = round(scales.scaleY, 4);
     const rotation = round(member.rotation + rDeg, 3);
     return {
       code: member.code,
@@ -1571,7 +1606,7 @@ function proposeCandidate(
   sizePx = clamp(sizePx, minPx, maxPx);
   const maxOrig = Math.max(1, source.origW, source.origH);
   let finalScale = sizePx / maxOrig;
-  finalScale = clamp(finalScale, minPx / maxOrig, 2);
+  finalScale = clamp(finalScale, Math.max(ORIGINAL_DECO_MIN_SCALE, minPx / maxOrig), autoCreateMaxSourceScaleForMode(source.kind));
 
   const flipProb = options.flipProb ?? settings.flipProb;
   const sxSign = source.uniformOnly ? 1 : rng.next() < flipProb ? -1 : 1;
