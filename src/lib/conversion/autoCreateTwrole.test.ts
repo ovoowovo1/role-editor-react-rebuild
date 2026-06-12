@@ -3,10 +3,16 @@ import {
   autoCreateAspectRatioForMode,
   autoCreateDefaultMaxRenderedPxForMode,
   autoCreateMaxSourceScaleForMode,
+  autoCreateMinRenderedPxForMode,
   buildColorBlockDecoDraftsForTransform,
   clampAutoCreateOutputScales,
+  colorBlockNonPrimaryDistanceSq,
+  colorBlockSecondaryPenaltyDelta,
   createAutoCreateTwroleResultGroups,
   createAutoCreateTwroleSourceSignature,
+  isColorBlockPrimaryRgb,
+  parseColorBlockPresetColor,
+  recolorTargetBuffersToRgb,
   wouldExceedAutoCreateLayerBudget
 } from './autoCreateTwrole';
 import type { DecorationLayer } from '../../types/role';
@@ -19,10 +25,20 @@ describe('autoCreateTwrole source signatures', () => {
 
   it('keeps deco and color block checkpoints separated', () => {
     expect(createAutoCreateTwroleSourceSignature('deco', sources)).toBe('deco|asset-a:code-a|asset-b:code-b');
-    expect(createAutoCreateTwroleSourceSignature('colorBlock', sources)).toBe('colorBlock|asset-a:code-a|asset-b:code-b');
+    expect(createAutoCreateTwroleSourceSignature('colorBlock', sources)).toBe('colorBlock|asset-a:code-a[]|asset-b:code-b[]');
     expect(createAutoCreateTwroleSourceSignature('deco', sources)).not.toBe(
       createAutoCreateTwroleSourceSignature('colorBlock', sources)
     );
+  });
+
+  it('includes color block member fingerprints in checkpoint signatures', () => {
+    const base = [{ assetId: 'block', code: 'colorBlock:block', members: [{ code: 'primary', x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }] }];
+    const filtered = [{ assetId: 'block', code: 'colorBlock:block', members: [{ code: 'primary', x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }, { code: 'accent', x: 5, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }] }];
+
+    expect(createAutoCreateTwroleSourceSignature('colorBlock', base)).not.toBe(
+      createAutoCreateTwroleSourceSignature('colorBlock', filtered)
+    );
+    expect(createAutoCreateTwroleSourceSignature('deco', base)).toBe(createAutoCreateTwroleSourceSignature('deco', filtered));
   });
 });
 
@@ -48,6 +64,8 @@ describe('autoCreateTwrole color block scale and ratio search', () => {
     expect(autoCreateDefaultMaxRenderedPxForMode('colorBlock', 512, 512)).toBeGreaterThan(
       autoCreateDefaultMaxRenderedPxForMode('deco', 512, 512)
     );
+    expect(autoCreateMinRenderedPxForMode('deco', 512, 512, 4)).toBe(4);
+    expect(autoCreateMinRenderedPxForMode('colorBlock', 512, 512, 4)).toBeGreaterThan(4);
   });
 
   it('exports color block non-uniform parent scale using editor group transform semantics', () => {
@@ -72,6 +90,55 @@ describe('autoCreateTwrole color block scale and ratio search', () => {
       { x: 100, y: 20, scaleX: 3, scaleY: 1.5, rotation: 90 },
       { x: 100, y: 80, scaleX: 3, scaleY: 1.5, rotation: 90 }
     ]);
+  });
+});
+
+describe('autoCreateTwrole color block target color', () => {
+  it('parses color block preset CSS colors', () => {
+    expect(parseColorBlockPresetColor('#050505')).toEqual({ r: 5, g: 5, b: 5 });
+    expect(parseColorBlockPresetColor('#abc')).toEqual({ r: 170, g: 187, b: 204 });
+    expect(parseColorBlockPresetColor('#abcd')).toEqual({ r: 170, g: 187, b: 204 });
+    expect(parseColorBlockPresetColor('#11223344')).toEqual({ r: 17, g: 34, b: 51 });
+    expect(parseColorBlockPresetColor('rgb(10, 20, 30)')).toEqual({ r: 10, g: 20, b: 30 });
+    expect(parseColorBlockPresetColor('rgb(50%, 0%, 100%)')).toEqual({ r: 128, g: 0, b: 255 });
+    expect(parseColorBlockPresetColor('not-a-color')).toBeNull();
+  });
+
+  it('classifies near-primary pixels as primary and penalizes scattered secondary color more strongly', () => {
+    const primary: [number, number, number] = [255, 255, 255];
+    const secondary: [number, number, number] = [0, 90, 255];
+
+    expect(colorBlockNonPrimaryDistanceSq([248, 250, 252], primary)).toBe(0);
+    expect(colorBlockNonPrimaryDistanceSq([215, 225, 232], primary)).toBe(0);
+    expect(colorBlockNonPrimaryDistanceSq(secondary, primary)).toBeGreaterThan(0);
+    expect(isColorBlockPrimaryRgb([0, 220, 255], primary)).toBe(false);
+
+    const clusteredPenalty = colorBlockSecondaryPenaltyDelta(primary, 255, secondary, 255, primary, true);
+    const scatteredPenalty = colorBlockSecondaryPenaltyDelta(primary, 255, secondary, 255, primary, false);
+    expect(scatteredPenalty).toBeGreaterThan(clusteredPenalty);
+    expect(clusteredPenalty).toBeGreaterThan(65025 * 3);
+    expect(colorBlockSecondaryPenaltyDelta(secondary, 255, primary, 255, primary, false)).toBeLessThan(0);
+  });
+
+  it('does not count saturated accent colors as white or black primary pixels', () => {
+    expect(isColorBlockPrimaryRgb([232, 234, 236], [255, 255, 255])).toBe(true);
+    expect(isColorBlockPrimaryRgb([0, 210, 255], [255, 255, 255])).toBe(false);
+    expect(isColorBlockPrimaryRgb([18, 20, 22], [5, 5, 5])).toBe(true);
+    expect(isColorBlockPrimaryRgb([0, 64, 150], [5, 5, 5])).toBe(false);
+  });
+
+  it('recolors target RGB while preserving alpha in straight and premultiplied buffers', () => {
+    const straight = new Uint8ClampedArray([200, 100, 50, 128, 1, 2, 3, 0]);
+    const premult = new Float32Array([100, 50, 25, 128, 0, 0, 0, 0]);
+
+    recolorTargetBuffersToRgb(straight, premult, { r: 5, g: 10, b: 20 });
+
+    expect(Array.from(straight)).toEqual([5, 10, 20, 128, 5, 10, 20, 0]);
+    expect(premult[0]).toBeCloseTo(5 * (128 / 255));
+    expect(premult[1]).toBeCloseTo(10 * (128 / 255));
+    expect(premult[2]).toBeCloseTo(20 * (128 / 255));
+    expect(premult[3]).toBe(128);
+    expect(Array.from(premult.slice(4, 8))).toEqual([0, 0, 0, 0]);
   });
 });
 

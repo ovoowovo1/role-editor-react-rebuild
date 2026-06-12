@@ -305,6 +305,11 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
+.auto-create-color-block-row.selected {
+  outline: 1px solid rgba(188, 239, 255, 0.42);
+  background: rgba(53, 208, 255, 0.1);
+}
+
 .auto-create-color-block-row.excluded {
   color: rgba(232, 251, 255, 0.46);
 }

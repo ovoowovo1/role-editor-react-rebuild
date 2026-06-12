@@ -31,6 +31,21 @@ const DEFAULT_ROLE_EXPORT_MAX_SIDE = DEFAULT_POSITION_RANGE * 2;
 const DEFAULT_MEMORY_NAME = 'experience_color_memory.json';
 const AUTO_CREATE_EXPERIENCE_STORAGE_PREFIX = 'auto-create-twrole:';
 const DEFAULT_DECO_AUTO_CREATE_MAX_SCALE = 2;
+const COLOR_BLOCK_PRIMARY_DISTANCE_TOLERANCE = 72;
+const COLOR_BLOCK_WHITE_PRIMARY_MIN_LUMA = 178;
+const COLOR_BLOCK_WHITE_PRIMARY_MAX_CHROMA = 86;
+const COLOR_BLOCK_BLACK_PRIMARY_MAX_LUMA = 82;
+const COLOR_BLOCK_BLACK_PRIMARY_MAX_CHROMA = 92;
+const COLOR_BLOCK_SECONDARY_BASE_WEIGHT = 3.25;
+const COLOR_BLOCK_SECONDARY_SCATTER_WEIGHT = 2.4;
+const COLOR_BLOCK_SECONDARY_CLUSTERED_WEIGHT = 0.58;
+const COLOR_BLOCK_SECONDARY_NEW_CELL_WEIGHT = 0.072;
+const COLOR_BLOCK_SECONDARY_CELL_MIN_ALPHA = 0.35;
+const COLOR_BLOCK_SECONDARY_NEAR_RADIUS_CELLS = 1;
+const COLOR_BLOCK_MEMBER_PRIMARY_RATIO_MIN = 0.34;
+const COLOR_BLOCK_MEMBER_PRIMARY_TO_SECONDARY_MIN = 0.82;
+const COLOR_BLOCK_MEMBER_FILTER_MIN_RETAINED_ALPHA = 0.12;
+
 
 export interface AutoCreateTwroleSettings {
   // These names mirror the Python worker CLI. The React panel only exposes the
@@ -258,6 +273,183 @@ interface TargetImageData {
   maskCount: number;
 }
 
+export interface RgbColor {
+  r: number;
+  g: number;
+  b: number;
+}
+
+function clampColorChannel(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function parseCssColorChannel(raw: string): number | null {
+  const value = raw.trim();
+  if (!value) return null;
+  if (value.endsWith('%')) {
+    const percent = Number.parseFloat(value.slice(0, -1));
+    return Number.isFinite(percent) ? clampColorChannel((percent / 100) * 255) : null;
+  }
+  const channel = Number.parseFloat(value);
+  return Number.isFinite(channel) ? clampColorChannel(channel) : null;
+}
+
+export function parseColorBlockPresetColor(rawColor: string): RgbColor | null {
+  const color = rawColor.trim();
+  if (!color) return null;
+
+  const hexMatch = color.match(/^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+  if (hexMatch) {
+    const hex = hexMatch[1];
+    if (hex.length === 3 || hex.length === 4) {
+      return {
+        r: Number.parseInt(hex[0] + hex[0], 16),
+        g: Number.parseInt(hex[1] + hex[1], 16),
+        b: Number.parseInt(hex[2] + hex[2], 16)
+      };
+    }
+    return {
+      r: Number.parseInt(hex.slice(0, 2), 16),
+      g: Number.parseInt(hex.slice(2, 4), 16),
+      b: Number.parseInt(hex.slice(4, 6), 16)
+    };
+  }
+
+  const rgbMatch = color.match(/^rgba?\((.+)\)$/i);
+  if (rgbMatch) {
+    const channels = rgbMatch[1].split(',').slice(0, 3).map(parseCssColorChannel);
+    if (channels.length === 3 && channels.every((channel): channel is number => channel != null)) {
+      return { r: channels[0], g: channels[1], b: channels[2] };
+    }
+  }
+
+  return null;
+}
+
+function colorBlockTargetRgb(preset: ColorBlockPreset | undefined): Vec3 | null {
+  if (!preset) return null;
+  const color = parseColorBlockPresetColor(preset.color);
+  return color ? [color.r, color.g, color.b] : null;
+}
+
+function colorDistanceSq(rgb: Vec3, target: Vec3): number {
+  const dr = rgb[0] - target[0];
+  const dg = rgb[1] - target[1];
+  const db = rgb[2] - target[2];
+  return dr * dr + dg * dg + db * db;
+}
+
+function colorLuma(rgb: Vec3): number {
+  return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+}
+
+function colorChroma(rgb: Vec3): number {
+  return Math.max(rgb[0], rgb[1], rgb[2]) - Math.min(rgb[0], rgb[1], rgb[2]);
+}
+
+function colorBlockPrimaryDistanceTolerance(primaryRgb: Vec3): number {
+  const primaryLuma = colorLuma(primaryRgb);
+  const primaryChroma = colorChroma(primaryRgb);
+  if (primaryLuma >= 210 && primaryChroma <= 36) return 104;
+  if (primaryLuma <= 48 && primaryChroma <= 36) return 88;
+  return COLOR_BLOCK_PRIMARY_DISTANCE_TOLERANCE;
+}
+
+export function isColorBlockPrimaryRgb(rgb: Vec3, primaryRgb: Vec3): boolean {
+  const tolerance = colorBlockPrimaryDistanceTolerance(primaryRgb);
+  if (colorDistanceSq(rgb, primaryRgb) <= tolerance * tolerance) return true;
+
+  const primaryLuma = colorLuma(primaryRgb);
+  const primaryChroma = colorChroma(primaryRgb);
+  const rgbLuma = colorLuma(rgb);
+  const rgbChroma = colorChroma(rgb);
+
+  // Near-white presets should treat shaded whites / pale greys as primary while
+  // still rejecting saturated accent colors such as cyan or blue.
+  if (primaryLuma >= 210 && primaryChroma <= 36) {
+    return rgbLuma >= COLOR_BLOCK_WHITE_PRIMARY_MIN_LUMA && rgbChroma <= COLOR_BLOCK_WHITE_PRIMARY_MAX_CHROMA;
+  }
+
+  // Near-black presets often contain anti-aliased dark pixels. Keep those dark
+  // pixels as primary, but do not let saturated colored accents pass as black.
+  if (primaryLuma <= 48 && primaryChroma <= 36) {
+    return rgbLuma <= COLOR_BLOCK_BLACK_PRIMARY_MAX_LUMA && rgbChroma <= COLOR_BLOCK_BLACK_PRIMARY_MAX_CHROMA;
+  }
+
+  return false;
+}
+
+export function colorBlockNonPrimaryDistanceSq(rgb: Vec3, primaryRgb: Vec3): number {
+  const rawDistance = colorDistanceSq(rgb, primaryRgb);
+  return isColorBlockPrimaryRgb(rgb, primaryRgb) ? 0 : rawDistance;
+}
+
+function colorBlockVisibleSecondaryMetricFromStraight(
+  r: number,
+  g: number,
+  b: number,
+  alpha: number,
+  primaryRgb: Vec3
+): { alpha: number; distanceSq: number } {
+  if (alpha <= 1.0e-6) return { alpha: 0, distanceSq: 0 };
+  const distanceSq = colorBlockNonPrimaryDistanceSq([r, g, b], primaryRgb);
+  if (distanceSq <= 0) return { alpha: 0, distanceSq: 0 };
+  return { alpha: alpha / 255, distanceSq };
+}
+
+function colorBlockVisibleSecondaryMetricFromPremult(
+  r: number,
+  g: number,
+  b: number,
+  alpha: number,
+  primaryRgb: Vec3
+): { alpha: number; distanceSq: number } {
+  if (alpha <= 1.0e-6) return { alpha: 0, distanceSq: 0 };
+  const alphaFactor = Math.max(1.0e-6, alpha / 255);
+  return colorBlockVisibleSecondaryMetricFromStraight(r / alphaFactor, g / alphaFactor, b / alphaFactor, alpha, primaryRgb);
+}
+
+function colorBlockBaseSecondaryPenalty(metric: { alpha: number; distanceSq: number }): number {
+  return metric.alpha * metric.distanceSq * COLOR_BLOCK_SECONDARY_BASE_WEIGHT;
+}
+
+export function colorBlockSecondaryPenaltyDelta(
+  beforeRgb: Vec3,
+  beforeAlpha: number,
+  afterRgb: Vec3,
+  afterAlpha: number,
+  primaryRgb: Vec3,
+  nearExistingSecondary: boolean
+): number {
+  const beforeMetric = colorBlockVisibleSecondaryMetricFromStraight(beforeRgb[0], beforeRgb[1], beforeRgb[2], beforeAlpha, primaryRgb);
+  const afterMetric = colorBlockVisibleSecondaryMetricFromStraight(afterRgb[0], afterRgb[1], afterRgb[2], afterAlpha, primaryRgb);
+  const deltaAlpha = Math.max(0, afterMetric.alpha - beforeMetric.alpha);
+  const dynamicWeight = nearExistingSecondary ? COLOR_BLOCK_SECONDARY_CLUSTERED_WEIGHT : COLOR_BLOCK_SECONDARY_SCATTER_WEIGHT;
+  return colorBlockBaseSecondaryPenalty(afterMetric) - colorBlockBaseSecondaryPenalty(beforeMetric) +
+    deltaAlpha * afterMetric.distanceSq * dynamicWeight;
+}
+
+export function recolorTargetBuffersToRgb(straight: Uint8ClampedArray, premult: Float32Array, rgb: RgbColor): void {
+  for (let index = 0; index < straight.length; index += 4) {
+    const alpha = clampColorChannel(Math.max(straight[index + 3] ?? 0, premult[index + 3] ?? 0));
+    const alphaFactor = alpha / 255;
+    straight[index] = rgb.r;
+    straight[index + 1] = rgb.g;
+    straight[index + 2] = rgb.b;
+    straight[index + 3] = alpha;
+    premult[index] = rgb.r * alphaFactor;
+    premult[index + 1] = rgb.g * alphaFactor;
+    premult[index + 2] = rgb.b * alphaFactor;
+    premult[index + 3] = alpha;
+  }
+}
+
+function recolorTargetToRgb(target: TargetImageData, rgb: Vec3): TargetImageData {
+  recolorTargetBuffersToRgb(target.straight, target.premult, { r: rgb[0], g: rgb[1], b: rgb[2] });
+  return target;
+}
+
 interface SourceTile {
   idx: number;
   kind: AutoCreateTwroleSourceMode;
@@ -276,6 +468,9 @@ interface SourceTile {
   stdRgb: Vec3;
   alphaRatio: number;
   alphaSum: number;
+  primaryRgb: Vec3 | null;
+  primaryAlphaRatio: number;
+  secondaryAlphaRatio: number;
   members: SourceTileMember[];
   allowFlip: boolean;
   ratioSearch: boolean;
@@ -669,7 +864,7 @@ function premultToStraightImageData(premult: Float32Array, width: number, height
   return new ImageData(out, width, height);
 }
 
-async function loadTargetImage(file: File, settings: AutoCreateTwroleSettings): Promise<TargetImageData> {
+async function loadTargetImage(file: File, settings: AutoCreateTwroleSettings, solidTargetRgb?: Vec3 | null): Promise<TargetImageData> {
   const image = await loadImageFromFile(file);
   const sourceWidth = imagePixelWidth(image);
   const sourceHeight = imagePixelHeight(image);
@@ -700,7 +895,8 @@ async function loadTargetImage(file: File, settings: AutoCreateTwroleSettings): 
     }
   }
 
-  return { width, height, sourceWidth, sourceHeight, straight, premult, mask, maskCount };
+  const target = { width, height, sourceWidth, sourceHeight, straight, premult, mask, maskCount };
+  return solidTargetRgb ? recolorTargetToRgb(target, solidTargetRgb) : target;
 }
 
 interface SourceVisualSize {
@@ -800,6 +996,40 @@ function sourceStatsFromCanvas(
   };
 }
 
+function colorBlockSourceColorProfile(
+  canvas: AutoCreateCanvas,
+  thumbW: number,
+  thumbH: number,
+  settings: AutoCreateTwroleSettings,
+  primaryRgb: Vec3 | null
+): Pick<SourceTile, 'primaryAlphaRatio' | 'secondaryAlphaRatio'> {
+  if (!primaryRgb) return { primaryAlphaRatio: 0, secondaryAlphaRatio: 0 };
+
+  const data = get2d(canvas).getImageData(0, 0, thumbW, thumbH).data;
+  let primaryAlpha = 0;
+  let secondaryAlpha = 0;
+  let visibleAlpha = 0;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const alpha = data[index + 3];
+    if (alpha <= settings.alphaThresh) continue;
+    const alphaWeight = alpha / 255;
+    visibleAlpha += alphaWeight;
+    const secondaryMetric = colorBlockVisibleSecondaryMetricFromStraight(data[index], data[index + 1], data[index + 2], alpha, primaryRgb);
+    if (secondaryMetric.alpha > 0) {
+      secondaryAlpha += alphaWeight;
+    } else {
+      primaryAlpha += alphaWeight;
+    }
+  }
+
+  const denominator = Math.max(1.0e-9, visibleAlpha);
+  return {
+    primaryAlphaRatio: primaryAlpha / denominator,
+    secondaryAlphaRatio: secondaryAlpha / denominator
+  };
+}
+
 async function optionToSourceTile(option: PartOption, idx: number, settings: AutoCreateTwroleSettings): Promise<SourceTile | null> {
   const atlas = option.atlas;
   const image = await loadImage(atlas?.texture ?? option.icon);
@@ -837,6 +1067,9 @@ async function optionToSourceTile(option: PartOption, idx: number, settings: Aut
     localCenterX: localCenter.x,
     localCenterY: localCenter.y,
     ...stats,
+    primaryRgb: null,
+    primaryAlphaRatio: 0,
+    secondaryAlphaRatio: 0,
     members: [{
       code: option.code,
       assetId: option.id,
@@ -956,6 +1189,99 @@ function drawColorBlockMember(
   context.restore();
 }
 
+interface ColorBlockMemberColorProfile {
+  visibleAlpha: number;
+  primaryAlpha: number;
+  secondaryAlpha: number;
+  primaryRatio: number;
+}
+
+function colorBlockMemberColorProfile(
+  member: ColorBlockResolvedMember,
+  primaryRgb: Vec3,
+  settings: AutoCreateTwroleSettings,
+  thumbScale: number,
+  bounds: BBox,
+  thumbW: number,
+  thumbH: number
+): ColorBlockMemberColorProfile {
+  const canvas = createCanvas(thumbW, thumbH);
+  const context = get2d(canvas);
+  context.clearRect(0, 0, thumbW, thumbH);
+  drawColorBlockMember(context, member, thumbScale, bounds);
+
+  const data = context.getImageData(0, 0, thumbW, thumbH).data;
+  let visibleAlpha = 0;
+  let primaryAlpha = 0;
+  let secondaryAlpha = 0;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const alpha = data[index + 3];
+    if (alpha <= settings.alphaThresh) continue;
+    const alphaWeight = alpha / 255;
+    visibleAlpha += alphaWeight;
+    const rgb: Vec3 = [data[index], data[index + 1], data[index + 2]];
+    if (isColorBlockPrimaryRgb(rgb, primaryRgb)) {
+      primaryAlpha += alphaWeight;
+    } else {
+      secondaryAlpha += alphaWeight;
+    }
+  }
+
+  return {
+    visibleAlpha,
+    primaryAlpha,
+    secondaryAlpha,
+    primaryRatio: visibleAlpha > 1.0e-9 ? primaryAlpha / visibleAlpha : 0
+  };
+}
+
+function shouldKeepColorBlockPrimaryMember(profile: ColorBlockMemberColorProfile): boolean {
+  if (profile.visibleAlpha <= 1.0e-9 || profile.primaryAlpha <= 1.0e-9) return false;
+  if (profile.primaryRatio >= COLOR_BLOCK_MEMBER_PRIMARY_RATIO_MIN) return true;
+  return profile.primaryAlpha >= profile.secondaryAlpha * COLOR_BLOCK_MEMBER_PRIMARY_TO_SECONDARY_MIN;
+}
+
+function selectColorBlockPrimaryMembers(
+  members: readonly ColorBlockResolvedMember[],
+  primaryRgb: Vec3 | null,
+  settings: AutoCreateTwroleSettings,
+  thumbScale: number,
+  bounds: BBox,
+  thumbW: number,
+  thumbH: number
+): { members: ColorBlockResolvedMember[]; removedCount: number; retainedAlphaRatio: number } {
+  if (!primaryRgb || members.length <= 1) {
+    return { members: [...members], removedCount: 0, retainedAlphaRatio: 1 };
+  }
+
+  const profiled = members.map((member) => ({
+    member,
+    profile: colorBlockMemberColorProfile(member, primaryRgb, settings, thumbScale, bounds, thumbW, thumbH)
+  }));
+  const totalVisibleAlpha = profiled.reduce((sum, item) => sum + item.profile.visibleAlpha, 0);
+  if (totalVisibleAlpha <= 1.0e-9) {
+    return { members: [...members], removedCount: 0, retainedAlphaRatio: 1 };
+  }
+
+  const primaryMembers = profiled.filter((item) => shouldKeepColorBlockPrimaryMember(item.profile));
+  const retainedAlpha = primaryMembers.reduce((sum, item) => sum + item.profile.visibleAlpha, 0);
+  const retainedAlphaRatio = retainedAlpha / totalVisibleAlpha;
+
+  // Keep the original preset when filtering would leave too little visible source
+  // area. This preserves compatibility with old presets whose primary color is
+  // baked into a mixed-color texture that cannot be decomposed by member.
+  if (!primaryMembers.length || retainedAlphaRatio < COLOR_BLOCK_MEMBER_FILTER_MIN_RETAINED_ALPHA) {
+    return { members: [...members], removedCount: 0, retainedAlphaRatio: 1 };
+  }
+
+  return {
+    members: primaryMembers.map((item) => item.member),
+    removedCount: members.length - primaryMembers.length,
+    retainedAlphaRatio
+  };
+}
+
 async function colorBlockPresetToSourceTile(
   preset: ColorBlockPreset,
   idx: number,
@@ -990,8 +1316,31 @@ async function colorBlockPresetToSourceTile(
     return { tile: null, warnings };
   }
 
-  const origW = Math.max(1, bounds[2] - bounds[0]);
-  const origH = Math.max(1, bounds[3] - bounds[1]);
+  const profileOrigW = Math.max(1, bounds[2] - bounds[0]);
+  const profileOrigH = Math.max(1, bounds[3] - bounds[1]);
+  const profileThumbScale = Math.min(1, Math.max(1, settings.maxTileSize) / Math.max(1, profileOrigW, profileOrigH));
+  const profileThumbW = Math.max(1, Math.ceil(profileOrigW * profileThumbScale));
+  const profileThumbH = Math.max(1, Math.ceil(profileOrigH * profileThumbScale));
+  const primaryRgb = colorBlockTargetRgb(preset);
+  const selectedMembers = selectColorBlockPrimaryMembers(
+    members,
+    primaryRgb,
+    settings,
+    profileThumbScale,
+    bounds,
+    profileThumbW,
+    profileThumbH
+  );
+  const renderMembers = selectedMembers.members;
+  if (selectedMembers.removedCount > 0) {
+    warnings.push(
+      `Color block preset ${preset.label}: ignored ${selectedMembers.removedCount} non-primary deco member(s) for auto-create color control.`
+    );
+  }
+
+  const renderBounds = colorBlockVisualBounds(renderMembers) ?? bounds;
+  const origW = Math.max(1, renderBounds[2] - renderBounds[0]);
+  const origH = Math.max(1, renderBounds[3] - renderBounds[1]);
   const thumbScale = Math.min(1, Math.max(1, settings.maxTileSize) / Math.max(1, origW, origH));
   const thumbW = Math.max(1, Math.ceil(origW * thumbScale));
   const thumbH = Math.max(1, Math.ceil(origH * thumbScale));
@@ -999,8 +1348,8 @@ async function colorBlockPresetToSourceTile(
   const context = get2d(canvas);
   context.clearRect(0, 0, thumbW, thumbH);
 
-  for (const member of members) {
-    drawColorBlockMember(context, member, thumbScale, bounds);
+  for (const member of renderMembers) {
+    drawColorBlockMember(context, member, thumbScale, renderBounds);
   }
 
   const stats = sourceStatsFromCanvas(canvas, thumbW, thumbH, settings);
@@ -1008,6 +1357,11 @@ async function colorBlockPresetToSourceTile(
     warnings.push(`Skipped transparent color block preset: ${preset.label}.`);
     return { tile: null, warnings };
   }
+
+  const colorProfile = colorBlockSourceColorProfile(canvas, thumbW, thumbH, settings, primaryRgb);
+  const sourceStats = primaryRgb
+    ? { ...stats, meanRgb: primaryRgb, stdRgb: [0, 0, 0] as Vec3 }
+    : stats;
 
   return {
     tile: {
@@ -1022,10 +1376,12 @@ async function colorBlockPresetToSourceTile(
       thumbW,
       thumbH,
       sFactor: Math.max(1.0e-9, thumbScale),
-      localCenterX: (bounds[0] + bounds[2]) / 2,
-      localCenterY: (bounds[1] + bounds[3]) / 2,
-      ...stats,
-      members: members.map((member) => ({
+      localCenterX: (renderBounds[0] + renderBounds[2]) / 2,
+      localCenterY: (renderBounds[1] + renderBounds[3]) / 2,
+      ...sourceStats,
+      primaryRgb,
+      ...colorProfile,
+      members: renderMembers.map((member) => ({
         code: member.template.c,
         assetId: member.option.id,
         label: member.option.label,
@@ -1112,7 +1468,8 @@ class ErrorField {
     private readonly mask: Uint8Array,
     private readonly width: number,
     private readonly height: number,
-    cellSize: number
+    cellSize: number,
+    private readonly colorBlockPrimaryRgb: Vec3 | null = null
   ) {
     this.cell = Math.max(4, Math.round(cellSize));
     this.gw = Math.ceil(width / this.cell);
@@ -1174,7 +1531,17 @@ class ErrorField {
     const dg = this.canvas[offset + 1] - this.target[offset + 1];
     const db = this.canvas[offset + 2] - this.target[offset + 2];
     const da = this.canvas[offset + 3] - this.target[offset + 3];
-    return dr * dr + dg * dg + db * db + ALPHA_MSE_WEIGHT * da * da;
+    let error = dr * dr + dg * dg + db * db + ALPHA_MSE_WEIGHT * da * da;
+    if (this.colorBlockPrimaryRgb) {
+      error += colorBlockBaseSecondaryPenalty(colorBlockVisibleSecondaryMetricFromPremult(
+        this.canvas[offset],
+        this.canvas[offset + 1],
+        this.canvas[offset + 2],
+        this.canvas[offset + 3],
+        this.colorBlockPrimaryRgb
+      ));
+    }
+    return error;
   }
 
   recomputeAll(): void {
@@ -1435,6 +1802,32 @@ function transformSource(source: SourceTile, sxInternal: number, syInternal: num
   const context = get2d(finalCanvas);
   const data = context.getImageData(0, 0, finalCanvas.width, finalCanvas.height).data;
   return { width: finalCanvas.width, height: finalCanvas.height, data: new Float32Array(data) };
+}
+
+function colorBlockTransformedPrimaryAnchor(
+  rgba: TransformedImage,
+  primaryRgb: Vec3,
+  alphaThresh: number
+): { x: number; y: number } | null {
+  let weightSum = 0;
+  let xSum = 0;
+  let ySum = 0;
+
+  for (let y = 0; y < rgba.height; y += 1) {
+    for (let x = 0; x < rgba.width; x += 1) {
+      const offset = pixelOffset(rgba.width, x, y);
+      const alpha = rgba.data[offset + 3];
+      if (alpha <= alphaThresh) continue;
+      if (colorBlockNonPrimaryDistanceSq([rgba.data[offset], rgba.data[offset + 1], rgba.data[offset + 2]], primaryRgb) > 0) continue;
+      const weight = alpha / 255;
+      weightSum += weight;
+      xSum += (x + 0.5) * weight;
+      ySum += (y + 0.5) * weight;
+    }
+  }
+
+  if (weightSum <= 1.0e-6) return null;
+  return { x: xSum / weightSum, y: ySum / weightSum };
 }
 
 function targetCenterCoords(px: number, py: number, width: number, height: number): { x: number; y: number } {
@@ -1712,6 +2105,18 @@ export function autoCreateDefaultMaxRenderedPxForMode(
   return Math.max(legacyMax, Math.min(360, Math.round(Math.min(width, height) * 0.45)));
 }
 
+export function autoCreateMinRenderedPxForMode(
+  sourceMode: AutoCreateTwroleSourceMode,
+  width: number,
+  height: number,
+  configuredMinPx: number
+): number {
+  const configured = Math.max(2, Math.round(configuredMinPx));
+  if (sourceMode !== 'colorBlock') return configured;
+  const minDim = Math.max(1, Math.min(width, height));
+  return Math.max(configured, Math.min(48, Math.round(minDim * 0.035)));
+}
+
 export function autoCreateAspectRatioForMode(sourceMode: AutoCreateTwroleSourceMode, normalSample: number): number {
   const sigma = sourceMode === 'colorBlock' ? 0.85 : 0.06;
   const ratio = Math.exp(normalSample * sigma);
@@ -1729,10 +2134,11 @@ function autoCreateSizePxForMode(
 ): number {
   const minDim = Math.max(1, Math.min(targetWidth, targetHeight));
   if (sourceMode === 'colorBlock') {
-    const early = Math.min(maxPx, Math.max(32, minDim * 0.34));
-    const late = Math.max(minPx, Math.min(maxPx, Math.max(24, minDim * 0.11)));
-    const base = early * (1 - progress) ** 0.55 + late * progress ** 0.55;
-    return base * Math.exp(rng.normal(0, 0.62));
+    const early = Math.min(maxPx, Math.max(minPx, minDim * 0.42));
+    const late = Math.max(minPx, Math.min(maxPx, Math.max(minPx, minDim * 0.17)));
+    const eased = clamp(progress ** 0.7, 0, 1);
+    const base = early * (1 - eased) + late * eased;
+    return base * Math.exp(rng.normal(0, 0.42));
   }
 
   const early = Math.min(maxPx, Math.max(18, minDim * 0.13));
@@ -1764,7 +2170,7 @@ function proposeCandidate(
   const maxPx = options.maxRenderedPx && options.maxRenderedPx > 0
     ? options.maxRenderedPx
     : autoCreateDefaultMaxRenderedPxForMode(source.kind, targetWidth, targetHeight);
-  const minPx = Math.max(2, Math.round(settings.minRenderedPx));
+  const minPx = autoCreateMinRenderedPxForMode(source.kind, targetWidth, targetHeight, settings.minRenderedPx);
   let sizePx: number;
 
   if (options.desiredPx == null) {
@@ -1810,8 +2216,26 @@ function proposeCandidate(
   if (rgba.width <= 0 || rgba.height <= 0) return null;
   if (rgba.width > targetWidth * 1.5 || rgba.height > targetHeight * 1.5) return null;
 
-  const left = Math.round(centerX - rgba.width / 2);
-  const top = Math.round(centerY - rgba.height / 2);
+  let left: number;
+  let top: number;
+  if (source.kind === 'colorBlock') {
+    if (rgba.width > targetWidth || rgba.height > targetHeight) return null;
+    const anchor = source.primaryRgb && source.secondaryAlphaRatio > 0.02
+      ? colorBlockTransformedPrimaryAnchor(rgba, source.primaryRgb, settings.alphaThresh)
+      : null;
+    const anchorX = anchor?.x ?? rgba.width / 2;
+    const anchorY = anchor?.y ?? rgba.height / 2;
+    left = Math.round(centerX - anchorX);
+    top = Math.round(centerY - anchorY);
+    left = Math.round(clamp(left, 0, targetWidth - rgba.width));
+    top = Math.round(clamp(top, 0, targetHeight - rgba.height));
+    centerX = left + rgba.width / 2;
+    centerY = top + rgba.height / 2;
+  } else {
+    left = Math.round(centerX - rgba.width / 2);
+    top = Math.round(centerY - rgba.height / 2);
+  }
+
   const right = left + rgba.width;
   const bottom = top + rgba.height;
   if (left < 0 || top < 0 || right > targetWidth || bottom > targetHeight) return null;
@@ -1833,11 +2257,123 @@ function proposeCandidate(
   };
 }
 
+class ColorBlockSecondaryField {
+  readonly cell: number;
+  readonly gw: number;
+  readonly gh: number;
+  readonly cellAlpha: Float32Array;
+  totalAlpha = 0;
+
+  constructor(
+    private readonly canvas: Float32Array,
+    private readonly primaryRgb: Vec3,
+    private readonly mask: Uint8Array,
+    private readonly width: number,
+    private readonly height: number,
+    cellSize: number
+  ) {
+    this.cell = Math.max(4, Math.round(cellSize));
+    this.gw = Math.ceil(width / this.cell);
+    this.gh = Math.ceil(height / this.cell);
+    this.cellAlpha = new Float32Array(this.gw * this.gh);
+    this.recomputeAll();
+  }
+
+  private cellIndex(cy: number, cx: number): number {
+    return cy * this.gw + cx;
+  }
+
+  private cellBounds(cy: number, cx: number): BBox {
+    const left = cx * this.cell;
+    const top = cy * this.cell;
+    return [left, top, Math.min(this.width, left + this.cell), Math.min(this.height, top + this.cell)];
+  }
+
+  cellIndexForPixel(x: number, y: number): number {
+    const cx = clamp(Math.floor(x / this.cell), 0, this.gw - 1);
+    const cy = clamp(Math.floor(y / this.cell), 0, this.gh - 1);
+    return this.cellIndex(cy, cx);
+  }
+
+  private secondaryAlphaAtPixel(x: number, y: number): number {
+    const pixel = y * this.width + x;
+    if (!this.mask[pixel]) return 0;
+    const offset = pixel * 4;
+    return colorBlockVisibleSecondaryMetricFromPremult(
+      this.canvas[offset],
+      this.canvas[offset + 1],
+      this.canvas[offset + 2],
+      this.canvas[offset + 3],
+      this.primaryRgb
+    ).alpha;
+  }
+
+  private recomputeCell(cy: number, cx: number): void {
+    const index = this.cellIndex(cy, cx);
+    this.totalAlpha -= this.cellAlpha[index];
+    const [left, top, right, bottom] = this.cellBounds(cy, cx);
+    let alpha = 0;
+    for (let y = top; y < bottom; y += 1) {
+      for (let x = left; x < right; x += 1) {
+        alpha += this.secondaryAlphaAtPixel(x, y);
+      }
+    }
+    this.cellAlpha[index] = alpha;
+    this.totalAlpha += alpha;
+  }
+
+  recomputeAll(): void {
+    this.totalAlpha = 0;
+    for (let cy = 0; cy < this.gh; cy += 1) {
+      for (let cx = 0; cx < this.gw; cx += 1) {
+        const [left, top, right, bottom] = this.cellBounds(cy, cx);
+        let alpha = 0;
+        for (let y = top; y < bottom; y += 1) {
+          for (let x = left; x < right; x += 1) {
+            alpha += this.secondaryAlphaAtPixel(x, y);
+          }
+        }
+        this.cellAlpha[this.cellIndex(cy, cx)] = alpha;
+        this.totalAlpha += alpha;
+      }
+    }
+  }
+
+  updateBBox(bbox: BBox): void {
+    const clipped = bboxClip(bbox, this.width, this.height);
+    if (!clipped) return;
+    const [left, top, right, bottom] = clipped;
+    const cx0 = Math.max(0, Math.floor(left / this.cell));
+    const cx1 = Math.min(this.gw - 1, Math.floor((right - 1) / this.cell));
+    const cy0 = Math.max(0, Math.floor(top / this.cell));
+    const cy1 = Math.min(this.gh - 1, Math.floor((bottom - 1) / this.cell));
+    for (let cy = cy0; cy <= cy1; cy += 1) {
+      for (let cx = cx0; cx <= cx1; cx += 1) {
+        this.recomputeCell(cy, cx);
+      }
+    }
+  }
+
+  hasNearbySecondary(x: number, y: number): boolean {
+    if (this.totalAlpha <= 1.0e-6) return false;
+    const cx = clamp(Math.floor(x / this.cell), 0, this.gw - 1);
+    const cy = clamp(Math.floor(y / this.cell), 0, this.gh - 1);
+    for (let yy = Math.max(0, cy - COLOR_BLOCK_SECONDARY_NEAR_RADIUS_CELLS); yy <= Math.min(this.gh - 1, cy + COLOR_BLOCK_SECONDARY_NEAR_RADIUS_CELLS); yy += 1) {
+      for (let xx = Math.max(0, cx - COLOR_BLOCK_SECONDARY_NEAR_RADIUS_CELLS); xx <= Math.min(this.gw - 1, cx + COLOR_BLOCK_SECONDARY_NEAR_RADIUS_CELLS); xx += 1) {
+        if (this.cellAlpha[this.cellIndex(yy, xx)] >= COLOR_BLOCK_SECONDARY_CELL_MIN_ALPHA) return true;
+      }
+    }
+    return false;
+  }
+}
+
 class ColorLearningCollage {
   private readonly canvas: Float32Array;
   private readonly errors: ErrorField;
   private readonly cache: VariantCache;
   private readonly memory: ExperienceMemory;
+  private readonly colorBlockPrimaryRgb: Vec3 | null;
+  private readonly secondaryField: ColorBlockSecondaryField | null;
   private readonly tiles: TileRecord[] = [];
   private readonly globalDen: number;
 
@@ -1860,8 +2396,21 @@ class ColorLearningCollage {
     this.canvas = new Float32Array(width * height * 4);
     const maskCount = Math.max(1, mask.reduce((sum, value) => sum + (value ? 1 : 0), 0));
     this.globalDen = maskCount * (3 + ALPHA_MSE_WEIGHT);
-    this.errors = new ErrorField(this.canvas, targetPremult, targetStraight, mask, width, height, settings.errorCellSize);
+    this.colorBlockPrimaryRgb = sourceMode === 'colorBlock' ? sources.find((source) => source.primaryRgb)?.primaryRgb ?? null : null;
+    this.errors = new ErrorField(
+      this.canvas,
+      targetPremult,
+      targetStraight,
+      mask,
+      width,
+      height,
+      settings.errorCellSize,
+      this.colorBlockPrimaryRgb
+    );
     this.cache = new VariantCache(settings.variantCacheItems);
+    this.secondaryField = this.colorBlockPrimaryRgb
+      ? new ColorBlockSecondaryField(this.canvas, this.colorBlockPrimaryRgb, mask, width, height, settings.errorCellSize)
+      : null;
     const experienceName = settings.experienceJson || DEFAULT_MEMORY_NAME;
     this.memory = new ExperienceMemory(`${AUTO_CREATE_EXPERIENCE_STORAGE_PREFIX}${experienceName}`, sources, settings.resetExperience);
   }
@@ -1920,6 +2469,7 @@ class ColorLearningCollage {
       this.alphaOverFull(tile.bbox, this.tileRgba(tile));
     }
     this.errors.recomputeAll();
+    this.secondaryField?.recomputeAll();
   }
 
   createSnapshot(
@@ -2004,6 +2554,10 @@ class ColorLearningCollage {
     if (left < 0 || top < 0 || right > this.width || bottom > this.height) return null;
     if (candidate.rgba.width !== right - left || candidate.rgba.height !== bottom - top) return null;
 
+    const source = this.sources[candidate.sourceId];
+    const colorBlockPrimaryRgb = this.sourceMode === 'colorBlock' ? source?.primaryRgb ?? this.colorBlockPrimaryRgb : null;
+    const secondaryField = colorBlockPrimaryRgb ? this.secondaryField : null;
+    const newSecondaryCells = secondaryField ? new Set<number>() : null;
     let beforeSse = 0;
     let afterSse = 0;
     let alphaSum = 0;
@@ -2031,7 +2585,7 @@ class ColorLearningCollage {
         const dg = beforeG - this.targetPremult[offset + 1];
         const db = beforeB - this.targetPremult[offset + 2];
         const da = beforeA - this.targetPremult[offset + 3];
-        beforeSse += dr * dr + dg * dg + db * db + ALPHA_MSE_WEIGHT * da * da;
+        let beforePixelSse = dr * dr + dg * dg + db * db + ALPHA_MSE_WEIGHT * da * da;
 
         const inv = 1 - srcA;
         const afterR = candidate.rgba.data[srcOffset] * srcA + beforeR * inv;
@@ -2043,17 +2597,54 @@ class ColorLearningCollage {
         const ag = afterG - this.targetPremult[offset + 1];
         const ab = afterB - this.targetPremult[offset + 2];
         const aa = afterA - this.targetPremult[offset + 3];
-        afterSse += ar * ar + ag * ag + ab * ab + ALPHA_MSE_WEIGHT * aa * aa;
+        let afterPixelSse = ar * ar + ag * ag + ab * ab + ALPHA_MSE_WEIGHT * aa * aa;
+
+        if (colorBlockPrimaryRgb && secondaryField) {
+          const beforeMetric = colorBlockVisibleSecondaryMetricFromPremult(beforeR, beforeG, beforeB, beforeA, colorBlockPrimaryRgb);
+          const afterMetric = colorBlockVisibleSecondaryMetricFromPremult(afterR, afterG, afterB, afterA, colorBlockPrimaryRgb);
+          beforePixelSse += colorBlockBaseSecondaryPenalty(beforeMetric);
+          afterPixelSse += colorBlockBaseSecondaryPenalty(afterMetric);
+
+          const deltaAlpha = Math.max(0, afterMetric.alpha - beforeMetric.alpha);
+          if (deltaAlpha > 1.0e-6 && afterMetric.distanceSq > 0) {
+            const nearExistingSecondary = secondaryField.hasNearbySecondary(x, y);
+            const dynamicWeight = nearExistingSecondary
+              ? COLOR_BLOCK_SECONDARY_CLUSTERED_WEIGHT
+              : COLOR_BLOCK_SECONDARY_SCATTER_WEIGHT;
+            afterPixelSse += deltaAlpha * afterMetric.distanceSq * dynamicWeight;
+            if (!nearExistingSecondary) newSecondaryCells?.add(secondaryField.cellIndexForPixel(x, y));
+          }
+        }
+
+        beforeSse += beforePixelSse;
+        afterSse += afterPixelSse;
       }
     }
 
+    if (newSecondaryCells?.size) {
+      const cellSide = secondaryField?.cell ?? Math.max(4, Math.round(this.settings.errorCellSize));
+      afterSse += newSecondaryCells.size * cellSide * cellSide * 255 * 255 * COLOR_BLOCK_SECONDARY_NEW_CELL_WEIGHT;
+    }
+
     if (!hasMask || alphaSum <= 1.0e-6) return null;
-    if (outsideAlpha / Math.max(1.0e-9, alphaSum) > this.settings.maxOutsideAlphaRatio) return null;
+    const outsideRatio = outsideAlpha / Math.max(1.0e-9, alphaSum);
+    const maxOutsideAlphaRatio = this.sourceMode === 'colorBlock'
+      ? Math.max(this.settings.maxOutsideAlphaRatio, 0.06)
+      : this.settings.maxOutsideAlphaRatio;
+    if (outsideRatio > maxOutsideAlphaRatio) return null;
 
     candidate.sseBefore = beforeSse;
     candidate.sseAfter = afterSse;
     candidate.globalGainMse = (beforeSse - afterSse) / Math.max(1, this.globalDen);
-    candidate.score = candidate.globalGainMse - this.settings.tilePenaltyMse;
+    if (this.sourceMode === 'colorBlock') {
+      const insideAlpha = Math.max(0, alphaSum - outsideAlpha);
+      const maskPixels = this.globalDen / (3 + ALPHA_MSE_WEIGHT);
+      const coverageRatio = clamp(insideAlpha / Math.max(1, maskPixels), 0, 1);
+      const penaltyScale = clamp(1 - coverageRatio * 0.65, 0.35, 1);
+      candidate.score = candidate.globalGainMse - this.settings.tilePenaltyMse * penaltyScale;
+    } else {
+      candidate.score = candidate.globalGainMse - this.settings.tilePenaltyMse;
+    }
     return candidate;
   }
 
@@ -2195,6 +2786,7 @@ class ColorLearningCollage {
   private acceptCandidate(candidate: Candidate): void {
     this.alphaOverFull(candidate.bbox, candidate.rgba);
     this.errors.updateBBox(candidate.bbox);
+    this.secondaryField?.updateBBox(candidate.bbox);
     this.tiles.push(this.recordFromCandidate(candidate));
     this.accepted += 1;
     const source = this.sources[candidate.sourceId];
@@ -2321,7 +2913,17 @@ class ColorLearningCollage {
         const dg = this.canvas[offset + 1] - this.targetPremult[offset + 1];
         const db = this.canvas[offset + 2] - this.targetPremult[offset + 2];
         const da = this.canvas[offset + 3] - this.targetPremult[offset + 3];
-        sse += dr * dr + dg * dg + db * db + ALPHA_MSE_WEIGHT * da * da;
+        let pixelSse = dr * dr + dg * dg + db * db + ALPHA_MSE_WEIGHT * da * da;
+        if (this.colorBlockPrimaryRgb) {
+          pixelSse += colorBlockBaseSecondaryPenalty(colorBlockVisibleSecondaryMetricFromPremult(
+            this.canvas[offset],
+            this.canvas[offset + 1],
+            this.canvas[offset + 2],
+            this.canvas[offset + 3],
+            this.colorBlockPrimaryRgb
+          ));
+        }
+        sse += pixelSse;
       }
     }
     return sse;
@@ -2341,7 +2943,17 @@ class ColorLearningCollage {
         const dg = patch[patchOffset + 1] - this.targetPremult[targetOffset + 1];
         const db = patch[patchOffset + 2] - this.targetPremult[targetOffset + 2];
         const da = patch[patchOffset + 3] - this.targetPremult[targetOffset + 3];
-        sse += dr * dr + dg * dg + db * db + ALPHA_MSE_WEIGHT * da * da;
+        let pixelSse = dr * dr + dg * dg + db * db + ALPHA_MSE_WEIGHT * da * da;
+        if (this.colorBlockPrimaryRgb) {
+          pixelSse += colorBlockBaseSecondaryPenalty(colorBlockVisibleSecondaryMetricFromPremult(
+            patch[patchOffset],
+            patch[patchOffset + 1],
+            patch[patchOffset + 2],
+            patch[patchOffset + 3],
+            this.colorBlockPrimaryRgb
+          ));
+        }
+        sse += pixelSse;
       }
     }
     return sse;
@@ -2385,6 +2997,7 @@ class ColorLearningCollage {
         this.copyPatchToCanvas(afterPatch, clipped);
         tile.active = false;
         this.errors.updateBBox(clipped);
+        this.secondaryField?.updateBBox(clipped);
         this.pruned += 1;
         return true;
       }
@@ -2474,6 +3087,7 @@ class ColorLearningCollage {
     this.tiles[tileIndex] = this.recordFromCandidate(best);
     this.tiles[tileIndex].gainMse = best.globalGainMse;
     this.errors.updateBBox(union);
+    this.secondaryField?.updateBBox(union);
     this.replaced += 1;
     this.memory.noteTrial(this.sources[best.sourceId].code, target.color, true, best.globalGainMse);
     return true;
@@ -2481,6 +3095,7 @@ class ColorLearningCollage {
 
   recomputeErrors(): void {
     this.errors.recomputeAll();
+    this.secondaryField?.recomputeAll();
   }
 }
 
@@ -2501,9 +3116,24 @@ function createProgress(collage: ColorLearningCollage, stage: AutoCreateTwrolePr
 
 export function createAutoCreateTwroleSourceSignature(
   sourceMode: AutoCreateTwroleSourceMode,
-  sources: readonly { assetId: string; code: string }[]
+  sources: readonly { assetId: string; code: string; members?: readonly Partial<SourceTileMember>[] }[]
 ): string {
-  return `${sourceMode}|${sources.map((source) => source.assetId + ':' + source.code).join('|')}`;
+  const sourceParts = sources.map((source) => {
+    const base = source.assetId + ':' + source.code;
+    if (sourceMode !== 'colorBlock') return base;
+    const memberSignature = (source.members ?? [])
+      .map((member) => [
+        member.code ?? '',
+        round(Number(member.x ?? 0), 3),
+        round(Number(member.y ?? 0), 3),
+        round(Number(member.scaleX ?? 1), 4),
+        round(Number(member.scaleY ?? 1), 4),
+        round(Number(member.rotation ?? 0), 3)
+      ].join(','))
+      .join(';');
+    return `${base}[${memberSignature}]`;
+  });
+  return `${sourceMode}|${sourceParts.join('|')}`;
 }
 
 export async function runAutoCreateTwrole({
@@ -2520,11 +3150,13 @@ export async function runAutoCreateTwrole({
   const settings: AutoCreateTwroleSettings = { ...DEFAULT_AUTO_CREATE_TWROLE_SETTINGS, ...rawSettings };
   throwIfAborted(signal);
 
-  const target = await loadTargetImage(targetFile, settings);
+  const sourceMode: AutoCreateTwroleSourceMode = requestedSourceMode === 'colorBlock' ? 'colorBlock' : 'deco';
+  const selectedColorBlockPresets = sourceMode === 'colorBlock' ? colorBlockPresets.slice(0, 1) : [];
+  const colorBlockRgb = sourceMode === 'colorBlock' ? colorBlockTargetRgb(selectedColorBlockPresets[0]) : null;
+  const target = await loadTargetImage(targetFile, settings, colorBlockRgb);
   throwIfAborted(signal);
 
-  const sourceMode: AutoCreateTwroleSourceMode = requestedSourceMode === 'colorBlock' ? 'colorBlock' : 'deco';
-  const sourceLoad = await loadSourceTiles(decoOptions, colorBlockPresets, sourceMode, settings, signal, (done, total) => {
+  const sourceLoad = await loadSourceTiles(decoOptions, selectedColorBlockPresets, sourceMode, settings, signal, (done, total) => {
     onProgress?.({
       stage: 'sources',
       step: done,
@@ -2538,6 +3170,10 @@ export async function runAutoCreateTwrole({
       message: 'sources ' + done + '/' + total
     });
   });
+
+  if (sourceMode === 'colorBlock' && selectedColorBlockPresets[0] && !colorBlockRgb) {
+    sourceLoad.warnings.unshift(`Could not parse color block preset color ${selectedColorBlockPresets[0].color}; target kept original colors.`);
+  }
 
   if (!sourceLoad.sources.length) {
     throw new Error(
