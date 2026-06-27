@@ -198,9 +198,16 @@ function sortDecoOptions(options: PartOption[]): PartOption[] {
 function filterBodyPartOptionsByCamp(tab: BodyPartTab, camp: PlayerCampCode): PartOption[] {
   const frames = legacyBodyPartFrames[tab][camp];
   const order = new Map(frames.map((frame, index) => [frame, index]));
-  return partOptions[tab]
+  const filtered = partOptions[tab]
     .filter((option) => option.frame != null && order.has(option.frame))
     .sort((left, right) => (order.get(left.frame ?? 0) ?? 0) - (order.get(right.frame ?? 0) ?? 0));
+
+  if (tab !== 'cape' || filtered.some((option) => option.isEmpty)) {
+    return filtered;
+  }
+
+  const emptyCape = partOptions.cape.find((option) => option.isEmpty);
+  return emptyCape ? [emptyCape, ...filtered] : filtered;
 }
 
 export function filterPartOptionsByCamp(tab: PartTab, campRaw: string): PartOption[] {

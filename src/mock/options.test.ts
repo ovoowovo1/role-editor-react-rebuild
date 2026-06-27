@@ -22,9 +22,9 @@ const legacyBodyPartFrames: Record<BodyPartTab, Record<PlayerCamp, number[]>> = 
     third: [9, 10, 22, 34, 35, 36, 37, 38, 44, 45, 47, 48, 49, 50, 51, 52, 58, 62, 63, 71, 72, 75, 76]
   },
   cape: {
-    skydow: [12, 13, 21, 24, 25],
-    royal: [2, 3, 5, 6, 14, 15, 16, 20],
-    third: [4, 7, 9, 10, 17, 18]
+    skydow: [11, 12, 13, 21, 24, 25],
+    royal: [11, 2, 3, 5, 6, 14, 15, 16, 20],
+    third: [11, 4, 7, 9, 10, 17, 18]
   }
 };
 
@@ -76,6 +76,15 @@ describe('part option camp filtering', () => {
       for (const camp of playerCampOrder) {
         expect(framesFor(tab, camp)).toEqual(legacyBodyPartFrames[tab][camp]);
       }
+    }
+  });
+
+  it('keeps empty cape selectable for every player camp', () => {
+    for (const camp of playerCampOrder) {
+      const emptyCape = filterPartOptionsByCamp('cape', camp).find((option) => option.isEmpty);
+
+      expect(emptyCape?.label).toBe('Empty (Cape)');
+      expect(emptyCape?.frame).toBe(11);
     }
   });
 
