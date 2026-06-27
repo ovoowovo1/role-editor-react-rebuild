@@ -36,6 +36,40 @@ test('groups, ungroups, undoes, and redoes selected layers', async ({ page }, te
   expectNoPageErrors(monitor);
 });
 
+test('clears selection from blank areas without clearing after stage drag', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'blank-clear-source', makeEditorSmokeRole(1));
+
+  await importRoleFile(page, fixture, 1);
+  const row = page.getByTestId('layer-row-e2e-deco-1');
+  await row.click();
+  await expect(row).toHaveClass(/selected/);
+
+  const layerList = page.getByTestId('layer-list-scroll');
+  const listBox = await layerList.boundingBox();
+  if (!listBox) throw new Error('Expected layer list scroll area to be visible.');
+  await layerList.click({ position: { x: 8, y: Math.max(8, listBox.height - 8) } });
+  await expect(row).not.toHaveClass(/selected/);
+
+  await row.click();
+  await expect(row).toHaveClass(/selected/);
+  const canvas = page.locator('.pixi-host canvas');
+  await expect(canvas).toBeVisible();
+  await canvas.click({ position: { x: 8, y: 8 } });
+  await expect(row).not.toHaveClass(/selected/);
+
+  await row.click();
+  await expect(row).toHaveClass(/selected/);
+  const canvasBox = await canvas.boundingBox();
+  if (!canvasBox) throw new Error('Expected stage canvas to be visible.');
+  await page.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(canvasBox.x + canvasBox.width / 2 + 24, canvasBox.y + canvasBox.height / 2 + 12);
+  await page.mouse.up();
+  await expect(row).toHaveClass(/selected/);
+  expectNoPageErrors(monitor);
+});
+
 test('reorders a layer, exports JSON, and keeps order after import back', async ({ page, context }, testInfo) => {
   const monitor = watchPageErrors(page);
   const sourceRole = makeEditorSmokeRole(3);

@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type UIEvent as ReactUIEvent
 } from 'react';
 import { t } from '../../i18n';
@@ -143,6 +144,15 @@ export function LayerList({
     onReorder
   });
 
+  const handleBlankListClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!selectedIds.length || dragState) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const interactiveTarget = target.closest('.layer-row, .layer-group, button, input, textarea, select, [role="dialog"]');
+    if (interactiveTarget) return;
+    onClearSelection();
+  }, [dragState, onClearSelection, selectedIds.length]);
+
   useLayoutEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return;
@@ -194,7 +204,14 @@ export function LayerList({
         <small>{groups.length ? t('layers.hintGroups', { count: groups.length, plural: groups.length === 1 ? '' : 's' }) : t('layers.hintNoGroups')}</small>
       </div>
 
-      <div ref={scrollRef} className="layer-list-scroll" onScroll={handleScroll}>
+      <div
+        ref={scrollRef}
+        className="layer-list-scroll"
+        data-testid="layer-list-scroll"
+        title={t('layers.clearSelection')}
+        onClick={handleBlankListClick}
+        onScroll={handleScroll}
+      >
         <div className="layer-list-virtual-space" style={{ height: totalHeight }}>
           {insertionIndicatorTop != null ? (
             <div

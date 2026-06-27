@@ -32,6 +32,7 @@ export interface StageCallbacks {
   onCommitDragDelta(dx: number, dy: number): void;
   onBeginTransient(): void;
   onCommitTransient(): void;
+  onClearSelection(): void;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
 }
 

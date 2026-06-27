@@ -134,6 +134,7 @@ function isIgnorableConsoleError(text: string): boolean {
     text.includes('/cdn-cgi/rum') ||
     text.includes('/api/color-block-presets') ||
     text.includes('Failed to load resource: net::ERR_FAILED') ||
+    text.includes('Failed to load resource: net::ERR_CONNECTION_REFUSED') ||
     text.includes('Failed to load resource: the server responded with a status of 502') ||
     text.includes('Access to XMLHttpRequest') && text.includes('cloudflareinsights.com')
   );

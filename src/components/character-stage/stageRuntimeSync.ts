@@ -19,6 +19,7 @@ interface StageRuntimeSyncOptions {
   onCommitDragDelta(dx: number, dy: number): void;
   onBeginTransient(): void;
   onCommitTransient(): void;
+  onClearSelection(): void;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
 }
 
@@ -38,6 +39,7 @@ export function useStageRuntimeRefSync({
   onCommitDragDelta,
   onBeginTransient,
   onCommitTransient,
+  onClearSelection,
   onBrushFillMaskChange
 }: StageRuntimeSyncOptions): void {
   useEffect(() => {
@@ -55,6 +57,7 @@ export function useStageRuntimeRefSync({
       onCommitDragDelta,
       onBeginTransient,
       onCommitTransient,
+      onClearSelection,
       onBrushFillMaskChange
     };
   }, [
@@ -62,6 +65,7 @@ export function useStageRuntimeRefSync({
     onApplyDragDelta,
     onBeginTransient,
     onBrushFillMaskChange,
+    onClearSelection,
     onCommitDragDelta,
     onCommitTransient,
     onUpdateDecoration

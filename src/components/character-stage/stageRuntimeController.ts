@@ -27,6 +27,7 @@ interface StageRuntimeControllerOptions {
   onCommitDragDelta(dx: number, dy: number): void;
   onBeginTransient(): void;
   onCommitTransient(): void;
+  onClearSelection(): void;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
 }
 
@@ -44,6 +45,7 @@ export function useStageRuntimeController({
   onCommitDragDelta,
   onBeginTransient,
   onCommitTransient,
+  onClearSelection,
   onBrushFillMaskChange
 }: StageRuntimeControllerOptions) {
   const appRef = useRef<Application | null>(null);
@@ -59,6 +61,7 @@ export function useStageRuntimeController({
     onCommitDragDelta,
     onBeginTransient,
     onCommitTransient,
+    onClearSelection,
     onBrushFillMaskChange
   });
   const brushFillRef = useRef<BrushFillState>({

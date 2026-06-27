@@ -111,12 +111,12 @@ export function useStageSceneLifecycle({
         positionObserver.observe(stageBgRef.current);
       }
 
-      const { handleBrushDown, handleMove, handleUp } = createStagePointerHandlers(stageRuntimeRefs);
+      const { handleBrushDown, handleMove, handleUp, handleUpOutside } = createStagePointerHandlers(stageRuntimeRefs);
 
       stage.on('pointerdown', handleBrushDown);
       stage.on('pointermove', handleMove);
       stage.on('pointerup', handleUp);
-      stage.on('pointerupoutside', handleUp);
+      stage.on('pointerupoutside', handleUpOutside);
 
       stageTeardownRef.current = () => {
         dragRef.current = null;
@@ -126,7 +126,7 @@ export function useStageSceneLifecycle({
         stage.off('pointerdown', handleBrushDown);
         stage.off('pointermove', handleMove);
         stage.off('pointerup', handleUp);
-        stage.off('pointerupoutside', handleUp);
+        stage.off('pointerupoutside', handleUpOutside);
         for (const child of stage.removeChildren()) {
           if (!child.destroyed) child.destroy({ children: true });
         }

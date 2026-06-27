@@ -28,6 +28,7 @@ interface CharacterStageProps {
   onCommitDragDelta(dx: number, dy: number): void;
   onBeginTransient(): void;
   onCommitTransient(): void;
+  onClearSelection(): void;
   brushFillActive?: boolean;
   brushFillBrushSize?: number;
   brushFillMask?: BrushFillMask;
@@ -47,6 +48,7 @@ export function CharacterStage({
   onCommitDragDelta,
   onBeginTransient,
   onCommitTransient,
+  onClearSelection,
   brushFillActive = false,
   brushFillBrushSize = 18,
   brushFillMask = { points: [] },
@@ -72,6 +74,7 @@ export function CharacterStage({
     onCommitDragDelta,
     onBeginTransient,
     onCommitTransient,
+    onClearSelection,
     onBrushFillMaskChange
   });
 
@@ -101,6 +104,7 @@ export function CharacterStage({
     onCommitDragDelta,
     onBeginTransient,
     onCommitTransient,
+    onClearSelection,
     onBrushFillMaskChange
   });
 

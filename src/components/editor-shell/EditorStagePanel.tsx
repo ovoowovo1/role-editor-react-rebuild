@@ -31,6 +31,7 @@ export function EditorStagePanel({ editor, shell }: EditorStagePanelProps) {
           onCommitDragDelta={editor.commitDragDeltaToSelected}
           onBeginTransient={editor.beginTransient}
           onCommitTransient={editor.commitTransient}
+          onClearSelection={editor.clearSelection}
           brushFillActive={shell.brushFillActive}
           brushFillBrushSize={shell.brushFillBrushSize}
           brushFillMask={shell.brushFillMask}
