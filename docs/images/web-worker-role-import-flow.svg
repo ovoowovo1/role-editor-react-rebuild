@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+  <title id="title">Web Worker Role Import Flow</title>
+  <desc id="desc">Diagram showing browser UI sending role file bytes to a browser Web Worker, parsing role bytes off the main thread, returning normalized role data, and updating React editor state.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155" />
+    </marker>
+    <style>
+      .bg { fill: #ffffff; }
+      .lane { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 2; rx: 20; }
+      .worker { fill: #f0f9ff; stroke: #7dd3fc; stroke-width: 2; rx: 20; }
+      .state { fill: #f0fdf4; stroke: #86efac; stroke-width: 2; rx: 20; }
+      .fallback { fill: #fff7ed; stroke: #fdba74; stroke-width: 2; rx: 20; }
+      .title { font: 700 26px Arial, sans-serif; fill: #0f172a; }
+      .label { font: 700 18px Arial, sans-serif; fill: #0f172a; }
+      .small { font: 400 14px Arial, sans-serif; fill: #475569; }
+      .tiny { font: 400 12px Arial, sans-serif; fill: #64748b; }
+      .line { stroke: #334155; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #64748b; stroke-width: 2.2; fill: none; stroke-dasharray: 7 6; marker-end: url(#arrow); }
+      .note { fill: #fefce8; stroke: #fde047; stroke-width: 1.6; rx: 14; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1200" height="650" />
+  <text class="title" x="600" y="48" text-anchor="middle">Browser Web Worker Role Import Flow</text>
+  <text class="small" x="600" y="76" text-anchor="middle">Heavy role file parsing runs in a Web Worker so the React editor UI can stay responsive.</text>
+
+  <rect class="lane" x="60" y="135" width="250" height="230" />
+  <text class="label" x="185" y="170" text-anchor="middle">React Main Thread</text>
+  <text class="small" x="185" y="202" text-anchor="middle">TopMenu Import / Merge</text>
+  <text class="small" x="185" y="229" text-anchor="middle">useRoleFileActions</text>
+  <text class="small" x="185" y="256" text-anchor="middle">parseRoleFileInWorker</text>
+  <text class="tiny" x="185" y="310" text-anchor="middle">Reads File as ArrayBuffer</text>
+  <text class="tiny" x="185" y="332" text-anchor="middle">Transfers bytes to worker</text>
+
+  <rect class="worker" x="475" y="135" width="250" height="230" />
+  <text class="label" x="600" y="170" text-anchor="middle">Web Worker</text>
+  <text class="small" x="600" y="202" text-anchor="middle">roleImportWorker.ts</text>
+  <text class="small" x="600" y="229" text-anchor="middle">self.onmessage</text>
+  <text class="small" x="600" y="256" text-anchor="middle">parseRoleBytes(bytes)</text>
+  <text class="tiny" x="600" y="310" text-anchor="middle">JSON / .twrole / gzip / base64</text>
+  <text class="tiny" x="600" y="332" text-anchor="middle">Normalize into RoleDocument</text>
+
+  <rect class="state" x="890" y="135" width="250" height="230" />
+  <text class="label" x="1015" y="170" text-anchor="middle">Editor State</text>
+  <text class="small" x="1015" y="202" text-anchor="middle">ImportResult</text>
+  <text class="small" x="1015" y="229" text-anchor="middle">role + warnings</text>
+  <text class="small" x="1015" y="256" text-anchor="middle">importRole / mergeImportedRole</text>
+  <text class="tiny" x="1015" y="310" text-anchor="middle">Updates current role document</text>
+  <text class="tiny" x="1015" y="332" text-anchor="middle">UI re-renders preview and layers</text>
+
+  <rect class="fallback" x="310" y="455" width="580" height="105" />
+  <text class="label" x="600" y="490" text-anchor="middle">Fallback Path</text>
+  <text class="small" x="600" y="520" text-anchor="middle">If worker parsing fails, the app falls back to parseRoleFileWithLegacyGroups on the main thread.</text>
+  <text class="tiny" x="600" y="545" text-anchor="middle">This keeps import compatibility even if the worker crashes or cannot be created.</text>
+
+  <path class="line" d="M 310 240 C 370 240, 415 240, 475 240" />
+  <text class="tiny" x="392" y="225" text-anchor="middle">postMessage({ type: parse-role, bytes })</text>
+
+  <path class="dash" d="M 725 240 C 785 240, 830 240, 890 240" />
+  <text class="tiny" x="808" y="225" text-anchor="middle">parse-role-ok: ImportResult</text>
+
+  <path class="dash" d="M 725 285 C 785 285, 830 285, 890 285" />
+  <text class="tiny" x="808" y="306" text-anchor="middle">parse-role-error: error message</text>
+
+  <path class="dash" d="M 185 365 C 260 460, 280 500, 310 505" />
+  <text class="tiny" x="235" y="438" text-anchor="middle">catch worker failure</text>
+
+  <path class="dash" d="M 890 505 C 955 485, 1000 430, 1015 365" />
+  <text class="tiny" x="990" y="463" text-anchor="middle">fallback result updates editor</text>
+
+  <rect class="note" x="330" y="590" width="540" height="38" />
+  <text class="tiny" x="600" y="614" text-anchor="middle">Purpose: move file decompression, parsing, and normalization away from the UI thread.</text>
+</svg>
