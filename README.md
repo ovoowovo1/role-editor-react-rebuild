@@ -6,6 +6,14 @@
 
 https://role-editor-react-rebuild.ovoowovo.workers.dev/
 
+## 圖片轉 TWRole 自動生成流程
+
+上傳圖片後，系統會讀取圖片像素，根據顏色匹配最接近的 Deco asset，生成 decoration layers，插入目前角色資料後即可匯出成 legacy `.twrole` 檔案。
+
+<div align="center">
+  <img src="./docs/images/image-to-twrole-auto-generation-flow.svg" alt="圖片轉 TWRole 自動生成流程" width="100%" />
+</div>
+
 ## 功能
 
 - 使用 Pixi.js 即時預覽角色與裝飾圖層。
