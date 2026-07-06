@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-labelledby="title desc">
+  <title id="title">Browser and Cloudflare Worker Architecture</title>
+  <desc id="desc">Architecture diagram showing browser React app, Cloudflare Worker API, Hyperdrive, PostgreSQL, local assets, and import/export files.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155" />
+    </marker>
+    <style>
+      .bg { fill: #ffffff; }
+      .box { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 2; rx: 18; }
+      .box2 { fill: #eef6ff; stroke: #93c5fd; stroke-width: 2; rx: 18; }
+      .box3 { fill: #f0fdf4; stroke: #86efac; stroke-width: 2; rx: 18; }
+      .box4 { fill: #fff7ed; stroke: #fdba74; stroke-width: 2; rx: 18; }
+      .title { font: 700 24px Arial, sans-serif; fill: #0f172a; }
+      .label { font: 700 18px Arial, sans-serif; fill: #0f172a; }
+      .small { font: 400 14px Arial, sans-serif; fill: #475569; }
+      .tiny { font: 400 12px Arial, sans-serif; fill: #64748b; }
+      .line { stroke: #334155; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #64748b; stroke-width: 2; fill: none; stroke-dasharray: 7 6; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="640" />
+  <text class="title" x="600" y="48" text-anchor="middle">Browser / Worker Architecture</text>
+  <text class="small" x="600" y="76" text-anchor="middle">React editor runs in the browser. Cloudflare Worker provides color block preset API and reads database data through Hyperdrive.</text>
+
+  <rect class="box2" x="60" y="130" width="300" height="300" rx="18" />
+  <text class="label" x="210" y="165" text-anchor="middle">Browser</text>
+  <text class="small" x="210" y="195" text-anchor="middle">Vite + React + TypeScript</text>
+  <text class="small" x="210" y="222" text-anchor="middle">EditorShell / Panels / LayerList</text>
+  <text class="small" x="210" y="249" text-anchor="middle">Pixi.js Canvas Preview</text>
+  <text class="small" x="210" y="276" text-anchor="middle">Image → DecorationLayer conversion</text>
+  <text class="small" x="210" y="303" text-anchor="middle">JSON / .twrole import &amp; export</text>
+  <text class="tiny" x="210" y="350" text-anchor="middle">Most editor actions stay local in browser state</text>
+
+  <rect class="box" x="450" y="130" width="300" height="300" rx="18" />
+  <text class="label" x="600" y="165" text-anchor="middle">Cloudflare Worker</text>
+  <text class="small" x="600" y="195" text-anchor="middle">GET /color-block-presets</text>
+  <text class="small" x="600" y="222" text-anchor="middle">GET /api/color-block-presets</text>
+  <text class="small" x="600" y="249" text-anchor="middle">CORS origin validation</text>
+  <text class="small" x="600" y="276" text-anchor="middle">Drizzle ORM query helper</text>
+  <text class="tiny" x="600" y="350" text-anchor="middle">Used when frontend loads color block presets</text>
+
+  <rect class="box3" x="840" y="130" width="300" height="300" rx="18" />
+  <text class="label" x="990" y="165" text-anchor="middle">Database Layer</text>
+  <text class="small" x="990" y="195" text-anchor="middle">Cloudflare Hyperdrive</text>
+  <text class="small" x="990" y="222" text-anchor="middle">PostgreSQL</text>
+  <text class="small" x="990" y="249" text-anchor="middle">color_block_presets table</text>
+  <text class="small" x="990" y="276" text-anchor="middle">camp / name / label / color / deco</text>
+
+  <rect class="box4" x="120" y="485" width="270" height="95" rx="18" />
+  <text class="label" x="255" y="520" text-anchor="middle">Static / Local Assets</text>
+  <text class="small" x="255" y="548" text-anchor="middle">GAF assets + generated manifest</text>
+
+  <rect class="box4" x="810" y="485" width="270" height="95" rx="18" />
+  <text class="label" x="945" y="520" text-anchor="middle">Output Files</text>
+  <text class="small" x="945" y="548" text-anchor="middle">role.json / role.twrole</text>
+
+  <path class="line" d="M 360 250 C 395 250, 415 250, 450 250" />
+  <text class="tiny" x="405" y="238" text-anchor="middle">fetch presets</text>
+
+  <path class="line" d="M 750 250 C 785 250, 805 250, 840 250" />
+  <text class="tiny" x="795" y="238" text-anchor="middle">Hyperdrive connection</text>
+
+  <path class="dash" d="M 840 305 C 805 305, 785 305, 750 305" />
+  <text class="tiny" x="795" y="326" text-anchor="middle">preset rows</text>
+
+  <path class="dash" d="M 450 305 C 415 305, 395 305, 360 305" />
+  <text class="tiny" x="405" y="326" text-anchor="middle">JSON response</text>
+
+  <path class="dash" d="M 255 485 C 240 455, 230 440, 220 430" />
+  <text class="tiny" x="265" y="462" text-anchor="middle">runtime preview assets</text>
+
+  <path class="dash" d="M 360 360 C 530 500, 690 500, 810 535" />
+  <text class="tiny" x="595" y="500" text-anchor="middle">export from browser state</text>
+</svg>
