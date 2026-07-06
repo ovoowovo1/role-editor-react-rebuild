@@ -14,6 +14,14 @@ https://role-editor-react-rebuild.ovoowovo.workers.dev/
   <img src="./docs/images/image-to-twrole-auto-generation-flow.svg" alt="圖片轉 TWRole 自動生成流程" width="100%" />
 </div>
 
+## Web Worker 匯入解析流程
+
+匯入 JSON 或 legacy `.twrole` 檔案時，瀏覽器會把檔案 bytes 傳給 Web Worker，由 worker 負責解壓、解析與 normalize role data。這樣可以避免大型角色檔案在主 UI thread 解析時令 editor 畫面卡住；如果 worker 解析失敗，系統會 fallback 到主 thread 的 legacy import 流程。
+
+<div align="center">
+  <img src="./docs/images/web-worker-role-import-flow.svg" alt="Web Worker 匯入解析流程" width="100%" />
+</div>
+
 ## 功能
 
 - 使用 Pixi.js 即時預覽角色與裝飾圖層。
@@ -22,6 +30,7 @@ https://role-editor-react-rebuild.ovoowovo.workers.dev/
 - 支援 JSON 匯入與匯出，方便除錯與資料 round-trip。
 - 支援 legacy `.twrole` 格式下載與匯入，格式為 `[0, 1]` envelope 加 gzip JSON。
 - 可從圖片或 brush fill 區域產生裝飾圖層。
+- 匯入角色檔案時會優先使用瀏覽器 Web Worker 解析，避免大型檔案阻塞 UI thread。
 - 透過 Worker API 載入 color block presets。
 - 可從本機 GAF asset 產生 runtime preview 使用的 manifest。
 - 使用 Vitest 測試 editor utilities、serialization、layer ordering、group logic、conversion helper 與 worker helper。
@@ -32,6 +41,7 @@ https://role-editor-react-rebuild.ovoowovo.workers.dev/
 - React
 - TypeScript
 - Pixi.js
+- Browser Web Workers
 - Vitest
 - Cloudflare Workers / Wrangler
 - Drizzle ORM
@@ -91,6 +101,7 @@ src/
   styles/       全域樣式
   test/         共用測試 fixtures
   types/        共用 TypeScript role types
+  workers/      瀏覽器 Web Worker，例如 role import parsing worker
 
 worker/
   src/          Cloudflare Worker API、HTTP helper、database schema 與測試
@@ -131,6 +142,7 @@ src/generated/gafManifest.json
 
 - JSON 匯出會輸出 editor role document，方便除錯、測試與 round-trip import。
 - `.twrole` 下載會輸出 legacy `[0, 1]` 格式，內容為 gzip 壓縮後的 JSON。
+- 匯入流程會優先使用瀏覽器 Web Worker 解析 role file，並在 worker 失敗時 fallback 到主 thread parsing。
 - legacy import/export 行為已有單元測試保護，方便後續重構時維持相容性。
 
 ## Worker 與部署
