@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1390.5025 990" width="1390.5025" height="990" style="--bg: #FFFFFF; --fg: #27272A; background: var(--bg); width: 1138.33px; height: 810.462px;">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)"/>
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1"/>
+  </marker>
+</defs>
+<line class="lifeline" data-actor="User" x1="70" y1="70" x2="70" y2="960" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"/>
+<line class="lifeline" data-actor="ExtraPanel" x1="210" y1="70" x2="210" y2="960" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"/>
+<line class="lifeline" data-actor="ImageHook" x1="397.6935" y1="70" x2="397.6935" y2="960" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"/>
+<line class="lifeline" data-actor="Converter" x1="629.4765" y1="70" x2="629.4765" y2="960" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"/>
+<line class="lifeline" data-actor="Palette" x1="818.6519999999999" y1="70" x2="818.6519999999999" y2="960" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"/>
+<line class="lifeline" data-actor="RoleEditor" x1="977.4465" y1="70" x2="977.4465" y2="960" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"/>
+<line class="lifeline" data-actor="Exporter" x1="1150.6905000000002" y1="70" x2="1150.6905000000002" y2="960" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"/>
+<g class="message" data-from="User" data-to="ExtraPanel" data-label="upload image file" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="70" y1="90" x2="210" y2="90" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="140" y="80" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">upload image file</text>
+</g>
+<g class="message" data-from="ExtraPanel" data-to="ImageHook" data-label="acceptFile(file)" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="210" y1="130" x2="397.6935" y2="130" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="303.84675" y="120" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">acceptFile(file)</text>
+</g>
+<g class="message" data-from="ImageHook" data-to="ImageHook" data-label="create preview URL and group name" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="397.6935,170 427.6935,170 427.6935,190 397.6935,190" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="435.6935" y="180" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">create preview URL and group name</text>
+</g>
+<g class="message" data-from="User" data-to="ExtraPanel" data-label="click Convert" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="70" y1="240" x2="210" y2="240" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="140" y="230" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">click Convert</text>
+</g>
+<g class="message" data-from="ExtraPanel" data-to="ImageHook" data-label="convert()" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="210" y1="280" x2="397.6935" y2="280" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="303.84675" y="270" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">convert()</text>
+</g>
+<g class="message" data-from="ImageHook" data-to="Converter" data-label="convertImageFileToDecos(file, decoOptions, options)" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="397.6935" y1="320" x2="629.4765" y2="320" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="513.585" y="310" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">convertImageFileToDecos(file, decoOptions, options)</text>
+</g>
+<g class="message" data-from="Converter" data-to="Palette" data-label="buildDecoPalette(decoOptions)" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="629.4765" y1="360" x2="818.6519999999999" y2="360" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="724.0642499999999" y="350" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">buildDecoPalette(decoOptions)</text>
+</g>
+<g class="message" data-from="Palette" data-to="Converter" data-label="usable deco color palette" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="818.6519999999999" y1="400" x2="629.4765" y2="400" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"/>
+  <text x="724.0642499999999" y="390" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">usable deco color palette</text>
+</g>
+<g class="message" data-from="Converter" data-to="Converter" data-label="resize image and read pixels" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="629.4765,440 659.4765,440 659.4765,460 629.4765,460" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="667.4765" y="450" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">resize image and read pixels</text>
+</g>
+<g class="message" data-from="Converter" data-to="Converter" data-label="match each visible pixel to closest deco asset" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="629.4765,510 659.4765,510 659.4765,530 629.4765,530" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="667.4765" y="520" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">match each visible pixel to closest deco asset</text>
+</g>
+<g class="message" data-from="Converter" data-to="ImageHook" data-label="return DecorationLayer[]" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="629.4765" y1="580" x2="397.6935" y2="580" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"/>
+  <text x="513.585" y="570" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">return DecorationLayer[]</text>
+</g>
+<g class="message" data-from="User" data-to="ExtraPanel" data-label="click Insert" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="70" y1="620" x2="210" y2="620" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="140" y="610" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">click Insert</text>
+</g>
+<g class="message" data-from="ExtraPanel" data-to="ImageHook" data-label="insert()" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="210" y1="660" x2="397.6935" y2="660" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="303.84675" y="650" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">insert()</text>
+</g>
+<g class="message" data-from="ImageHook" data-to="RoleEditor" data-label="onInsert(decorations, groupName)" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="397.6935" y1="700" x2="977.4465" y2="700" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="687.5699999999999" y="690" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">onInsert(decorations, groupName)</text>
+</g>
+<g class="message" data-from="RoleEditor" data-to="RoleEditor" data-label="add generated layers into role document" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="977.4465,740 1007.4465,740 1007.4465,760 977.4465,760" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="1015.4465" y="750" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">add generated layers into role document</text>
+</g>
+<g class="message" data-from="User" data-to="Exporter" data-label="click Download .twrole" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="70" y1="810" x2="1150.6905000000002" y2="810" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="610.3452500000001" y="800" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">click Download .twrole</text>
+</g>
+<g class="message" data-from="Exporter" data-to="Exporter" data-label="createTwroleBlobWithThumb(role)" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="1150.6905000000002,850 1180.6905000000002,850 1180.6905000000002,870 1150.6905000000002,870" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="1188.6905000000002" y="860" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">createTwroleBlobWithThumb(role)</text>
+</g>
+<g class="message" data-from="Exporter" data-to="User" data-label="download role.twrole" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="1150.6905000000002" y1="920" x2="70" y2="920" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"/>
+  <text x="610.3452500000001" y="910" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">download role.twrole</text>
+</g>
+<g class="actor" data-id="User" data-label="User" data-type="participant">
+  <rect x="30" y="30" width="80" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"/>
+  <text x="70" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">User</text>
+</g>
+<g class="actor" data-id="ExtraPanel" data-label="Extra Panel" data-type="participant">
+  <rect x="158.5685" y="30" width="102.863" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"/>
+  <text x="210" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Extra Panel</text>
+</g>
+<g class="actor" data-id="ImageHook" data-label="useExtraImageConversion" data-type="participant">
+  <rect x="301.43149999999997" y="30" width="192.52399999999997" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"/>
+  <text x="397.6935" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">useExtraImageConversion</text>
+</g>
+<g class="actor" data-id="Converter" data-label="convertImageFileToDecos" data-type="participant">
+  <rect x="533.9555" y="30" width="191.04199999999994" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"/>
+  <text x="629.4765" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">convertImageFileToDecos</text>
+</g>
+<g class="actor" data-id="Palette" data-label="Deco Palette" data-type="participant">
+  <rect x="764.9975" y="30" width="107.30900000000001" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"/>
+  <text x="818.6519999999999" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Deco Palette</text>
+</g>
+<g class="actor" data-id="RoleEditor" data-label="Role Editor State" data-type="participant">
+  <rect x="912.3065" y="30" width="130.28000000000003" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"/>
+  <text x="977.4465" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Role Editor State</text>
+</g>
+<g class="actor" data-id="Exporter" data-label="TWRole Exporter" data-type="participant">
+  <rect x="1082.5865000000001" y="30" width="136.20800000000003" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"/>
+  <text x="1150.6905000000002" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">TWRole Exporter</text>
+</g>
+</svg>
