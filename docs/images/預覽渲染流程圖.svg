@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1075.1329999999998 440" width="1075.1329999999998" height="440" style="--bg: #FFFFFF; --fg: #27272A; background: var(--bg); width: 880.156px; height: 360.205px;">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)"/>
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1"/>
+  </marker>
+</defs>
+<line class="lifeline" data-actor="React" x1="116.99949999999998" y1="70" x2="116.99949999999998" y2="410" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"/>
+<line class="lifeline" data-actor="Stage" x1="308.39799999999997" y1="70" x2="308.39799999999997" y2="410" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"/>
+<line class="lifeline" data-actor="Runtime" x1="501.64899999999994" y1="70" x2="501.64899999999994" y2="410" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"/>
+<line class="lifeline" data-actor="Pixi" x1="692.3064999999999" y1="70" x2="692.3064999999999" y2="410" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"/>
+<line class="lifeline" data-actor="Canvas" x1="859.6225" y1="70" x2="859.6225" y2="410" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"/>
+<line class="lifeline" data-actor="User" x1="1005.1329999999999" y1="70" x2="1005.1329999999999" y2="410" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"/>
+<g class="message" data-from="React" data-to="Stage" data-label="pass role, selectedIds, stageScale" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="116.99949999999998" y1="90" x2="308.39799999999997" y2="90" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="212.69874999999996" y="80" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">pass role, selectedIds, stageScale</text>
+</g>
+<g class="message" data-from="Stage" data-to="Runtime" data-label="create refs and callbacks" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="308.39799999999997" y1="130" x2="501.64899999999994" y2="130" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="405.02349999999996" y="120" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">create refs and callbacks</text>
+</g>
+<g class="message" data-from="Stage" data-to="Pixi" data-label="initialize Pixi Application" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="308.39799999999997" y1="170" x2="692.3064999999999" y2="170" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="500.3522499999999" y="160" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">initialize Pixi Application</text>
+</g>
+<g class="message" data-from="Pixi" data-to="Canvas" data-label="append canvas to pixi-host" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="692.3064999999999" y1="210" x2="859.6225" y2="210" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="775.9644999999999" y="200" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">append canvas to pixi-host</text>
+</g>
+<g class="message" data-from="Stage" data-to="Runtime" data-label="sync role / selection / brush fill" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="308.39799999999997" y1="250" x2="501.64899999999994" y2="250" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="405.02349999999996" y="240" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">sync role / selection / brush fill</text>
+</g>
+<g class="message" data-from="Runtime" data-to="Canvas" data-label="update display objects" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="501.64899999999994" y1="290" x2="859.6225" y2="290" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="680.6357499999999" y="280" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">update display objects</text>
+</g>
+<g class="message" data-from="User" data-to="Canvas" data-label="drag / select / brush fill" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="1005.1329999999999" y1="330" x2="859.6225" y2="330" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="932.3777499999999" y="320" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">drag / select / brush fill</text>
+</g>
+<g class="message" data-from="Canvas" data-to="React" data-label="update decoration / commit transform" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="859.6225" y1="370" x2="116.99949999999998" y2="370" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"/>
+  <text x="488.311" y="360" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">update decoration / commit transform</text>
+</g>
+<g class="actor" data-id="React" data-label="React EditorStagePanel" data-type="participant">
+  <rect x="30" y="30" width="173.99899999999997" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"/>
+  <text x="116.99949999999998" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">React EditorStagePanel</text>
+</g>
+<g class="actor" data-id="Stage" data-label="CharacterStage" data-type="participant">
+  <rect x="243.99899999999997" y="30" width="128.798" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"/>
+  <text x="308.39799999999997" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">CharacterStage</text>
+</g>
+<g class="actor" data-id="Runtime" data-label="Stage Runtime Controller" data-type="participant">
+  <rect x="412.79699999999997" y="30" width="177.70399999999998" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"/>
+  <text x="501.64899999999994" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Stage Runtime Controller</text>
+</g>
+<g class="actor" data-id="Pixi" data-label="Pixi Application" data-type="participant">
+  <rect x="630.5009999999999" y="30" width="123.611" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"/>
+  <text x="692.3064999999999" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Pixi Application</text>
+</g>
+<g class="actor" data-id="Canvas" data-label="Canvas Preview" data-type="participant">
+  <rect x="794.112" y="30" width="131.021" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"/>
+  <text x="859.6225" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Canvas Preview</text>
+</g>
+<g class="actor" data-id="User" data-label="User" data-type="participant">
+  <rect x="965.1329999999999" y="30" width="80" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"/>
+  <text x="1005.1329999999999" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">User</text>
+</g>
+</svg>
