@@ -126,7 +126,7 @@ export function EditorShell() {
         <footer className="editor-footer">
           <span>
             {t('footer.officialEditor')}{' '}
-            <a href="https://twrolecgeditor.gamelet.online/" target="_blank" rel="noreferrer" style={{ color: 'white', textDecoration: 'none' }}>
+            <a href="https://twrolecgeditor.gamelet.online/" target="_blank" rel="noreferrer" className="editor-footer-link">
               https://twrolecgeditor.gamelet.online/
             </a>
           </span>

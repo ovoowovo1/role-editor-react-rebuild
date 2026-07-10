@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../../lib/runtime/actorBodyAnimation';
 import type { BrushFillMask } from '../../lib/conversion/brushFillToDeco';
 import type { PartTab } from '../../types/role';
-import type { TopBarMode } from '../TabBar';
+import type { TopBarMode } from '../../constants/tabs';
 
 const PLAYBACK_TOOL_VISIBLE_STORAGE_KEY = 'role-editor:playback-tool-visible';
 

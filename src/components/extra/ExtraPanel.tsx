@@ -66,7 +66,7 @@ export function ExtraPanel({
     <section className="choice-list extra-panel" aria-label={t('extra.title')}>
       <header className="choice-list-header extra-panel-header">
         <strong>{t('extra.title')}</strong>
-        <span>{formatNumber(decoOptions.length)} deco</span>
+        <span>{t('extra.sourceCount', { count: formatNumber(decoOptions.length) })}</span>
       </header>
 
       <div className="extra-scroll">

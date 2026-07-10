@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
 import { t } from '../i18n';
+import { Modal } from './ui/Modal';
 
 interface ShortcutItem {
   keys: string[];
@@ -49,52 +49,27 @@ interface ShortcutHelpModalProps {
 }
 
 export function ShortcutHelpModal({ open, onClose }: ShortcutHelpModalProps) {
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    if (open) {
-      closeButtonRef.current?.focus();
-    }
-  }, [open]);
-
-  if (!open) return null;
-
   return (
-    <div className="shortcut-modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <div
-        className="shortcut-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="shortcut-modal-title"
-        data-shortcut-modal
-        onMouseDown={(event) => event.stopPropagation()}
-        onKeyDown={(event) => {
-          event.stopPropagation();
-          if (event.key === 'Escape') {
-            onClose();
-          }
-        }}
-      >
-        <div className="shortcut-header">
-          <div>
-            <strong id="shortcut-modal-title">{t('shortcuts.title')}</strong>
-            <span>{t('shortcuts.macHint')}</span>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t('shortcuts.title')}
+      subtitle={t('shortcuts.macHint')}
+      closeLabel={t('shortcuts.close')}
+      size="large"
+      contentClassName="shortcut-modal-content"
+      titleId="shortcut-modal-title"
+    >
+      <dl className="shortcut-grid">
+        {getShortcutItems().map((item) => (
+          <div className="shortcut-row" key={`${item.keys.join('+')}-${item.description}`}>
+            <dt>
+              <ShortcutKeys item={item} />
+            </dt>
+            <dd>{item.description}</dd>
           </div>
-          <button ref={closeButtonRef} type="button" className="shortcut-close" onClick={onClose}>
-            {t('shortcuts.close')}
-          </button>
-        </div>
-        <dl className="shortcut-grid">
-          {getShortcutItems().map((item) => (
-            <div className="shortcut-row" key={`${item.keys.join('+')}-${item.description}`}>
-              <dt>
-                <ShortcutKeys item={item} />
-              </dt>
-              <dd>{item.description}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-    </div>
+        ))}
+      </dl>
+    </Modal>
   );
 }

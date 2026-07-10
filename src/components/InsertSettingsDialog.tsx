@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from 'react';
 import { t } from '../i18n';
 import type { InsertDraftSettings } from '../hooks/useRoleEditor';
+import { Modal } from './ui/Modal';
 
 interface InsertSettingsDialogProps {
   open: boolean;
@@ -14,108 +16,139 @@ function isValidAfterIndex(value: string): boolean {
 }
 
 export function InsertSettingsDialog({ open, settings, onChange, onClose }: InsertSettingsDialogProps) {
-  const validIndex = settings.placement !== 'after_index' || isValidAfterIndex(settings.index);
-  if (!open) return null;
+  const [draft, setDraft] = useState(settings);
+  const firstInputRef = useRef<HTMLInputElement | null>(null);
 
-  const updateSettings = (patch: Partial<InsertDraftSettings>) => {
-    onChange({ ...settings, ...patch });
+  useEffect(() => {
+    if (open) setDraft(settings);
+  }, [open, settings]);
+
+  const validIndex = draft.placement !== 'after_index' || isValidAfterIndex(draft.index);
+
+  const updateDraft = (patch: Partial<InsertDraftSettings>) => {
+    setDraft((current) => ({ ...current, ...patch }));
   };
 
   const updateScopes = (patch: Partial<InsertDraftSettings['scopes']>) => {
-    onChange({ ...settings, scopes: { ...settings.scopes, ...patch } });
+    setDraft((current) => ({ ...current, scopes: { ...current.scopes, ...patch } }));
   };
 
+  const saveAndClose = () => {
+    if (!validIndex) return;
+    onChange(draft);
+    onClose();
+  };
+
+  const indexHint = draft.placement === 'after_index'
+    ? validIndex
+      ? t('insert.newItemsBelow')
+      : t('insert.enterInteger')
+    : t('insert.enableBelow');
+
   return (
-    <div
-      role="presentation"
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1100,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'rgba(0, 0, 0, 0.45)'
-      }}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t('insert.title')}
+      closeLabel={t('insert.cancel')}
+      size="small"
+      titleId="insert-settings-title"
+      initialFocusRef={firstInputRef}
+      showCloseButton={false}
+      footer={(
+        <>
+          <button type="button" className="button button--secondary" onClick={onClose}>
+            {t('insert.cancel')}
+          </button>
+          <button type="button" className="button button--primary" disabled={!validIndex} onClick={saveAndClose}>
+            {t('insert.save')}
+          </button>
+        </>
+      )}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="insert-settings-title"
-        onClick={(event) => event.stopPropagation()}
-        style={{
-          width: 'min(430px, calc(100vw - 32px))',
-          borderRadius: 12,
-          border: '1px solid rgba(174, 244, 255, 0.45)',
-          background: 'linear-gradient(#08384a, #02141d)',
-          boxShadow: '0 18px 60px rgba(0, 0, 0, 0.45)',
-          color: 'white',
-          padding: 18
-        }}
-      >
-        <h3 id="insert-settings-title" style={{ margin: '0 0 14px', fontSize: 18 }}>
-          {t('insert.title')}
-        </h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 320 }}>
-          <strong>{t('insert.target')}</strong>
-          <label>
-            <input type="radio" checked={settings.placement === 'top'} onChange={() => updateSettings({ placement: 'top' })} /> {t('insert.listTop')}
+      <div className="dialog-form">
+        <fieldset className="dialog-fieldset">
+          <legend>{t('insert.target')}</legend>
+          <label className="dialog-choice">
+            <input
+              ref={firstInputRef}
+              type="radio"
+              name="insert-placement"
+              checked={draft.placement === 'top'}
+              onChange={() => updateDraft({ placement: 'top' })}
+            />
+            <span>{t('insert.listTop')}</span>
           </label>
-          <label>
-            <input type="radio" checked={settings.placement === 'bottom'} onChange={() => updateSettings({ placement: 'bottom' })} /> {t('insert.listBottom')}
+          <label className="dialog-choice">
+            <input
+              type="radio"
+              name="insert-placement"
+              checked={draft.placement === 'bottom'}
+              onChange={() => updateDraft({ placement: 'bottom' })}
+            />
+            <span>{t('insert.listBottom')}</span>
           </label>
-          <label>
-            <input type="radio" checked={settings.placement === 'after_index'} onChange={() => updateSettings({ placement: 'after_index' })} /> {t('insert.belowIndex')}
+          <label className="dialog-choice">
+            <input
+              type="radio"
+              name="insert-placement"
+              checked={draft.placement === 'after_index'}
+              onChange={() => updateDraft({ placement: 'after_index' })}
+            />
+            <span>{t('insert.belowIndex')}</span>
           </label>
-          <label style={{ display: 'grid', gap: 6 }}>
+
+          <label className="dialog-field">
             <span>{t('insert.visibleRow')}</span>
             <input
+              className="form-input"
               type="number"
               min={1}
               step={1}
-              value={settings.index}
-              disabled={settings.placement !== 'after_index'}
-              onChange={(event) => updateSettings({ index: event.target.value })}
+              value={draft.index}
+              disabled={draft.placement !== 'after_index'}
+              aria-invalid={!validIndex}
+              aria-describedby="insert-index-hint"
+              onChange={(event) => updateDraft({ index: event.target.value })}
               onKeyDown={(event) => {
                 event.stopPropagation();
-                if (event.key === 'Enter' && validIndex) onClose();
-              }}
-              style={{
-                width: '100%',
-                boxSizing: 'border-box',
-                borderRadius: 8,
-                border: validIndex ? '1px solid rgba(174, 244, 255, 0.45)' : '1px solid #ff9c9c',
-                background: 'rgba(0, 0, 0, 0.32)',
-                color: 'white',
-                padding: '10px 12px'
+                if (event.key === 'Enter') saveAndClose();
               }}
             />
-            <small style={{ color: validIndex ? 'rgba(232, 252, 255, 0.75)' : '#ffb4b4' }}>
-              {settings.placement === 'after_index'
-                ? validIndex
-                  ? t('insert.newItemsBelow')
-                  : t('insert.enterInteger')
-                : t('insert.enableBelow')}
+            <small id="insert-index-hint" className={validIndex ? 'form-hint' : 'form-error'}>
+              {indexHint}
             </small>
           </label>
+        </fieldset>
 
-          <strong>{t('insert.affectSources')}</strong>
-          <label>
-            <input type="checkbox" checked={settings.scopes.palette} onChange={() => updateScopes({ palette: !settings.scopes.palette })} /> {t('insert.scopePalette')}
+        <fieldset className="dialog-fieldset">
+          <legend>{t('insert.affectSources')}</legend>
+          <label className="dialog-choice">
+            <input
+              type="checkbox"
+              checked={draft.scopes.palette}
+              onChange={() => updateScopes({ palette: !draft.scopes.palette })}
+            />
+            <span>{t('insert.scopePalette')}</span>
           </label>
-          <label>
-            <input type="checkbox" checked={settings.scopes.copy} onChange={() => updateScopes({ copy: !settings.scopes.copy })} /> {t('insert.scopeCopy')}
+          <label className="dialog-choice">
+            <input
+              type="checkbox"
+              checked={draft.scopes.copy}
+              onChange={() => updateScopes({ copy: !draft.scopes.copy })}
+            />
+            <span>{t('insert.scopeCopy')}</span>
           </label>
-          <label>
-            <input type="checkbox" checked={settings.scopes.mergeBatch} onChange={() => updateScopes({ mergeBatch: !settings.scopes.mergeBatch })} /> {t('insert.scopeMergeBatch')}
+          <label className="dialog-choice">
+            <input
+              type="checkbox"
+              checked={draft.scopes.mergeBatch}
+              onChange={() => updateScopes({ mergeBatch: !draft.scopes.mergeBatch })}
+            />
+            <span>{t('insert.scopeMergeBatch')}</span>
           </label>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-          <button type="button" onClick={onClose}>{t('insert.cancel')}</button>
-          <button type="button" disabled={!validIndex} onClick={onClose}>{t('insert.save')}</button>
-        </div>
+        </fieldset>
       </div>
-    </div>
+    </Modal>
   );
 }

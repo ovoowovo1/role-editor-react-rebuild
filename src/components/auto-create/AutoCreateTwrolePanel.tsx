@@ -1,16 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
-import {
-  CategoryScale,
-  Chart as ChartJS,
-  Filler,
-  LinearScale,
-  LineElement,
-  PointElement,
-  Tooltip,
-  type ChartData,
-  type ChartOptions
-} from 'chart.js';
-import { Line } from 'react-chartjs-2';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { t } from '../../i18n';
 import type { DecorationLayer, PartOption, RoleDocument } from '../../types/role';
 import {
@@ -26,6 +14,25 @@ import { canRunAutoCreateTwroleWorker, runAutoCreateTwroleInWorker } from '../..
 import { settingsForScope, type InsertDraftSettings } from '../../lib/editor/editorInsertSettings';
 import { insertDecorationBatchIntoRole } from '../../lib/editor/editorImportMerge';
 import { createTwroleBlobWithThumb } from '../../lib/serialization/legacyTwroleExport';
+import { ImageDropzone } from '../ui/ImageDropzone';
+import { ProgressBar } from '../ui/ProgressBar';
+import {
+  AutoCreateMseChart,
+  MAX_MSE_HISTORY_POINTS,
+  mseHistoryPoint,
+  shouldRecordMseProgress,
+  type MseHistoryPoint
+} from './AutoCreateMseChart';
+import { AutoCreateSourceFilter } from './AutoCreateSourceFilter';
+import {
+  buildSourceTitleItems,
+  downloadBlob,
+  formatNumber,
+  isImageFile,
+  optionTitle,
+  sortTitles,
+  toSafeInteger
+} from './autoCreatePanelUtils';
 
 export interface AutoCreateTwrolePanelProps {
   decoOptions: PartOption[];
@@ -36,208 +43,6 @@ export interface AutoCreateTwrolePanelProps {
 }
 
 type GuiNumericSettingKey = 'tiles' | 'tileBudget' | 'logEvery';
-
-const numberFormat = new Intl.NumberFormat();
-const MAX_MSE_HISTORY_POINTS = 240;
-
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip);
-
-interface MseHistoryPoint {
-  key: string;
-  label: string;
-  stage: AutoCreateTwroleProgress['stage'];
-  step: number;
-  mse: number;
-}
-
-function formatNumber(value: number, fractionDigits = 0): string {
-  if (!Number.isFinite(value)) return '-';
-  return numberFormat.format(Number(value.toFixed(fractionDigits)));
-}
-
-function isImageFile(file: File): boolean {
-  if (file.type?.startsWith('image/')) return true;
-  return /\.(png|jpe?g|webp|bmp)$/i.test(file.name);
-}
-
-function downloadBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 500);
-}
-
-function toSafeInteger(value: string, fallback: number): number {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-type TranslationValues = Record<string, string | number>;
-
-function interpolateFallback(template: string, values?: TranslationValues): string {
-  if (!values) return template;
-  return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? `{${key}}`));
-}
-
-function tr(key: string, fallback: string, values?: TranslationValues): string {
-  const translated = t(key, values);
-  return translated === key ? interpolateFallback(fallback, values) : translated;
-}
-
-interface SourceTitleItem {
-  title: string;
-  count: number;
-}
-
-function optionTitle(option: PartOption): string {
-  return option.label?.trim() || option.code || option.id;
-}
-
-function sortTitles(left: string, right: string): number {
-  return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
-}
-
-function shouldRecordMseProgress(progress: AutoCreateTwroleProgress): boolean {
-  return (progress.stage === 'run' || progress.stage === 'final') && Number.isFinite(progress.mse);
-}
-
-function mseHistoryKey(progress: AutoCreateTwroleProgress): string {
-  return `${progress.stage}:${progress.step}:${progress.mse.toPrecision(12)}`;
-}
-
-function mseHistoryPoint(progress: AutoCreateTwroleProgress): MseHistoryPoint {
-  return {
-    key: mseHistoryKey(progress),
-    label: `${progress.stage} ${progress.step}`,
-    stage: progress.stage,
-    step: progress.step,
-    mse: progress.mse
-  };
-}
-
-interface AutoCreateMseChartProps {
-  points: MseHistoryPoint[];
-}
-
-function AutoCreateMseChart({ points }: AutoCreateMseChartProps) {
-  const stats = useMemo(() => {
-    if (points.length === 0) return null;
-    let min = points[0].mse;
-    let max = points[0].mse;
-    for (const point of points) {
-      min = Math.min(min, point.mse);
-      max = Math.max(max, point.mse);
-    }
-    return {
-      latest: points[points.length - 1].mse,
-      min,
-      max
-    };
-  }, [points]);
-
-  const data = useMemo<ChartData<'line'>>(
-    () => ({
-      labels: points.map((point) => point.label),
-      datasets: [
-        {
-          label: t('autoCreate.stat.mse'),
-          data: points.map((point) => point.mse),
-          borderColor: '#35d0ff',
-          backgroundColor: 'rgba(53, 208, 255, 0.18)',
-          borderWidth: 2,
-          fill: true,
-          pointBackgroundColor: '#9cffb2',
-          pointBorderColor: '#061622',
-          pointBorderWidth: 1,
-          pointHoverRadius: 4,
-          pointRadius: points.length === 1 ? 3 : 0,
-          tension: 0.25
-        }
-      ]
-    }),
-    [points]
-  );
-
-  const options = useMemo<ChartOptions<'line'>>(
-    () => ({
-      animation: false,
-      maintainAspectRatio: false,
-      normalized: true,
-      responsive: true,
-      interaction: {
-        intersect: false,
-        mode: 'index'
-      },
-      plugins: {
-        legend: {
-          display: false
-        },
-        tooltip: {
-          callbacks: {
-            label: (context) => `MSE ${formatNumber(Number(context.parsed.y), 6)}`
-          },
-          displayColors: false
-        }
-      },
-      scales: {
-        x: {
-          display: false,
-          grid: {
-            display: false
-          }
-        },
-        y: {
-          border: {
-            display: false
-          },
-          grid: {
-            color: 'rgba(188, 239, 255, 0.12)'
-          },
-          ticks: {
-            color: 'rgba(216, 248, 255, 0.72)',
-            maxTicksLimit: 4,
-            callback: (value) => formatNumber(Number(value), 5)
-          }
-        }
-      }
-    }),
-    []
-  );
-
-  return (
-    <div className="auto-create-mse-chart" aria-label={t('autoCreate.mseChart.title')}>
-      <div className="auto-create-mse-chart-header">
-        <strong>{t('autoCreate.mseChart.title')}</strong>
-        {stats ? (
-          <span>
-            {t('autoCreate.mseChart.latest')} {formatNumber(stats.latest, 6)}
-          </span>
-        ) : null}
-      </div>
-      {stats ? (
-        <>
-          <div className="auto-create-mse-chart-canvas">
-            <Line data={data} options={options} />
-          </div>
-          <div className="auto-create-mse-chart-stats">
-            <span>
-              {t('autoCreate.mseChart.min')} {formatNumber(stats.min, 6)}
-            </span>
-            <span>
-              {t('autoCreate.mseChart.max')} {formatNumber(stats.max, 6)}
-            </span>
-          </div>
-        </>
-      ) : (
-        <div className="auto-create-mse-chart-empty">{t('autoCreate.mseChart.empty')}</div>
-      )}
-    </div>
-  );
-}
 
 export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSettings, onInsert, onStatus }: AutoCreateTwrolePanelProps) {
   const [settings, setSettings] = useState<AutoCreateTwroleSettings>(DEFAULT_AUTO_CREATE_TWROLE_SETTINGS);
@@ -254,7 +59,6 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
   const workerAvailable = useMemo(() => canRunAutoCreateTwroleWorker(), []);
   const [sourceTitleSearch, setSourceTitleSearch] = useState('');
   const [excludedSourceTitles, setExcludedSourceTitles] = useState<string[]>([]);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -264,17 +68,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
     };
   }, [targetPreviewUrl]);
 
-  const sourceTitleItems = useMemo<SourceTitleItem[]>(() => {
-    const counts = new Map<string, number>();
-    for (const option of decoOptions) {
-      const title = optionTitle(option);
-      counts.set(title, (counts.get(title) ?? 0) + 1);
-    }
-
-    return Array.from(counts.entries())
-      .map(([title, count]) => ({ title, count }))
-      .sort((left, right) => sortTitles(left.title, right.title));
-  }, [decoOptions]);
+  const sourceTitleItems = useMemo(() => buildSourceTitleItems(decoOptions), [decoOptions]);
 
   const availableTitleSet = useMemo(() => new Set(sourceTitleItems.map((item) => item.title)), [sourceTitleItems]);
 
@@ -336,16 +130,6 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
     setError(null);
     setProgress(null);
     setMseHistory([]);
-  };
-
-  const handleInputFile = (event: ChangeEvent<HTMLInputElement>) => {
-    acceptFile(event.currentTarget.files?.[0]);
-    event.currentTarget.value = '';
-  };
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    acceptFile(event.dataTransfer.files?.[0]);
   };
 
   const patchNumber = (key: GuiNumericSettingKey, rawValue: string) => {
@@ -421,10 +205,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
   const convert = async () => {
     if (!file || running || filteredDecoOptions.length === 0) return;
     if (!workerAvailable) {
-      const message = tr(
-        'autoCreate.error.workerUnavailable',
-        '目前瀏覽器不支援 AutoCreate 背景運算。為了避免頁面無回應，已停用主執行緒 fallback；請使用桌面版 Chrome / Edge / Firefox。'
-      );
+      const message = t('autoCreate.error.workerUnavailable');
       setError(message);
       onStatus(t('status.autoCreateFailed', { message }));
       return;
@@ -481,10 +262,10 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
         recordProgress(err.checkpoint.progress);
         setInserted(false);
         setError(null);
-        onStatus(tr('status.autoCreateStopped', '自動生成已停止，可以下載目前結果或按「繼續生成」。'));
+        onStatus(t('status.autoCreateStopped'));
       } else if ((err as DOMException)?.name === 'AbortError') {
         setError(t('autoCreate.error.aborted'));
-        onStatus(tr('status.autoCreateStopped', '自動生成已停止，可以下載目前結果或按「繼續生成」。'));
+        onStatus(t('status.autoCreateStopped'));
       } else {
         const message = err instanceof Error ? err.message : String(err);
         setError(message);
@@ -546,24 +327,14 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
 
   return (
     <>
-        <div
-          className="extra-dropzone auto-create-dropzone"
-          onClick={() => fileInputRef.current?.click()}
-          onDragOver={(event: DragEvent<HTMLDivElement>) => event.preventDefault()}
-          onDrop={handleDrop}
-          role="button"
-          tabIndex={0}
-        >
-          {targetPreviewUrl ? (
-            <img src={targetPreviewUrl} alt="" />
-          ) : (
-            <div className="extra-dropzone-empty">{t('autoCreate.drop')}</div>
-          )}
-          <button className="extra-upload-button" type="button">
-            {file ? t('autoCreate.replace') : t('autoCreate.chooseImage')}
-          </button>
-          <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleInputFile} />
-        </div>
+        <ImageDropzone
+          className="auto-create-dropzone"
+          previewUrl={targetPreviewUrl}
+          emptyLabel={t('autoCreate.drop')}
+          actionLabel={file ? t('autoCreate.replace') : t('autoCreate.chooseImage')}
+          disabled={running}
+          onSelect={acceptFile}
+        />
 
         <div className="extra-section">
           <div className="extra-section-title">{t('autoCreate.section.settings')}</div>
@@ -585,72 +356,34 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
 
         {!workerAvailable ? (
           <div className="extra-message warning auto-create-browser-note">
-            {tr(
-              'autoCreate.error.workerUnavailable',
-              '目前瀏覽器不支援 AutoCreate 背景運算。為了避免頁面無回應，已停用主執行緒 fallback；請使用桌面版 Chrome / Edge / Firefox。'
-            )}
+            {t('autoCreate.error.workerUnavailable')}
           </div>
         ) : null}
 
-        <div className="extra-section auto-create-source-filter">
-          <div className="extra-section-title">{tr('autoCreate.section.sourceFilter', '素材 title 過濾')}</div>
-          <div className="auto-create-filter-summary">
-            <span>{tr('autoCreate.filter.sourceSummary', '使用素材：{enabled} / {total}', { enabled: filteredDecoOptions.length, total: decoOptions.length })}</span>
-            <span>{tr('autoCreate.filter.titleSummary', '使用 title：{enabled} / {total}', { enabled: usedTitleCount, total: sourceTitleItems.length })}</span>
-          </div>
-          <input
-            className="auto-create-filter-search"
-            type="search"
-            value={sourceTitleSearch}
-            disabled={running}
-            placeholder={tr('autoCreate.filter.searchPlaceholder', '搜尋 title / 裝飾名稱')}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setSourceTitleSearch(event.currentTarget.value)}
-          />
-          <div className="auto-create-filter-actions">
-            <button type="button" className="primary-button subtle" disabled={running || excludedSourceTitles.length === 0} onClick={useAllSourceTitles}>
-              {tr('autoCreate.filter.useAll', '使用全部')}
-            </button>
-            <button type="button" className="primary-button subtle" disabled={running || visibleSourceTitleItems.length === 0} onClick={useVisibleSourceTitles}>
-              {tr('autoCreate.filter.useVisible', '使用目前顯示')}
-            </button>
-            <button type="button" className="primary-button subtle" disabled={running || visibleSourceTitleItems.length === 0} onClick={excludeVisibleSourceTitles}>
-              {tr('autoCreate.filter.excludeVisible', '排除目前顯示')}
-            </button>
-          </div>
-          <div className="auto-create-title-list" role="list" aria-label={tr('autoCreate.filter.listLabel', 'AutoCreate 可使用的素材 title')}>
-            {visibleSourceTitleItems.length ? (
-              visibleSourceTitleItems.map((item) => {
-                const checked = !excludedTitleSet.has(item.title);
-                return (
-                  <label key={item.title} className={checked ? 'auto-create-title-row' : 'auto-create-title-row excluded'} title={item.title}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={running}
-                      onChange={(event: ChangeEvent<HTMLInputElement>) => toggleSourceTitle(item.title, event.currentTarget.checked)}
-                    />
-                    <span className="auto-create-title-name">{item.title}</span>
-                    <span className="auto-create-title-count">{formatNumber(item.count)}</span>
-                  </label>
-                );
-              })
-            ) : (
-              <div className="auto-create-title-empty">{tr('autoCreate.filter.noMatch', '找不到符合的 title。')}</div>
-            )}
-          </div>
-          {filteredDecoOptions.length === 0 ? (
-            <div className="extra-message warning auto-create-filter-warning">{tr('autoCreate.filter.emptyWarning', '所有素材都被排除了，請至少保留一個 title。')}</div>
-          ) : null}
-        </div>
+        <AutoCreateSourceFilter
+          sourceTitleItems={sourceTitleItems}
+          visibleSourceTitleItems={visibleSourceTitleItems}
+          excludedTitleSet={excludedTitleSet}
+          filteredOptionCount={filteredDecoOptions.length}
+          totalOptionCount={decoOptions.length}
+          usedTitleCount={usedTitleCount}
+          search={sourceTitleSearch}
+          running={running}
+          onSearchChange={setSourceTitleSearch}
+          onUseAll={useAllSourceTitles}
+          onUseVisible={useVisibleSourceTitles}
+          onExcludeVisible={excludeVisibleSourceTitles}
+          onToggleTitle={toggleSourceTitle}
+        />
 
         <div className="extra-actions auto-create-actions">
           <button type="button" className="primary-button save" disabled={!file || running || filteredDecoOptions.length === 0 || !workerAvailable} onClick={convert}>
             {running
               ? stopping
-                ? tr('autoCreate.stopping', '停止中...')
+                ? t('autoCreate.stopping')
                 : t('autoCreate.converting')
               : checkpoint
-                ? tr('autoCreate.resume', '繼續生成')
+                ? t('autoCreate.resume')
                 : t('autoCreate.convert')}
           </button>
           <button type="button" className="primary-button subtle" disabled={!running || stopping} onClick={stop}>
@@ -663,7 +396,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
             {t('autoCreate.downloadJson')}
           </button>
           <button type="button" className="primary-button subtle" disabled={!result} onClick={downloadTwrole}>
-            {tr('autoCreate.downloadTwrole', '下載 TWRole')}
+            {t('autoCreate.downloadTwrole')}
           </button>
         </div>
 
@@ -672,7 +405,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
             <span>{stageLabel}</span>
             <strong>{progress ? `${formatNumber(progress.step)} / ${formatNumber(progress.total)}` : '0 / 0'}</strong>
           </div>
-          <i style={{ width: `${progressPercent}%` }} />
+          <ProgressBar value={progressPercent} label={stageLabel} />
           {progress ? (
             <div className="auto-create-progress-grid">
               <span>MSE {formatNumber(progress.mse, 6)}</span>

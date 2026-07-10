@@ -1,6 +1,6 @@
-import { useRef } from 'react';
 import { t } from '../../i18n';
 import type { ExtraToolMode } from './extraPanelModels';
+import { ImageDropzone } from '../ui/ImageDropzone';
 
 interface ExtraModeSwitchProps {
   toolMode: ExtraToolMode;
@@ -33,36 +33,14 @@ interface ImageImportPanelProps {
 }
 
 export function ImageImportPanel({ file, visiblePreview, onAcceptFile }: ImageImportPanelProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
   return (
-    <div
-      className={`extra-dropzone ${file ? 'has-file' : ''}`}
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        event.preventDefault();
-        onAcceptFile(event.dataTransfer.files?.[0]);
-      }}
-    >
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/webp"
-        hidden
-        onChange={(event) => {
-          onAcceptFile(event.target.files?.[0]);
-          event.currentTarget.value = '';
-        }}
-      />
-      {visiblePreview ? (
-        <img src={visiblePreview} alt="" />
-      ) : (
-        <span className="extra-dropzone-empty">{t('extra.upload')}</span>
-      )}
-      <button type="button" className="extra-upload-button" onClick={() => inputRef.current?.click()}>
-        {file ? t('extra.replace') : t('extra.chooseImage')}
-      </button>
-    </div>
+    <ImageDropzone
+      accept="image/png,image/jpeg,image/webp"
+      previewUrl={visiblePreview}
+      emptyLabel={t('extra.upload')}
+      actionLabel={file ? t('extra.replace') : t('extra.chooseImage')}
+      onSelect={onAcceptFile}
+    />
   );
 }
 

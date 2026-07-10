@@ -1,17 +1,8 @@
-import { PART_TABS, type PartTab } from '../types/role';
+import { useRef, type KeyboardEvent } from 'react';
 import { t } from '../i18n';
+import { TOP_BAR_I18N_KEYS, TOP_BAR_MODES, type TopBarMode } from '../constants/tabs';
 
-export type TopBarMode = PartTab | 'colorBlock' | 'extra';
-
-const tabI18nKeys: Record<TopBarMode, string> = {
-  deco: 'tabs.deco',
-  head: 'tabs.head',
-  hand: 'tabs.hand',
-  foot: 'tabs.foot',
-  cape: 'tabs.cape',
-  colorBlock: 'tabs.colorBlock',
-  extra: 'tabs.extra'
-};
+export type { TopBarMode } from '../constants/tabs';
 
 interface TabBarProps {
   value: TopBarMode;
@@ -19,35 +10,48 @@ interface TabBarProps {
 }
 
 export function TabBar({ value, onChange }: TabBarProps) {
+  const tabListRef = useRef<HTMLElement | null>(null);
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+
+    const currentIndex = Math.max(0, TOP_BAR_MODES.indexOf(value));
+    let nextIndex = currentIndex;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = TOP_BAR_MODES.length - 1;
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + TOP_BAR_MODES.length) % TOP_BAR_MODES.length;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % TOP_BAR_MODES.length;
+
+    const nextMode = TOP_BAR_MODES[nextIndex];
+    onChange(nextMode);
+    const nextButton = tabListRef.current?.querySelector<HTMLButtonElement>(`[data-tab-mode="${nextMode}"]`);
+    window.requestAnimationFrame(() => nextButton?.focus());
+  };
+
   return (
-    <nav className="top-bar" aria-label={t('tabs.rolePart')}>
-      {PART_TABS.map((tab) => (
+    <nav
+      ref={tabListRef}
+      className="top-bar"
+      aria-label={t('tabs.rolePart')}
+      role="tablist"
+      onKeyDown={handleKeyDown}
+    >
+      {TOP_BAR_MODES.map((mode) => (
         <button
-          key={tab}
-          className={`top-bar-button ${value === tab ? 'selected' : ''}`}
+          key={mode}
+          className={`top-bar-button ${value === mode ? 'selected' : ''}`}
           type="button"
-          onClick={() => onChange(tab)}
+          role="tab"
+          aria-selected={value === mode}
+          tabIndex={value === mode ? 0 : -1}
+          data-tab-mode={mode}
+          data-testid={mode === 'colorBlock' ? 'tab-color-block-button' : undefined}
+          onClick={() => onChange(mode)}
         >
-          {t(tabI18nKeys[tab])}
+          {t(TOP_BAR_I18N_KEYS[mode])}
         </button>
       ))}
-      <button
-        key="colorBlock"
-        className={`top-bar-button ${value === 'colorBlock' ? 'selected' : ''}`}
-        type="button"
-        data-testid="tab-color-block-button"
-        onClick={() => onChange('colorBlock')}
-      >
-        {t('tabs.colorBlock')}
-      </button>
-      <button
-        key="extra"
-        className={`top-bar-button ${value === 'extra' ? 'selected' : ''}`}
-        type="button"
-        onClick={() => onChange('extra')}
-      >
-        {t('tabs.extra')}
-      </button>
     </nav>
   );
 }

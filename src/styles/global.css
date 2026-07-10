@@ -84,22 +84,6 @@ input:disabled {
   overflow: hidden;
 }
 
-.window-title {
-  align-self: center;
-  width: fit-content;
-  max-width: calc(100% - 40px);
-  margin: 8px 20px 0;
-  padding: 5px 24px 7px;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  border-radius: 8px;
-  background: linear-gradient(#000, #003949);
-  color: #fff;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-shadow: 0 2px 4px #000;
-}
-
 .menu-bar {
   min-height: 64px;
   display: flex;
@@ -158,11 +142,6 @@ input:disabled {
   font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.02em;
-}
-
-.menu-spacer {
-  flex: 1;
-  min-width: 20px;
 }
 
 .select-label {
@@ -623,21 +602,13 @@ input:disabled {
   background: rgba(0, 0, 0, 0.25);
 }
 
-.extra-progress div {
+.extra-progress > div:first-child {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   color: #d8f8ff;
   font-size: 12px;
-}
-
-.extra-progress i {
-  height: 6px;
-  display: block;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #9cffb2, #35d0ff);
-  transition: width 140ms ease;
 }
 
 .extra-stats {
@@ -871,74 +842,6 @@ input:disabled {
 
 .layer-delete {
   background: rgba(255, 92, 92, 0.88);
-}
-
-.shortcut-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.56);
-  backdrop-filter: blur(2px);
-}
-
-.shortcut-modal {
-  width: min(720px, 92vw);
-  max-height: min(650px, 86vh);
-  padding: 16px;
-  overflow: hidden;
-  border: 2px solid rgba(232, 251, 255, 0.72);
-  border-radius: 16px;
-  background: linear-gradient(180deg, #053242, #06101a);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7), inset 0 0 38px rgba(53, 208, 255, 0.1);
-}
-
-.shortcut-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 12px;
-  color: #e8fbff;
-  font-size: 15px;
-}
-
-.shortcut-header div {
-  display: grid;
-  gap: 3px;
-}
-
-.shortcut-header span {
-  display: block;
-  color: #9bddea;
-  font-weight: 500;
-  font-size: 12px;
-}
-
-.shortcut-close {
-  min-height: 32px;
-  padding: 6px 12px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  cursor: pointer;
-}
-
-.shortcut-close:hover {
-  filter: brightness(1.16);
-}
-
-.weapon-modal {
-  width: min(760px, 92vw);
-}
-
-.weapon-modal-actions {
-  display: inline-flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 .weapon-animation-list {
@@ -1286,70 +1189,7 @@ input[type='range']::-webkit-slider-thumb {
   font-size: 12px;
 }
 
-@media (max-width: 1100px) {
-  body {
-    overflow: auto;
-  }
-
-  .role-editor-page {
-    height: 100%;
-    min-height: 100%;
-    padding: 0;
-  }
-
-  .editor-window {
-    width: 100%;
-    height: 100dvh;
-    min-height: 0;
-  }
-
-  .menu-bar {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .bottom-body {
-    display: grid;
-    grid-template-columns: 1fr;
-  }
-
-  .choice-list,
-  .edit-list,
-  .edit-block {
-    width: 100%;
-    max-width: none;
-  }
-
-  .choice-list {
-    height: 280px;
-    resize: none;
-  }
-
-  .edit-list {
-    height: 320px;
-  }
-
-  .stage-panel {
-    height: 420px;
-    flex: none;
-  }
-}
-
 @media (max-width: 720px) {
-  .editor-window {
-    width: 100%;
-    border-radius: 0;
-  }
-
-  .top-bar {
-    overflow-x: auto;
-  }
-
-  .top-bar-button {
-    min-width: 112px;
-    flex: 0 0 auto;
-  }
-
   .range-box,
   .position-row {
     grid-template-columns: 1fr;
@@ -1357,19 +1197,6 @@ input[type='range']::-webkit-slider-thumb {
 
   .range-box {
     gap: 4px;
-  }
-
-  .weapon-animation-list {
-    grid-template-columns: 1fr;
-  }
-
-  .menu-spacer {
-    display: none;
-  }
-
-  .status-pill {
-    width: 100%;
-    max-width: none;
   }
 
   .editor-footer {
@@ -1581,15 +1408,6 @@ input[type='range']::-webkit-slider-thumb {
   display: inline-block;
   overflow: hidden;
   vertical-align: middle;
-}
-
-.atlas-preview-fallback {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  opacity: 0.18;
 }
 
 .atlas-preview-frame {

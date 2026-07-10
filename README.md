@@ -82,6 +82,7 @@ npm run build                   # 產生 GAF manifest、執行 TypeScript 檢查
 npm run preview                 # 預覽 production build
 npm run test                    # 以 watch mode 執行 Vitest
 npm run test:run                # 執行一次 Vitest
+npm run check                   # 執行單元測試、前端 build、Worker 與 renderer 檢查
 npm run test:e2e                # 執行 Playwright e2e 測試
 npm run test:e2e:headed         # 以 headed mode 執行 Playwright e2e 測試
 npm run generate:gaf            # 產生 src/generated/gafManifest.json

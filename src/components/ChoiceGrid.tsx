@@ -1,15 +1,9 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PartOption, PartTab } from '../types/role';
+import { PART_TAB_I18N_KEYS } from '../constants/tabs';
 import { t } from '../i18n';
 import { AssetPreview } from './AssetPreview';
 
-const tabI18nKeys: Record<PartTab, string> = {
-  deco: 'tabs.deco',
-  head: 'tabs.head',
-  hand: 'tabs.hand',
-  foot: 'tabs.foot',
-  cape: 'tabs.cape'
-};
 
 interface ChoiceGridProps {
   tab: PartTab;
@@ -68,12 +62,12 @@ export function ChoiceGrid({ tab, options, selectedOptionId, onPick }: ChoiceGri
   return (
     <section
       className="choice-list"
-      aria-label={t('choices.choices', { tab: t(tabI18nKeys[tab]) })}
+      aria-label={t('choices.choices', { tab: t(PART_TAB_I18N_KEYS[tab]) })}
       ref={parentRef}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
     >
       <div className="choice-list-header">
-        <strong>{t(tabI18nKeys[tab])}</strong>
+        <strong>{t(PART_TAB_I18N_KEYS[tab])}</strong>
         <span>{visibleSummary}</span>
       </div>
       <div className="choice-virtual-space" style={{ height: totalHeight }}>

@@ -2,6 +2,7 @@ import { t } from '../../i18n';
 import type { ImageToDecoProgress } from '../../lib/conversion/imageToDeco';
 import type { ExtraStatItem, ExtraToolMode } from './extraPanelModels';
 import { progressLabel, progressPercent } from './extraPanelModels';
+import { ProgressBar } from '../ui/ProgressBar';
 
 interface ExtraActionBarProps {
   toolMode: ExtraToolMode;
@@ -65,7 +66,7 @@ export function ExtraProgressView({ progress, active }: ExtraProgressViewProps) 
         <span>{progressLabel(progress, t)}</span>
         <strong>{progressValue}%</strong>
       </div>
-      <i style={{ width: `${progressValue}%` }} />
+      <ProgressBar value={progressValue} label={progressLabel(progress, t)} />
     </div>
   );
 }

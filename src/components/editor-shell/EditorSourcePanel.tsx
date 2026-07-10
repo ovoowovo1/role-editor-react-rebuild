@@ -2,7 +2,8 @@ import { t } from '../../i18n';
 import { colorBlockToRole } from '../../mock/colorBlocks';
 import type { useColorBlockPresets } from '../../hooks/useColorBlockPresets';
 import type { useRoleEditor } from '../../hooks/useRoleEditor';
-import type { PartOption, PartTab } from '../../types/role';
+import type { PartOption } from '../../types/role';
+import { PART_TAB_I18N_KEYS } from '../../constants/tabs';
 import { ChoiceGrid } from '../ChoiceGrid';
 import { ColorBlockGrid } from '../ColorBlockGrid';
 import { ExtraPanel } from '../extra/ExtraPanel';
@@ -11,11 +12,6 @@ import type { useEditorShellUiState } from './useEditorShellUiState';
 type EditorApi = ReturnType<typeof useRoleEditor>;
 type ShellState = ReturnType<typeof useEditorShellUiState>;
 type ColorBlockPresetState = ReturnType<typeof useColorBlockPresets>;
-
-function tabI18nKeys(tab: PartTab): string {
-  const map: Record<PartTab, string> = { deco: 'tabs.deco', head: 'tabs.head', hand: 'tabs.hand', foot: 'tabs.foot', cape: 'tabs.cape' };
-  return map[tab];
-}
 
 interface EditorSourcePanelProps {
   editor: EditorApi;
@@ -74,7 +70,7 @@ export function EditorSourcePanel({
         setStatus(
           editor.selectedTab === 'deco'
             ? t('status.addedDeco', { label: option.label })
-            : t('status.changedPart', { tab: t(tabI18nKeys(editor.selectedTab)), label: option.label })
+            : t('status.changedPart', { tab: t(PART_TAB_I18N_KEYS[editor.selectedTab]), label: option.label })
         );
       }}
     />

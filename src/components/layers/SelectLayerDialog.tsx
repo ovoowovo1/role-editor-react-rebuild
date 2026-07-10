@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { t } from '../../i18n';
+import { Modal } from '../ui/Modal';
 import { parseLayerNumberInput } from './layerListVirtualization';
 
 interface SelectableLayerNumber {
@@ -26,11 +27,9 @@ export function SelectLayerDialog({
 
   useEffect(() => {
     if (!open) return;
+    setInputValue('');
     setInputError('');
-    window.setTimeout(() => inputRef.current?.focus(), 0);
   }, [open]);
-
-  if (!open) return null;
 
   const handleConfirm = () => {
     let numbers: number[];
@@ -54,83 +53,60 @@ export function SelectLayerDialog({
 
     const ids = numbers.map((number) => idByNumber.get(number)).filter((id): id is string => Boolean(id));
     onConfirm(ids);
-    setInputError('');
     onClose();
   };
 
   const handleInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     event.stopPropagation();
     if (event.key === 'Enter') handleConfirm();
-    if (event.key === 'Escape') onClose();
   };
 
   return (
-    <div
-      role="presentation"
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'rgba(0, 0, 0, 0.45)'
-      }}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t('layers.selectItems')}
+      closeLabel={t('layers.cancel')}
+      size="small"
+      titleId="select-items-title"
+      initialFocusRef={inputRef}
+      showCloseButton={false}
+      footer={(
+        <>
+          <button type="button" className="button button--secondary" onClick={onClose}>
+            {t('layers.cancel')}
+          </button>
+          <button type="button" className="button button--primary" onClick={handleConfirm}>
+            {t('layers.selectButton')}
+          </button>
+        </>
+      )}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="select-items-title"
-        onClick={(event) => event.stopPropagation()}
-        style={{
-          width: 'min(420px, calc(100vw - 32px))',
-          borderRadius: 12,
-          border: '1px solid rgba(174, 244, 255, 0.45)',
-          background: 'linear-gradient(#08384a, #02141d)',
-          boxShadow: '0 18px 60px rgba(0, 0, 0, 0.45)',
-          color: 'white',
-          padding: 18
-        }}
-      >
-        <h3 id="select-items-title" style={{ margin: '0 0 14px', fontSize: 18 }}>
-          {t('layers.selectItems')}
-        </h3>
-        <label style={{ display: 'grid', gap: 8, fontSize: 13 }}>
+      <div className="dialog-form">
+        <label className="dialog-field">
           <span>{t('layers.itemNumbers')}</span>
           <input
             ref={inputRef}
+            className="form-input"
             value={inputValue}
+            aria-invalid={Boolean(inputError)}
+            aria-describedby="select-layer-help select-layer-error"
             onChange={(event) => {
               setInputValue(event.target.value);
               setInputError('');
             }}
             onKeyDown={handleInputKeyDown}
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              borderRadius: 8,
-              border: '1px solid rgba(174, 244, 255, 0.45)',
-              background: 'rgba(0, 0, 0, 0.32)',
-              color: 'white',
-              outline: 'none',
-              padding: '10px 12px'
-            }}
           />
         </label>
-        <p style={{ marginTop: 10, fontSize: '0.8em', color: 'rgba(232, 252, 255, 0.8)' }}>
+        <p id="select-layer-help" className="form-hint">
           {t('layers.selectHelp')}
         </p>
-        {inputError ? <p style={{ color: '#ffb4b4', fontSize: 12, marginTop: 8 }}>{inputError}</p> : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-          <button type="button" onClick={onClose}>
-            {t('layers.cancel')}
-          </button>
-          <button type="button" onClick={handleConfirm}>
-            {t('layers.selectButton')}
-          </button>
-        </div>
+        {inputError ? (
+          <p id="select-layer-error" className="form-error" role="alert">
+            {inputError}
+          </p>
+        ) : null}
       </div>
-    </div>
+    </Modal>
   );
 }

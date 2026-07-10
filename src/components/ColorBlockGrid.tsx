@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import { t } from '../i18n';
 import { findOptionByCode } from '../mock/options';
 import type { ColorBlockPreset } from '../mock/colorBlocks';
@@ -46,14 +46,7 @@ export function ColorBlockGrid({ presets, loading = false, error, onPick }: Colo
             >
               <span
                 className="color-block-swatch"
-                style={{
-                  width: 54,
-                  height: 32,
-                  borderRadius: 8,
-                  background: preset.color,
-                  border: '1px solid rgba(255,255,255,0.45)',
-                  boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.35)'
-                }}
+                style={{ '--color-block-swatch': preset.color } as CSSProperties}
               />
               <span className="color-block-preview-row">
                 {previewOptions.map((option) => (
@@ -61,7 +54,7 @@ export function ColorBlockGrid({ presets, loading = false, error, onPick }: Colo
                 ))}
               </span>
               <span className="choice-label">{preset.label}</span>
-              <small className="asset-source-badge">{preset.deco.length} decos</small>
+              <small className="asset-source-badge">{t('colorBlock.decoCount', { count: preset.deco.length })}</small>
             </button>
           );
         })}

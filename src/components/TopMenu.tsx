@@ -1,7 +1,7 @@
-import { useRef } from 'react';
 import { t } from '../i18n';
 import { camps, genders } from '../mock/options';
 import type { GenderCode } from '../types/role';
+import { FilePickerButton } from './ui/FilePickerButton';
 
 interface TopMenuProps {
   camp: string;
@@ -21,6 +21,8 @@ interface TopMenuProps {
   onOpenInsertSettings(): void;
 }
 
+const ROLE_FILE_ACCEPT = '.twrole,.json,application/json';
+
 export function TopMenu({
   camp,
   gender,
@@ -38,90 +40,82 @@ export function TopMenu({
   onOpenShortcuts,
   onOpenInsertSettings
 }: TopMenuProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const mergeInputRef = useRef<HTMLInputElement | null>(null);
-
   return (
-    <div className="menu-bar">
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".twrole,.json,application/json"
-        data-testid="import-file-input"
-        hidden
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) onImport(file);
-          event.currentTarget.value = '';
-        }}
-      />
-      <input
-        ref={mergeInputRef}
-        type="file"
-        accept=".twrole,.json,application/json"
-        data-testid="merge-file-input"
-        hidden
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) onMerge(file);
-          event.currentTarget.value = '';
-        }}
-      />
-      <div className="menu-actions">
-        <button className="primary-button" type="button" data-testid="import-button" onClick={() => inputRef.current?.click()}>
-          {t('menu.import')}
-        </button>
-        <button className="primary-button" type="button" data-testid="download-twrole-button" onClick={onDownloadTwrole}>
-          {t('menu.download')}
-        </button>
-        <button className="primary-button subtle" type="button" data-testid="export-json-button" onClick={onExportJson}>
-          {t('menu.exportJson')}
-        </button>
-        <button className="primary-button subtle" type="button" onClick={onOpenInsertSettings}>
-          {t('menu.insertSettings')}
-        </button>
-        <button className="primary-button subtle" type="button" onClick={() => mergeInputRef.current?.click()}>
-          {t('menu.mergeFile')}
-        </button>
+    <header className="menu-bar">
+      <div className="menu-command-area">
+        <div className="menu-actions" role="group" aria-label={t('menu.fileActions')}>
+          <FilePickerButton
+            accept={ROLE_FILE_ACCEPT}
+            buttonTestId="import-button"
+            className="primary-button"
+            inputTestId="import-file-input"
+            onSelect={onImport}
+          >
+            {t('menu.import')}
+          </FilePickerButton>
+          <button className="primary-button" type="button" data-testid="download-twrole-button" onClick={onDownloadTwrole}>
+            {t('menu.download')}
+          </button>
+          <button className="primary-button subtle" type="button" data-testid="export-json-button" onClick={onExportJson}>
+            {t('menu.exportJson')}
+          </button>
+          <button className="primary-button subtle" type="button" onClick={onOpenInsertSettings}>
+            {t('menu.insertSettings')}
+          </button>
+          <FilePickerButton
+            accept={ROLE_FILE_ACCEPT}
+            buttonTestId="merge-button"
+            className="primary-button subtle"
+            inputTestId="merge-file-input"
+            onSelect={onMerge}
+          >
+            {t('menu.mergeFile')}
+          </FilePickerButton>
+        </div>
+
+        <div className="icon-actions" role="group" aria-label={t('menu.history')}>
+          <button type="button" title={t('menu.undo')} aria-label={t('menu.undo')} data-testid="undo-button" disabled={!canUndo} onClick={onUndo}>
+            ↶
+          </button>
+          <button type="button" title={t('menu.redo')} aria-label={t('menu.redo')} data-testid="redo-button" disabled={!canRedo} onClick={onRedo}>
+            ↷
+          </button>
+          <button type="button" className="menu-shortcuts" title={t('menu.shortcutsTitle')} onClick={onOpenShortcuts}>
+            {t('menu.shortcuts')}
+          </button>
+        </div>
       </div>
 
-      <div className="icon-actions" aria-label={t('menu.history')}>
-        <button type="button" title={t('menu.undo')} data-testid="undo-button" disabled={!canUndo} onClick={onUndo}>
-          ↶
-        </button>
-        <button type="button" title={t('menu.redo')} data-testid="redo-button" disabled={!canRedo} onClick={onRedo}>
-          ↷
-        </button>
-        <button type="button" className="menu-shortcuts" title={t('menu.shortcutsTitle')} onClick={onOpenShortcuts}>
-          {t('menu.shortcuts')}
-        </button>
+      <div className="menu-context-area">
+        <div className="status-pill" role="status" aria-live="polite" title={status}>
+          <span className="status-indicator" aria-hidden="true" />
+          <span>{status}</span>
+        </div>
+
+        <div className="menu-selects">
+          <label className="select-label">
+            {t('menu.camp')}
+            <select value={camp} onChange={(event) => onCampChange(event.target.value)}>
+              {camps.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="select-label">
+            {t('menu.gender')}
+            <select value={gender} onChange={(event) => onGenderChange(event.target.value as GenderCode)}>
+              {genders.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
-
-      <div className="menu-spacer" />
-
-      <label className="select-label">
-        {t('menu.camp')}
-        <select value={camp} onChange={(event) => onCampChange(event.target.value)}>
-          {camps.map((item) => (
-            <option key={item.code} value={item.code}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="select-label">
-        {t('menu.gender')}
-        <select value={gender} onChange={(event) => onGenderChange(event.target.value as GenderCode)}>
-          {genders.map((item) => (
-            <option key={item.code} value={item.code}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-
-    </div>
+    </header>
   );
 }
