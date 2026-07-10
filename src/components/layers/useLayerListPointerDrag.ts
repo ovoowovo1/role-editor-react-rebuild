@@ -1,4 +1,10 @@
-import { useCallback, useRef, type MutableRefObject, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import {
+  useCallback,
+  useRef,
+  type MutableRefObject,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject
+} from 'react';
 import type { DecorationGroup } from '../../types/role';
 import type { LayerReorderOptions } from '../../lib/editor/editorLayerDrag';
 import {
@@ -23,51 +29,58 @@ export function useLayerListPointerDrag({
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   dragStateRef: MutableRefObject<LayerDragState | null>;
-  setDragState(next: LayerDragState | null | ((current: LayerDragState | null) => LayerDragState | null)): void;
+  setDragState(next: LayerDragState | null): void;
   draggableTargets: DraggableTarget[];
   groups: DecorationGroup[];
   onReorder(activeId: string, overId: string, options?: LayerReorderOptions): void;
 }) {
   const dragPointerIdRef = useRef<number | null>(null);
   const latestPointerYRef = useRef(0);
+  const pointerMoveFrameRef = useRef<number | null>(null);
   const autoScrollFrameRef = useRef<number | null>(null);
 
   const updatePointerOver = useCallback(
-    (clientY: number) => {
+    (clientY: number, viewportRect?: DOMRect) => {
       const scrollEl = scrollRef.current;
-      if (!scrollEl) return;
-      const rect = scrollEl.getBoundingClientRect();
+      const currentDrag = dragStateRef.current;
+      if (!scrollEl || !currentDrag) return;
+
+      const rect = viewportRect ?? scrollEl.getBoundingClientRect();
       const virtualY = clientY - rect.top + scrollEl.scrollTop;
       const target = closestDraggableTarget(draggableTargets, virtualY);
       if (!target) return;
-      const currentDrag = dragStateRef.current;
+
       const dropState = dropStateForTarget(
         target,
         virtualY,
         'pointer',
-        currentDrag ? canJoinTargetGroup(currentDrag.activeRowId, target, groups) : false,
-        currentDrag?.activeRowId,
+        canJoinTargetGroup(currentDrag.activeRowId, target, groups),
+        currentDrag.activeRowId,
         groups
       );
-      setDragState((current) => {
-        if (!current || dragDropStateMatches(current, dropState)) {
-          return current;
-        }
-        const next = {
-          ...current,
-          overRowId: dropState.overRowId,
-          intent: dropState.intent,
-          placement: dropState.placement,
-          joinGroupId: dropState.joinGroupId,
-          parentGroupId: dropState.parentGroupId,
-          anchorGroupId: dropState.anchorGroupId
-        };
-        dragStateRef.current = next;
-        return next;
-      });
+      if (dragDropStateMatches(currentDrag, dropState)) return;
+
+      const next: LayerDragState = {
+        ...currentDrag,
+        overRowId: dropState.overRowId,
+        intent: dropState.intent,
+        placement: dropState.placement,
+        joinGroupId: dropState.joinGroupId,
+        parentGroupId: dropState.parentGroupId,
+        anchorGroupId: dropState.anchorGroupId
+      };
+      dragStateRef.current = next;
+      setDragState(next);
     },
     [dragStateRef, draggableTargets, groups, scrollRef, setDragState]
   );
+
+  const stopPointerMoveFrame = useCallback(() => {
+    if (pointerMoveFrameRef.current != null) {
+      cancelAnimationFrame(pointerMoveFrameRef.current);
+      pointerMoveFrameRef.current = null;
+    }
+  }, []);
 
   const stopAutoScroll = useCallback(() => {
     if (autoScrollFrameRef.current != null) {
@@ -99,22 +112,52 @@ export function useLayerListPointerDrag({
         delta = Math.ceil((edgeSize - bottomDistance) / 4);
       }
 
-      if (delta !== 0) {
-        scrollEl.scrollTop += delta;
-        updatePointerOver(y);
-        autoScrollFrameRef.current = requestAnimationFrame(tick);
-      } else {
+      if (delta === 0) {
         autoScrollFrameRef.current = null;
+        return;
       }
+
+      const previousScrollTop = scrollEl.scrollTop;
+      scrollEl.scrollTop += delta;
+      if (scrollEl.scrollTop === previousScrollTop) {
+        autoScrollFrameRef.current = null;
+        return;
+      }
+      updatePointerOver(y, rect);
+      autoScrollFrameRef.current = requestAnimationFrame(tick);
     };
 
     autoScrollFrameRef.current = requestAnimationFrame(tick);
   }, [scrollRef, updatePointerOver]);
 
+  const flushPointerMove = useCallback(() => {
+    stopPointerMoveFrame();
+    if (dragPointerIdRef.current != null) {
+      updatePointerOver(latestPointerYRef.current);
+    }
+  }, [stopPointerMoveFrame, updatePointerOver]);
+
+  const schedulePointerMove = useCallback(() => {
+    if (pointerMoveFrameRef.current != null) return;
+    pointerMoveFrameRef.current = requestAnimationFrame(() => {
+      pointerMoveFrameRef.current = null;
+      if (dragPointerIdRef.current == null) return;
+      updatePointerOver(latestPointerYRef.current);
+      startAutoScroll();
+    });
+  }, [startAutoScroll, updatePointerOver]);
+
+  const stopPointerDragEffects = useCallback(() => {
+    stopPointerMoveFrame();
+    stopAutoScroll();
+  }, [stopAutoScroll, stopPointerMoveFrame]);
+
   const finishPointerDrag = useCallback(
     (commit: boolean) => {
-      stopAutoScroll();
+      if (commit) flushPointerMove();
+      stopPointerDragEffects();
       dragPointerIdRef.current = null;
+
       const current = dragStateRef.current;
       dragStateRef.current = null;
       setDragState(null);
@@ -122,7 +165,7 @@ export function useLayerListPointerDrag({
         onReorder(current.activeRowId, current.overRowId, reorderOptionsForDragState(current));
       }
     },
-    [dragStateRef, onReorder, setDragState, stopAutoScroll]
+    [dragStateRef, flushPointerMove, onReorder, setDragState, stopPointerDragEffects]
   );
 
   const handlePointerMove = useCallback(
@@ -130,16 +173,16 @@ export function useLayerListPointerDrag({
       if (dragPointerIdRef.current !== event.pointerId) return;
       event.preventDefault();
       latestPointerYRef.current = event.clientY;
-      updatePointerOver(event.clientY);
-      startAutoScroll();
+      schedulePointerMove();
     },
-    [startAutoScroll, updatePointerOver]
+    [schedulePointerMove]
   );
 
   const handlePointerUp = useCallback(
     (event: PointerEvent) => {
       if (dragPointerIdRef.current !== event.pointerId) return;
       event.preventDefault();
+      latestPointerYRef.current = event.clientY;
       finishPointerDrag(true);
     },
     [finishPointerDrag]
@@ -158,13 +201,19 @@ export function useLayerListPointerDrag({
       if (event.button !== 0) return;
       event.preventDefault();
       event.stopPropagation();
+      stopPointerDragEffects();
       dragPointerIdRef.current = event.pointerId;
       latestPointerYRef.current = event.clientY;
-      const next = { activeRowId: rowId, overRowId: rowId, mode: 'pointer' as const, intent: 'sort' as const };
+      const next: LayerDragState = {
+        activeRowId: rowId,
+        overRowId: rowId,
+        mode: 'pointer',
+        intent: 'sort'
+      };
       dragStateRef.current = next;
       setDragState(next);
     },
-    [dragStateRef, setDragState]
+    [dragStateRef, setDragState, stopPointerDragEffects]
   );
 
   return {
@@ -172,6 +221,6 @@ export function useLayerListPointerDrag({
     handlePointerMove,
     handlePointerUp,
     handlePointerCancel,
-    stopAutoScroll
+    stopPointerDragEffects
   };
 }

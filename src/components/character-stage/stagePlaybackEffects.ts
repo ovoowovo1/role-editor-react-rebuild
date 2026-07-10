@@ -84,8 +84,5 @@ export function useStageTransform(
     if (!scene) return;
     scene.actorStage.scale.set(stageScale);
     scene.actorStage.rotation = quarterTurnRotationRadians(facingQuarterTurns);
-    scene.updatePosition();
-    const rafId = requestAnimationFrame(scene.updatePosition);
-    return () => cancelAnimationFrame(rafId);
   }, [facingQuarterTurns, sceneRef, stageScale]);
 }

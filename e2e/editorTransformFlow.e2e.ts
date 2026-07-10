@@ -58,3 +58,44 @@ test('keyboard nudge supports undo and redo', async ({ page }, testInfo) => {
   expect(findDecoEntry(await readLegacyPayload(redonePath), code).x).toBeCloseTo(1, 4);
   expectNoPageErrors(monitor);
 });
+
+test('stage multi-drag commits one undoable translation for the selected layers', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const sourceRole = makeEditorSmokeRole(2);
+  const fixture = await writeRoleFixture(testInfo, 'stage-drag-source', sourceRole);
+  const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+  await importRoleFile(page, fixture, 2);
+  await page.getByTestId('layer-row-e2e-deco-1').click();
+  await page.getByTestId('layer-row-e2e-deco-2').click({ modifiers: ['ControlOrMeta'] });
+
+  const canvas = page.locator('.pixi-host canvas');
+  await expect(canvas).toBeVisible();
+  const canvasBox = await canvas.boundingBox();
+  if (!canvasBox) throw new Error('Expected stage canvas to be visible.');
+
+  const startX = canvasBox.x + canvasBox.width / 2;
+  const startY = canvasBox.y + canvasBox.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 24, startY + 12, { steps: 4 });
+  await page.mouse.up();
+
+  const movedPath = await downloadJsonExport(page, testInfo, 'stage-drag-moved.json');
+  const movedPayload = await readLegacyPayload(movedPath);
+  for (const sourceDeco of sourceRole.decorations) {
+    const moved = findDecoEntry(movedPayload, sourceDeco.code);
+    expect(moved.x).toBeCloseTo(sourceDeco.x + 24, 3);
+    expect(moved.y).toBeCloseTo(sourceDeco.y + 12, 3);
+  }
+
+  await page.getByTestId('undo-button').click();
+  const undonePath = await downloadJsonExport(page, testInfo, 'stage-drag-undone.json');
+  const undonePayload = await readLegacyPayload(undonePath);
+  for (const sourceDeco of sourceRole.decorations) {
+    const undone = findDecoEntry(undonePayload, sourceDeco.code);
+    expect(undone.x).toBeCloseTo(sourceDeco.x, 3);
+    expect(undone.y).toBeCloseTo(sourceDeco.y, 3);
+  }
+  expectNoPageErrors(monitor);
+});

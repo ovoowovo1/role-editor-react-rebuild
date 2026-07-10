@@ -1,4 +1,9 @@
-import { useEffect, useState, type MutableRefObject } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useState,
+  type MutableRefObject
+} from 'react';
 import { stageSurfaceMetrics } from '../../lib/stage/characterStageHelpers';
 import type { StageSceneState } from './types';
 
@@ -7,66 +12,69 @@ interface Size {
   height: number;
 }
 
+interface StageSurfaceState {
+  surfaceSize: Size;
+  viewportSize: Size;
+}
+
 export function useStageSurfaceMetrics(
   viewportRef: MutableRefObject<HTMLDivElement | null>,
   sceneRef: MutableRefObject<StageSceneState | null>,
   stageScale: number
-): { surfaceSize: Size; viewportSize: Size } {
+): StageSurfaceState {
   const [surfaceSize, setSurfaceSize] = useState<Size>({ width: 1, height: 1 });
   const [viewportSize, setViewportSize] = useState<Size>({ width: 1, height: 1 });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
 
     const updateSurfaceSize = () => {
-      const { viewportSize: nextViewportSize, surfaceSize: nextSurfaceSize } = stageSurfaceMetrics(
+      const metrics = stageSurfaceMetrics(
         viewport.clientWidth,
         viewport.clientHeight,
         stageScale
       );
 
+      sceneRef.current?.updatePosition();
+
       setViewportSize((current) => {
-        if (current.width === nextViewportSize.width && current.height === nextViewportSize.height) return current;
-        return nextViewportSize;
+        if (
+          current.width === metrics.viewportSize.width &&
+          current.height === metrics.viewportSize.height
+        ) {
+          return current;
+        }
+        return metrics.viewportSize;
       });
 
       setSurfaceSize((current) => {
-        if (current.width === nextSurfaceSize.width && current.height === nextSurfaceSize.height) return current;
-        return nextSurfaceSize;
+        if (
+          current.width === metrics.surfaceSize.width &&
+          current.height === metrics.surfaceSize.height
+        ) {
+          return current;
+        }
+        return metrics.surfaceSize;
       });
     };
 
     updateSurfaceSize();
-
     const resizeObserver = new ResizeObserver(updateSurfaceSize);
     resizeObserver.observe(viewport);
+    return () => resizeObserver.disconnect();
+  }, [sceneRef, stageScale, viewportRef]);
 
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [stageScale, viewportRef]);
-
-  useEffect(() => {
+  useLayoutEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
 
-    let followupRafId = 0;
-    const rafId = requestAnimationFrame(() => {
-      viewport.scrollTo({
-        left: Math.max(0, (viewport.scrollWidth - viewport.clientWidth) / 2),
-        top: Math.max(0, (viewport.scrollHeight - viewport.clientHeight) / 2)
-      });
-      followupRafId = requestAnimationFrame(() => {
-        sceneRef.current?.updatePosition();
-      });
-    });
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      if (followupRafId) cancelAnimationFrame(followupRafId);
-    };
-  }, [sceneRef, stageScale, surfaceSize.width, surfaceSize.height, viewportRef]);
+    const scrollLeft = Math.max(0, (surfaceSize.width - viewport.clientWidth) / 2);
+    const scrollTop = Math.max(0, (surfaceSize.height - viewport.clientHeight) / 2);
+    viewport.scrollLeft = scrollLeft;
+    viewport.scrollTop = scrollTop;
+    sceneRef.current?.updatePosition();
+  }, [sceneRef, stageScale, surfaceSize.height, surfaceSize.width, viewportRef]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -82,7 +90,6 @@ export function useStageSurfaceMetrics(
     };
 
     viewport.addEventListener('scroll', handleScroll, { passive: true });
-
     return () => {
       viewport.removeEventListener('scroll', handleScroll);
       if (rafId) cancelAnimationFrame(rafId);

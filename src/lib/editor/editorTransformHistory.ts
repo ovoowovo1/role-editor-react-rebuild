@@ -15,7 +15,7 @@ export function sameRole(a: RoleDocument, b: RoleDocument): boolean {
 }
 
 export type LocalHistoryEntry =
-  | { kind: 'snapshot'; role: RoleDocument }
+  | { kind: 'snapshot'; role: RoleDocument; selectionIds: string[]; inverseSelectionIds: string[] }
   | { kind: 'translate'; ids: string[]; dx: number; dy: number; selectionIds: string[] }
   | { kind: 'transform'; target: DecorationTransformTarget[]; selectionIds: string[] };
 
@@ -48,7 +48,14 @@ export function transformValuesFromSingleDeco(deco: DecorationLayer): TransformV
 }
 
 export function cloneHistoryEntry(entry: LocalHistoryEntry): LocalHistoryEntry {
-  if (entry.kind === 'snapshot') return { kind: 'snapshot', role: cloneRole(entry.role) };
+  if (entry.kind === 'snapshot') {
+    return {
+      kind: 'snapshot',
+      role: cloneRole(entry.role),
+      selectionIds: [...entry.selectionIds],
+      inverseSelectionIds: [...entry.inverseSelectionIds]
+    };
+  }
   if (entry.kind === 'transform') {
     return {
       kind: 'transform',
@@ -73,8 +80,12 @@ export function pushLocalFutureEntry(items: LocalHistoryEntry[], entry: LocalHis
   return [cloneHistoryEntry(entry), ...items].slice(0, LOCAL_HISTORY_LIMIT);
 }
 
-export function makeSnapshotEntry(role: RoleDocument): LocalHistoryEntry {
-  return { kind: 'snapshot', role };
+export function makeSnapshotEntry(
+  role: RoleDocument,
+  selectionIds: string[] = [],
+  inverseSelectionIds: string[] = selectionIds
+): LocalHistoryEntry {
+  return { kind: 'snapshot', role, selectionIds: [...selectionIds], inverseSelectionIds: [...inverseSelectionIds] };
 }
 
 export function applyTranslateDelta(role: RoleDocument, ids: string[], dx: number, dy: number): RoleDocument {

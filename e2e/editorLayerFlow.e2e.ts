@@ -77,6 +77,9 @@ test('reorders a layer, exports JSON, and keeps order after import back', async 
 
   await importRoleFile(page, fixture, 3);
   await expect.poll(() => visibleLayerIds(page)).toEqual(['e2e-deco-1', 'e2e-deco-2', 'e2e-deco-3', 'head']);
+  const reorderedRow = page.getByTestId('layer-row-e2e-deco-1');
+  await reorderedRow.locator('.layer-badge').click();
+  await expect(reorderedRow).toHaveClass(/selected/);
 
   await page.getByTestId('layer-drag-e2e-deco-1').focus();
   await page.keyboard.press('Space');
@@ -84,6 +87,14 @@ test('reorders a layer, exports JSON, and keeps order after import back', async 
   await page.keyboard.press('Enter');
 
   await expect.poll(() => visibleLayerIds(page)).toEqual(['e2e-deco-2', 'e2e-deco-1', 'e2e-deco-3', 'head']);
+
+  await page.getByTestId('undo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toEqual(['e2e-deco-1', 'e2e-deco-2', 'e2e-deco-3', 'head']);
+  await expect(reorderedRow).toHaveClass(/selected/);
+
+  await page.getByTestId('redo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toEqual(['e2e-deco-2', 'e2e-deco-1', 'e2e-deco-3', 'head']);
+  await expect(reorderedRow).toHaveClass(/selected/);
 
   const reorderedJsonPath = await downloadJsonExport(page, testInfo, 'reordered-export.json');
   const reorderedPayload = await readLegacyPayload(reorderedJsonPath);
@@ -98,6 +109,85 @@ test('reorders a layer, exports JSON, and keeps order after import back', async 
   expect(nonHeadDecoCodes(roundTripPayload)).toEqual(reorderedCodes);
   expectNoPageErrors(monitor);
   expectNoPageErrors(roundTripMonitor);
+});
+
+test('undoes and redoes a deco reorder without removing a previously added deco', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'reorder-history-source', makeEditorSmokeRole(3));
+
+  await importRoleFile(page, fixture, 3);
+  const initialLayerIds = await visibleLayerIds(page);
+
+  await page.locator('.choice-block').first().click();
+  await expect.poll(() => visibleLayerIds(page)).toHaveLength(initialLayerIds.length + 1);
+  const idsAfterInsert = await visibleLayerIds(page);
+  const addedLayerId = idsAfterInsert.find((id) => !initialLayerIds.includes(id));
+  if (!addedLayerId) throw new Error('Expected choosing a palette option to add a deco layer.');
+  const addedRow = page.getByTestId(`layer-row-${addedLayerId}`);
+  await expect(addedRow).toHaveClass(/selected/);
+
+  await page.getByTestId('layer-drag-e2e-deco-1').focus();
+  await page.keyboard.press('Space');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  const reorderedLayerIds = await visibleLayerIds(page);
+  expect(reorderedLayerIds).not.toEqual(idsAfterInsert);
+
+  await page.getByTestId('undo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toEqual(idsAfterInsert);
+  await expect(addedRow).toHaveClass(/selected/);
+
+  await page.getByTestId('redo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toEqual(reorderedLayerIds);
+  expectNoPageErrors(monitor);
+});
+
+test('restores the recorded selection when undoing and redoing an inserted deco', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'insert-selection-history-source', makeEditorSmokeRole(1));
+
+  await importRoleFile(page, fixture, 1);
+  const originalRow = page.getByTestId('layer-row-e2e-deco-1');
+  await originalRow.locator('.layer-badge').click();
+  await expect(originalRow).toHaveClass(/selected/);
+
+  await page.locator('.choice-block').first().click();
+  await expect.poll(() => visibleLayerIds(page)).toHaveLength(3);
+  const insertedLayerId = (await visibleLayerIds(page)).find((id) => id !== 'e2e-deco-1' && id !== 'head');
+  if (!insertedLayerId) throw new Error('Expected choosing a palette option to add a deco layer.');
+  const insertedRow = page.getByTestId(`layer-row-${insertedLayerId}`);
+  await expect(insertedRow).toHaveClass(/selected/);
+
+  await page.getByTestId('undo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toEqual(['e2e-deco-1', 'head']);
+  await expect(originalRow).toHaveClass(/selected/);
+
+  await page.getByTestId('redo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toContain(insertedLayerId);
+  await expect(insertedRow).toHaveClass(/selected/);
+  expectNoPageErrors(monitor);
+});
+
+test('restores and clears the recorded selection when undoing and redoing a deleted deco', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'delete-selection-history-source', makeEditorSmokeRole(1));
+
+  await importRoleFile(page, fixture, 1);
+  const deletedRow = page.getByTestId('layer-row-e2e-deco-1');
+  await deletedRow.locator('.layer-badge').click();
+  await expect(deletedRow).toHaveClass(/selected/);
+
+  await page.getByTestId('layer-delete-e2e-deco-1').click();
+  await expect.poll(() => visibleLayerIds(page)).toEqual(['head']);
+
+  await page.getByTestId('undo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toEqual(['e2e-deco-1', 'head']);
+  await expect(deletedRow).toHaveClass(/selected/);
+
+  await page.getByTestId('redo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toEqual(['head']);
+  await expect(page.locator('.layer-row.selected')).toHaveCount(0);
+  expectNoPageErrors(monitor);
 });
 
 test('layer visibility excludes hidden deco from legacy compact export', async ({ page }, testInfo) => {

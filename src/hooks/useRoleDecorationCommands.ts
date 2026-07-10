@@ -12,6 +12,7 @@ import { insertDecorations, settingsForScope, type InsertDraftSettings } from '.
 import { toggleHeadVisibility } from '../lib/editor/headLayerMutations';
 import { removeSelectedDecos } from '../lib/editor/editorTransformHistory';
 import { makeCenteredDecoration } from '../lib/editor/editorImportMerge';
+import { cloneRole } from '../lib/editor/editorRoleUtils';
 import {
   roleWithChosenBodyPart,
   selectionIdsForCommand
@@ -32,12 +33,9 @@ interface UseRoleDecorationCommandsOptions {
   stableSelectedIds: string[];
   baseSelectedDecorations: DecorationLayer[];
   selectedIdsRef: MutableRefObject<string[]>;
-  commitRole(nextRole: RoleDocument): void;
+  commitRole(nextRole: RoleDocument, afterSelectionIds?: string[]): void;
   recordLocalHistoryEntry(entry: { kind: 'translate'; ids: string[]; dx: number; dy: number; selectionIds: string[] }): void;
   restoreSelection(ids: string[]): void;
-  clearSelection(): void;
-  setSelectedLayerIds(updater: (ids: string[]) => string[]): void;
-  setRole(updater: (current: RoleDocument) => RoleDocument, mode: 'history' | 'silent'): void;
   updateRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
   withImmediateHistory(action: () => void, restoreIds?: string[]): void;
   withTransformHistory(action: () => void, restoreIds?: string[]): void;
@@ -55,9 +53,6 @@ export function useRoleDecorationCommands({
   commitRole,
   recordLocalHistoryEntry,
   restoreSelection,
-  clearSelection,
-  setSelectedLayerIds,
-  setRole,
   updateRole,
   withImmediateHistory,
   withTransformHistory
@@ -76,12 +71,10 @@ export function useRoleDecorationCommands({
   const dragCommands = useRoleDragCommands({
     roleRef,
     history,
-    selectedDecorationIds,
     stableSelectedIds,
     selectedIdsRef,
     recordLocalHistoryEntry,
-    restoreSelection,
-    setRole
+    restoreSelection
   });
 
   const choosePart = useCallback(
@@ -90,8 +83,7 @@ export function useRoleDecorationCommands({
         const deco = makeCenteredDecoration(option);
         const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.palette);
         const nextRole = insertDecorations(roleRef.current, [deco], settings);
-        commitRole(nextRole);
-        restoreSelection([deco.id]);
+        commitRole(nextRole, [deco.id]);
         return;
       }
       updateRole((current) => roleWithChosenBodyPart(current, tab as BodyPartTab, option));
@@ -133,21 +125,18 @@ export function useRoleDecorationCommands({
 
   const deleteDecoration = useCallback(
     (id: string) => {
-      updateRole((current) => {
-        deleteDecorationFromRole(current, id);
-        return current;
-      });
-      setSelectedLayerIds((ids) => ids.filter((item) => item !== id));
+      const nextRole = cloneRole(roleRef.current);
+      deleteDecorationFromRole(nextRole, id);
+      commitRole(nextRole, selectedIdsRef.current.filter((item) => item !== id));
     },
-    [setSelectedLayerIds, updateRole]
+    [commitRole, roleRef, selectedIdsRef]
   );
 
   const deleteSelected = useCallback(() => {
     const nextRole = removeSelectedDecos(roleRef.current, selectionIdsForCommand(stableSelectedIds, selectedIdsRef.current));
     if (!nextRole) return;
-    commitRole(nextRole);
-    clearSelection();
-  }, [clearSelection, commitRole, roleRef, selectedIdsRef, stableSelectedIds]);
+    commitRole(nextRole, []);
+  }, [commitRole, roleRef, selectedIdsRef, stableSelectedIds]);
 
   return {
     ...transformCommands,

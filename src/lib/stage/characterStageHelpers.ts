@@ -1,8 +1,13 @@
 import type { DecorationLayer, HeadLayerTransform, RoleDocument } from '../../types/role';
 import { DEFAULT_POSITION_RANGE, MAX_POSITION_RANGE } from '../../constants/editor';
-import { LARGE_MULTI_DRAG_THRESHOLD, SCROLL_SURFACE_PADDING } from '../../constants/stage';
+import {
+  LIVE_MULTI_DRAG_ITEM_LIMIT,
+  PRECISE_SELECTION_BOUNDS_LIMIT,
+  SCROLL_SURFACE_PADDING,
+  STAGE_MAX_RESOLUTION
+} from '../../constants/stage';
 import type { BrushFillPoint } from '../conversion/brushFillToDeco';
-import { clamp } from '../math';
+import { clamp, clampToDisc } from '../math';
 
 const SELECTION_DRAG_HIT_SIZE = 50;
 const SELECTION_DRAG_HIT_PADDING = 4;
@@ -55,6 +60,21 @@ export interface MultiDragPositionSummary {
 
 export type MultiDragStartMode = 'single-fallback' | 'overlay' | 'preview';
 
+export function stageRendererResolution(devicePixelRatio: number): number {
+  const normalized = Number.isFinite(devicePixelRatio) ? devicePixelRatio : 1;
+  return clamp(normalized, 1, STAGE_MAX_RESOLUTION);
+}
+
+export function dragAnchorPosition(
+  pointerX: number,
+  pointerY: number,
+  offsetX: number,
+  offsetY: number,
+  range: number
+): { x: number; y: number } {
+  return clampToDisc(pointerX - offsetX, pointerY - offsetY, range);
+}
+
 export function stageSurfaceMetrics(
   viewportWidth: number,
   viewportHeight: number,
@@ -74,7 +94,7 @@ export function stageSurfaceMetrics(
 }
 
 export function shouldUsePointBoundsForSelection(selectedCount: number): boolean {
-  return selectedCount >= LARGE_MULTI_DRAG_THRESHOLD;
+  return selectedCount > PRECISE_SELECTION_BOUNDS_LIMIT;
 }
 
 export function summarizeMultiDragPositions(positions: readonly MultiDragPosition[]): MultiDragPositionSummary | null {
@@ -108,7 +128,7 @@ export function summarizeMultiDragPositions(positions: readonly MultiDragPositio
 
 export function multiDragStartMode(selectedDecorationCount: number, overlayItemCount: number): MultiDragStartMode {
   if (selectedDecorationCount < 2) return 'single-fallback';
-  if (selectedDecorationCount >= LARGE_MULTI_DRAG_THRESHOLD) return 'preview';
+  if (selectedDecorationCount > LIVE_MULTI_DRAG_ITEM_LIMIT) return 'preview';
   return overlayItemCount >= 2 ? 'overlay' : 'single-fallback';
 }
 
@@ -209,15 +229,17 @@ export function displayTransformPatchForHeadLayer(
   };
 }
 
-export function appendBrushPoint(points: BrushFillPoint[], next: BrushFillPoint): BrushFillPoint[] {
-  const last = points[points.length - 1];
+export function interpolatedBrushPoints(
+  last: BrushFillPoint | undefined,
+  next: BrushFillPoint
+): BrushFillPoint[] {
   if (!last) return [next];
 
   const dx = next.x - last.x;
   const dy = next.y - last.y;
   const distance = Math.hypot(dx, dy);
   const spacing = Math.max(1, next.radius * BRUSH_FILL_POINT_SPACING_FACTOR);
-  if (distance <= spacing) return points;
+  if (distance <= spacing) return [];
 
   const additions: BrushFillPoint[] = [];
   const steps = Math.max(1, Math.floor(distance / spacing));
@@ -229,7 +251,12 @@ export function appendBrushPoint(points: BrushFillPoint[], next: BrushFillPoint)
       radius: next.radius
     });
   }
-  return [...points, ...additions];
+  return additions;
+}
+
+export function appendBrushPoint(points: BrushFillPoint[], next: BrushFillPoint): BrushFillPoint[] {
+  const additions = interpolatedBrushPoints(points[points.length - 1], next);
+  return additions.length ? [...points, ...additions] : points;
 }
 
 export function mergeBounds(a: LocalBounds | null, b: LocalBounds): LocalBounds {

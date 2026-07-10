@@ -16,7 +16,7 @@ export default defineConfig({
                         return;
                     if (id.indexOf('node_modules/react/') >= 0 || id.indexOf('node_modules/react-dom/') >= 0)
                         return 'react-vendor';
-                    if (id.indexOf('node_modules/pixi.js/') >= 0 || id.indexOf('node_modules/@pixi/filter-glow/') >= 0)
+                    if (id.indexOf('node_modules/pixi.js/') >= 0)
                         return 'pixi-vendor';
                     if (id.indexOf('node_modules/@dnd-kit/') >= 0)
                         return 'dnd-vendor';

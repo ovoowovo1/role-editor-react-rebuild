@@ -52,10 +52,6 @@ export function LayerItemRow({
       <div className="layer-thumb">
         <AssetPreview option={option} size={50} />
       </div>
-      <div className="layer-meta">
-        <strong>{deco.name}</strong>
-        <span>{deco.code}</span>
-      </div>
       <button
         className="layer-icon-button"
         type="button"
@@ -118,10 +114,6 @@ export function HeadRow({
       <div className="layer-badge">{(row.index ?? 0) + 1}</div>
       <div className="layer-thumb">
         <AssetPreview option={option} size={50} />
-      </div>
-      <div className="layer-meta">
-        <strong>{t('layer.headName')}</strong>
-        <span>{t('layer.headSubtitle')}</span>
       </div>
       <button
         className="layer-icon-button"

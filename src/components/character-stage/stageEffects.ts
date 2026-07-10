@@ -5,5 +5,4 @@ export {
   useBodyAnimationPlayback,
   useStageTransform
 } from './stagePlaybackEffects';
-export { useStageRuntimeRefSync } from './stageRuntimeSync';
 export { useStageDisplaySync } from './stageDisplaySync';

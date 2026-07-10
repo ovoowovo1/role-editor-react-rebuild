@@ -11,7 +11,6 @@ import {
   pasteBaseClipboardIntoRole,
   pasteLocalClipboardIntoRole,
   roleWithChosenBodyPart,
-  roleWithDragDelta,
   selectionIdsToRestoreForRole,
   selectionIdsForCommand,
   stableSelectionIdsForRole
@@ -140,22 +139,6 @@ describe('editor role commands', () => {
     expect(roleWithChosenBodyPart(roleWithoutExistingFrame, 'head', optionWithoutFrame).partFrames.head).toBe(1);
   });
 
-  it('applies silent drag deltas to selected decorations only', () => {
-    const role = makeRoleDocument({
-      updatedAt: 'old',
-      decorations: [
-        makeDecorationLayer('a', { x: 1, y: 2 }),
-        makeDecorationLayer('b', { x: 10, y: 20 })
-      ]
-    });
-    const next = roleWithDragDelta(role, ['a'], 3, -4);
-
-    expect(next.decorations[0]).toMatchObject({ x: 4, y: -2 });
-    expect(next.decorations[1]).toBe(role.decorations[1]);
-    expect(next.updatedAt).not.toBe('old');
-    expect(roleWithDragDelta(role, [], 3, -4)).toBe(role);
-    expect(roleWithDragDelta(role, ['a'], 0, 0)).toBe(role);
-  });
 
   it('captures transient transform sessions before falling back to role snapshots', () => {
     const role = makeRoleDocument({

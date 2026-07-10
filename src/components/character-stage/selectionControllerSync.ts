@@ -1,5 +1,5 @@
 import { Container, Rectangle } from 'pixi.js';
-import type { DecorationLayer, RoleDocument } from '../../types/role';
+import type { DecorationLayer } from '../../types/role';
 import { clamp } from '../../lib/math';
 import {
   mergeBounds,
@@ -10,16 +10,19 @@ import {
   shouldUsePointBoundsForSelection,
   type LocalBounds
 } from '../../lib/stage/characterStageHelpers';
-import {
-  createDecorationVisual
-} from './pixiVisuals';
+import { createDecorationVisual } from './pixiVisuals';
 import { getCachedControllerGlowFilter } from './stageOverlayVisuals';
 import type { StageSceneState } from './types';
 import { getDisplayRootPosition } from './sceneGeometry';
 
 function containerBoundsInRoot(container: Container, root: Container): LocalBounds {
   const localBounds = container.getLocalBounds();
-  if (!Number.isFinite(localBounds.width) || !Number.isFinite(localBounds.height) || localBounds.width <= 0 || localBounds.height <= 0) {
+  if (
+    !Number.isFinite(localBounds.width) ||
+    !Number.isFinite(localBounds.height) ||
+    localBounds.width <= 0 ||
+    localBounds.height <= 0
+  ) {
     const position = getDisplayRootPosition(container, root);
     return pointBounds(position.x, position.y);
   }
@@ -31,11 +34,18 @@ function containerBoundsInRoot(container: Container, root: Container): LocalBoun
     { x: localBounds.x + localBounds.width, y: localBounds.y + localBounds.height },
     { x: localBounds.x, y: localBounds.y + localBounds.height }
   ];
+
   for (const corner of corners) {
     const global = container.toGlobal(corner);
     const local = root.toLocal(global);
-    bounds = mergeBounds(bounds, { minX: local.x, minY: local.y, maxX: local.x, maxY: local.y });
+    bounds = mergeBounds(bounds, {
+      minX: local.x,
+      minY: local.y,
+      maxX: local.x,
+      maxY: local.y
+    });
   }
+
   return bounds ?? pointBounds(container.x, container.y);
 }
 
@@ -51,6 +61,25 @@ export function hideSelectionDragController(scene: StageSceneState): void {
   scene.selectionDragControllerVisuals.removeChildren().forEach((child) => {
     if (!child.destroyed) child.destroy({ children: true });
   });
+}
+
+function selectionBounds(scene: StageSceneState, selectedDecorations: DecorationLayer[]): LocalBounds | null {
+  let bounds: LocalBounds | null = null;
+
+  if (shouldUsePointBoundsForSelection(selectedDecorations.length)) {
+    for (const deco of selectedDecorations) {
+      bounds = mergeBounds(bounds, pointBounds(deco.x, deco.y));
+    }
+    return bounds;
+  }
+
+  for (const deco of selectedDecorations) {
+    const record = scene.decoDisplays.get(deco.id);
+    if (!record) continue;
+    bounds = mergeBounds(bounds, containerBoundsInRoot(record.container, scene.disguiseRoot));
+  }
+
+  return bounds;
 }
 
 function syncSelectionDragControllerVisuals(
@@ -96,62 +125,42 @@ function syncSelectionDragControllerVisualTransforms(
   }
 }
 
-function selectionDragHitArea(bounds: LocalBounds, centerX: number, centerY: number): Rectangle {
-  const rect = selectionDragHitRect(bounds, centerX, centerY);
-  return new Rectangle(rect.x, rect.y, rect.width, rect.height);
-}
-
 export function syncSelectionDragController(
   scene: StageSceneState,
-  role: RoleDocument,
-  selectedIds: string[],
-  hasActiveOverlay: boolean
+  selectedDecorations: DecorationLayer[],
+  hasActiveDrag: boolean
 ): void {
-  if (hasActiveOverlay) {
+  if (hasActiveDrag) {
     hideSelectionDragController(scene);
     return;
   }
 
-  const selectedSet = new Set(selectedIds);
-  const selectedDecorations = role.decorations.filter((deco) => selectedSet.has(deco.id) && deco.visible !== false);
-  const target = selectedDecorations[0];
+  const visibleSelections = selectedDecorations.filter((deco) => deco.visible !== false);
+  const target = visibleSelections[0];
   if (!target) {
     hideSelectionDragController(scene);
     return;
   }
 
-  let bounds: LocalBounds | null = null;
-  if (shouldUsePointBoundsForSelection(selectedDecorations.length)) {
-    for (const deco of selectedDecorations) {
-      bounds = mergeBounds(bounds, pointBounds(deco.x, deco.y));
-    }
-  } else {
-    for (const deco of selectedDecorations) {
-      const record = scene.decoDisplays.get(deco.id);
-      if (!record) continue;
-      bounds = mergeBounds(bounds, containerBoundsInRoot(record.container, scene.disguiseRoot));
-    }
-  }
-
+  const bounds = selectionBounds(scene, visibleSelections);
   if (!bounds) {
     hideSelectionDragController(scene);
     return;
   }
 
-  const center = selectionControllerPosition(selectedDecorations);
-  const centerX = center.x;
-  const centerY = center.y;
-  const hitArea = selectionDragHitArea(bounds, centerX, centerY);
+  const center = selectionControllerPosition(visibleSelections);
+  const hitRect = selectionDragHitRect(bounds, center.x, center.y);
+  const hitArea = new Rectangle(hitRect.x, hitRect.y, hitRect.width, hitRect.height);
 
   scene.selectionDragTargetId = target.id;
-  scene.selectionDragController.position.set(centerX, centerY);
+  scene.selectionDragController.position.set(center.x, center.y);
   scene.selectionDragController.visible = true;
   scene.selectionDragController.eventMode = 'static';
   scene.selectionDragController.cursor = 'pointer';
   scene.selectionDragController.hitArea = hitArea;
   scene.selectionDragController.filters = [getCachedControllerGlowFilter()];
-  syncSelectionDragControllerVisuals(scene, selectedDecorations, centerX, centerY);
-  syncSelectionDragControllerVisualTransforms(scene, selectedDecorations, centerX, centerY);
+  syncSelectionDragControllerVisuals(scene, visibleSelections, center.x, center.y);
+  syncSelectionDragControllerVisualTransforms(scene, visibleSelections, center.x, center.y);
   scene.selectionDragControllerGraphic.clear();
   scene.selectionDragControllerGraphic.beginFill(0x000000, 0.001);
   scene.selectionDragControllerGraphic.drawRect(hitArea.x, hitArea.y, hitArea.width, hitArea.height);

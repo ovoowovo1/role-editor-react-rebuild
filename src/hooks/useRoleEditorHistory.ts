@@ -71,13 +71,23 @@ export function useRoleEditorHistory({
     restoreSelection
   });
 
-  const commitRole = useCallback(
-    (nextRole: RoleDocument) => {
-      if (sameRole(roleRef.current, nextRole)) return;
-      recordLocalHistoryEntry(makeSnapshotEntry(roleRef.current));
-      history.reset(nextRole);
+  const restoreHistorySelection = useCallback(
+    (ids: string[]) => {
+      selectedIdsRef.current = [];
+      setSelectedLayerIds([]);
+      restoreSelection(ids);
     },
-    [history, recordLocalHistoryEntry, roleRef]
+    [restoreSelection, selectedIdsRef, setSelectedLayerIds]
+  );
+
+  const commitRole = useCallback(
+    (nextRole: RoleDocument, afterSelectionIds = selectedIdsRef.current) => {
+      if (sameRole(roleRef.current, nextRole)) return;
+      recordLocalHistoryEntry(makeSnapshotEntry(roleRef.current, selectedIdsRef.current, afterSelectionIds));
+      history.reset(nextRole);
+      restoreHistorySelection(afterSelectionIds);
+    },
+    [history, recordLocalHistoryEntry, restoreHistorySelection, roleRef, selectedIdsRef]
   );
 
   const importRole = useCallback(
@@ -92,44 +102,36 @@ export function useRoleEditorHistory({
 
   const withImmediateHistory = useCallback(
     (action: () => void, restoreIds = selectedIdsRef.current) => {
-      recordLocalHistoryEntry(makeSnapshotEntry(cloneRole(roleRef.current)));
+      recordLocalHistoryEntry(makeSnapshotEntry(cloneRole(roleRef.current), selectedIdsRef.current, restoreIds));
       action();
-      restoreSelection(restoreIds);
+      restoreHistorySelection(restoreIds);
     },
-    [recordLocalHistoryEntry, restoreSelection, roleRef, selectedIdsRef]
+    [recordLocalHistoryEntry, restoreHistorySelection, roleRef, selectedIdsRef]
   );
 
   const undo = useCallback(() => {
     const result = resolveLocalUndo(roleRef.current, localPast, localFuture);
-    if (result) {
-      setLocalPast(result.localPast);
-      setLocalFuture(result.localFuture);
-      if (result.clearSelection) {
-        selectedIdsRef.current = [];
-        setSelectedLayerIds([]);
+      if (result) {
+        setLocalPast(result.localPast);
+        setLocalFuture(result.localFuture);
+        history.reset(result.nextRole);
+        restoreHistorySelection(result.restoreSelectionIds);
+        return;
       }
-      history.reset(result.nextRole);
-      restoreSelection(result.restoreSelectionIds);
-      return;
-    }
     history.undo();
-  }, [history, localFuture, localPast, restoreSelection, roleRef, selectedIdsRef, setSelectedLayerIds]);
+  }, [history, localFuture, localPast, restoreHistorySelection, roleRef]);
 
   const redo = useCallback(() => {
     const result = resolveLocalRedo(roleRef.current, localPast, localFuture);
-    if (result) {
-      setLocalPast(result.localPast);
-      setLocalFuture(result.localFuture);
-      if (result.clearSelection) {
-        selectedIdsRef.current = [];
-        setSelectedLayerIds([]);
+      if (result) {
+        setLocalPast(result.localPast);
+        setLocalFuture(result.localFuture);
+        history.reset(result.nextRole);
+        restoreHistorySelection(result.restoreSelectionIds);
+        return;
       }
-      history.reset(result.nextRole);
-      restoreSelection(result.restoreSelectionIds);
-      return;
-    }
     history.redo();
-  }, [history, localFuture, localPast, restoreSelection, roleRef, selectedIdsRef, setSelectedLayerIds]);
+  }, [history, localFuture, localPast, restoreHistorySelection, roleRef]);
 
   const beginTransient = useCallback(() => {
     const session = beginTransientSession(roleRef.current, stableSelectedIds, selectedIdsRef.current);

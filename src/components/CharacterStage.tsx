@@ -1,19 +1,18 @@
 import { useRef, useState } from 'react';
-import { t } from '../i18n';
-import type { DecorationLayer, RoleDocument } from '../types/role';
 import type { BrushFillMask } from '../lib/conversion/brushFillToDeco';
 import { actorSceneKey } from '../lib/stage/characterStageHelpers';
+import type { RoleDocument } from '../types/role';
 import {
   useBodyAnimationPlayback,
-  useStageDisplaySync,
   useDeferredStageSync,
   usePixiApplicationLifecycle,
+  useStageDisplaySync,
   useStageSurfaceMetrics,
-  useStageTransform,
-  useStageRuntimeRefSync
+  useStageTransform
 } from './character-stage/stageEffects';
 import { useStageRuntimeController } from './character-stage/stageRuntimeController';
 import { useStageSceneLifecycle } from './character-stage/stageSceneLifecycle';
+import { StageViewport } from './character-stage/StageViewport';
 
 interface CharacterStageProps {
   role: RoleDocument;
@@ -23,11 +22,7 @@ interface CharacterStageProps {
   bodyAnimationRestartKey: number;
   stageScale: number;
   facingQuarterTurns: number;
-  onUpdateDecoration(id: string, patch: Partial<DecorationLayer>, commit?: boolean): void;
-  onApplyDragDelta(dx: number, dy: number): void;
-  onCommitDragDelta(dx: number, dy: number): void;
-  onBeginTransient(): void;
-  onCommitTransient(): void;
+  onCommitDrag(selectionIds: readonly string[], dx: number, dy: number): void;
   onClearSelection(): void;
   brushFillActive?: boolean;
   brushFillBrushSize?: number;
@@ -43,11 +38,7 @@ export function CharacterStage({
   bodyAnimationRestartKey,
   stageScale,
   facingQuarterTurns,
-  onUpdateDecoration,
-  onApplyDragDelta,
-  onCommitDragDelta,
-  onBeginTransient,
-  onCommitTransient,
+  onCommitDrag,
   onClearSelection,
   brushFillActive = false,
   brushFillBrushSize = 18,
@@ -69,16 +60,15 @@ export function CharacterStage({
     brushFillActive,
     brushFillBrushSize,
     brushFillMask,
-    onUpdateDecoration,
-    onApplyDragDelta,
-    onCommitDragDelta,
-    onBeginTransient,
-    onCommitTransient,
+    onCommitDrag,
     onClearSelection,
     onBrushFillMaskChange
   });
-
-  const { surfaceSize, viewportSize } = useStageSurfaceMetrics(viewportRef, stageRuntime.sceneRef, stageScale);
+  const { surfaceSize, viewportSize } = useStageSurfaceMetrics(
+    viewportRef,
+    stageRuntime.sceneRef,
+    stageScale
+  );
 
   usePixiApplicationLifecycle({
     hostRef,
@@ -88,30 +78,8 @@ export function CharacterStage({
     cancelDeferredStageSync
   });
 
-  useStageRuntimeRefSync({
-    role,
-    selectedIds,
-    brushFillActive,
-    brushFillBrushSize,
-    brushFillMask,
-    roleRef: stageRuntime.roleRef,
-    selectedIdsRef: stageRuntime.selectedIdsRef,
-    callbacksRef: stageRuntime.callbacksRef,
-    brushFillRef: stageRuntime.brushFillRef,
-    brushDrawRef: stageRuntime.brushDrawRef,
-    onUpdateDecoration,
-    onApplyDragDelta,
-    onCommitDragDelta,
-    onBeginTransient,
-    onCommitTransient,
-    onClearSelection,
-    onBrushFillMaskChange
-  });
-
   useStageSceneLifecycle({
     appRef: stageRuntime.appRef,
-    hostRef,
-    stageBgRef,
     roleRef: stageRuntime.roleRef,
     selectedIdsRef: stageRuntime.selectedIdsRef,
     brushFillRef: stageRuntime.brushFillRef,
@@ -120,8 +88,10 @@ export function CharacterStage({
     stageRuntimeRefs: stageRuntime.stageRuntimeRefs,
     stageBuildGenerationRef: stageRuntime.stageBuildGenerationRef,
     stageTeardownRef: stageRuntime.stageTeardownRef,
-    beginDecorationDragRef: stageRuntime.beginDecorationDragRef,
     sceneBuildConfigRef: stageRuntime.sceneBuildConfigRef,
+    hostRef,
+    stageBgRef,
+    decoOptions: stageRuntime.decoOptions,
     sceneKey,
     cancelDeferredStageSync,
     setSceneVersion
@@ -138,7 +108,7 @@ export function CharacterStage({
     sceneRef: stageRuntime.sceneRef,
     dragRef: stageRuntime.dragRef,
     brushDrawRef: stageRuntime.brushDrawRef,
-    beginDecorationDragRef: stageRuntime.beginDecorationDragRef,
+    decoOptions: stageRuntime.decoOptions,
     scheduleDeferredStageSync,
     cancelDeferredStageSync
   });
@@ -154,58 +124,13 @@ export function CharacterStage({
   useStageTransform(stageRuntime.sceneRef, stageScale, facingQuarterTurns);
 
   return (
-    <section className="stage-panel">
-      <div
-        ref={viewportRef}
-        className="stage-viewport"
-        style={{
-          position: 'relative',
-          width: '100%',
-          height: '100%',
-          overflow: 'auto',
-          overscrollBehavior: 'contain'
-        }}
-      >
-        <div
-          className="stage-scroll-surface"
-          style={{
-            position: 'relative',
-            width: `${surfaceSize.width}px`,
-            height: `${surfaceSize.height}px`,
-            minWidth: '100%',
-            minHeight: '100%',
-            overflow: 'visible',
-            isolation: 'isolate'
-          }}
-        >
-          <div
-            ref={stageBgRef}
-            className="stage-bg"
-            aria-hidden="true"
-            style={{
-              top: '50%',
-              left: '50%',
-              transform: `translate(-50%, -50%) rotate(90deg) scale(${stageScale})`
-            }}
-          >
-            <div className="piece" />
-            <div className="piece piece-two" />
-          </div>
-          <div
-            ref={hostRef}
-            className="pixi-host"
-            style={{
-              position: 'sticky',
-              top: 0,
-              left: 0,
-              zIndex: 2,
-              width: `${viewportSize.width}px`,
-              height: `${viewportSize.height}px`,
-              pointerEvents: 'auto'
-            }}
-          />
-        </div>
-      </div>
-    </section>
+    <StageViewport
+      viewportRef={viewportRef}
+      hostRef={hostRef}
+      stageBgRef={stageBgRef}
+      surfaceSize={surfaceSize}
+      viewportSize={viewportSize}
+      stageScale={stageScale}
+    />
   );
 }

@@ -1,13 +1,15 @@
 import type { MutableRefObject } from 'react';
-import { Container, FederatedPointerEvent, Graphics } from 'pixi.js';
+import { Container, type FederatedPointerEvent, Graphics } from 'pixi.js';
 import type { Rectangle } from 'pixi.js';
 import type { RoleDocument } from '../../types/role';
+import {
+  quarterTurnRotationRadians
+} from '../../lib/stage/characterStageHelpers';
 import {
   ACTOR_BODY_SCALE,
   buildActorClipForRole,
   prepareDisguiseRoot
 } from './actorVisuals';
-import { quarterTurnRotationRadians } from '../../lib/stage/characterStageHelpers';
 import type { StageSceneState } from './types';
 
 export function buildStageScene({
@@ -58,26 +60,25 @@ export function buildStageScene({
   const selectionDragControllerVisuals = new Container();
   selectionDragController.visible = false;
   selectionDragController.eventMode = 'none';
-  selectionDragController.addChild(selectionDragControllerGraphic);
-  selectionDragController.addChild(selectionDragControllerVisuals);
+  selectionDragController.addChild(selectionDragControllerVisuals, selectionDragControllerGraphic);
 
   const brushFillOverlay = new Container();
-  const brushFillGraphic = new Graphics();
+  const brushFillCommittedGraphic = new Graphics();
+  const brushFillDraftGraphic = new Graphics();
   brushFillOverlay.visible = false;
   brushFillOverlay.eventMode = 'none';
-  brushFillOverlay.addChild(brushFillGraphic);
+  brushFillOverlay.addChild(brushFillCommittedGraphic, brushFillDraftGraphic);
 
   const updatePosition = () => {
-    const hostEl = hostRef.current;
-    const bgEl = stageBgRef.current;
-    if (!hostEl || !bgEl || actorStage.destroyed) return;
-    const hostRect = hostEl.getBoundingClientRect();
-    const bgRect = bgEl.getBoundingClientRect();
-    // Old TWRoleCgEditor anchored to stageBg.offset() + (+68, +98). The
-    // rebuild keeps the same visual center by anchoring to the bbox center.
-    const posX = bgRect.left - hostRect.left + bgRect.width / 2;
-    const posY = bgRect.top - hostRect.top + bgRect.height / 2;
-    actorStage.position.set(posX, posY);
+    const host = hostRef.current;
+    const background = stageBgRef.current;
+    if (!host || !background || actorStage.destroyed) return;
+    const hostRect = host.getBoundingClientRect();
+    const backgroundRect = background.getBoundingClientRect();
+    actorStage.position.set(
+      backgroundRect.left - hostRect.left + backgroundRect.width / 2,
+      backgroundRect.top - hostRect.top + backgroundRect.height / 2
+    );
   };
 
   const scene: StageSceneState = {
@@ -89,12 +90,14 @@ export function buildStageScene({
     selectionDragControllerGraphic,
     selectionDragControllerVisuals,
     brushFillOverlay,
-    brushFillGraphic,
+    brushFillCommittedGraphic,
+    brushFillDraftGraphic,
     selectionDragVisualKey: '',
     selectionDragVisualsById: new Map(),
     selectionDragTargetId: null,
     failedTextures,
     decoDisplays: new Map(),
+    decorationInteractionEnabled: true,
     lastDisguiseChildOrder: [],
     updatePosition
   };

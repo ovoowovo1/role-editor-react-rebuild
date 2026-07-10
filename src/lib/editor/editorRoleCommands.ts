@@ -86,7 +86,10 @@ export function commitTransientSession(
 
   return {
     pendingTransform: null,
-    snapshotEntry: roleBefore && !sameRole(roleBefore, currentRole) ? makeSnapshotEntry(roleBefore) : null,
+    snapshotEntry:
+      roleBefore && !sameRole(roleBefore, currentRole)
+        ? makeSnapshotEntry(roleBefore, selectionBefore, selectionIdsForCommand(fallbackSelectedIds, selectionBefore))
+        : null,
     restoreSelectionIds: selectionIdsForCommand(selectionBefore, fallbackSelectedIds),
     commitBaseTransient: true
   };
@@ -173,25 +176,5 @@ export function roleWithChosenBodyPart(
       ...current.partScales,
       [tab]: current.partScales?.[tab] ?? 1
     }
-  };
-}
-
-export function roleWithDragDelta(
-  current: RoleDocument,
-  selectedDecorationIds: string[],
-  dx: number,
-  dy: number
-): RoleDocument {
-  if (!selectedDecorationIds.length || (Math.abs(dx) <= Number.EPSILON && Math.abs(dy) <= Number.EPSILON)) {
-    return current;
-  }
-  const selectedSet = new Set(selectedDecorationIds);
-  return {
-    ...current,
-    decorations: current.decorations.map((item) => {
-      if (!selectedSet.has(item.id)) return item;
-      return { ...item, x: item.x + dx, y: item.y + dy };
-    }),
-    updatedAt: new Date().toISOString()
   };
 }

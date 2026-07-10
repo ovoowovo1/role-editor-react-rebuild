@@ -73,7 +73,7 @@ export function useLayerListDrag({
     handlePointerMove,
     handlePointerUp,
     handlePointerCancel,
-    stopAutoScroll
+    stopPointerDragEffects
   } = useLayerListPointerDrag({
     scrollRef,
     dragStateRef,
@@ -151,8 +151,8 @@ export function useLayerListDrag({
   }, [dragState?.mode, handlePointerCancel, handlePointerMove, handlePointerUp]);
 
   useEffect(() => {
-    return () => stopAutoScroll();
-  }, [stopAutoScroll]);
+    return () => stopPointerDragEffects();
+  }, [stopPointerDragEffects]);
 
   return {
     dragState,

@@ -1,11 +1,12 @@
-import { useMemo, useRef } from 'react';
-import { Application, Container, FederatedPointerEvent } from 'pixi.js';
+import { useLayoutEffect, useMemo, useRef } from 'react';
+import type { Application } from 'pixi.js';
 import type { BrushFillMask } from '../../lib/conversion/brushFillToDeco';
-import type { DecorationLayer, RoleDocument } from '../../types/role';
-import { beginDecorationDrag } from './stageInteractions';
+import type { RoleDocument } from '../../types/role';
+import { beginDecorationDrag } from './dragInteractions';
 import type {
   BrushDrawState,
   BrushFillState,
+  DisguiseDecoOptions,
   DragState,
   StageCallbacks,
   StageRuntimeRefs,
@@ -22,11 +23,7 @@ interface StageRuntimeControllerOptions {
   brushFillActive: boolean;
   brushFillBrushSize: number;
   brushFillMask: BrushFillMask;
-  onUpdateDecoration(id: string, patch: Partial<DecorationLayer>, commit?: boolean): void;
-  onApplyDragDelta(dx: number, dy: number): void;
-  onCommitDragDelta(dx: number, dy: number): void;
-  onBeginTransient(): void;
-  onCommitTransient(): void;
+  onCommitDrag(selectionIds: readonly string[], dx: number, dy: number): void;
   onClearSelection(): void;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
 }
@@ -40,27 +37,18 @@ export function useStageRuntimeController({
   brushFillActive,
   brushFillBrushSize,
   brushFillMask,
-  onUpdateDecoration,
-  onApplyDragDelta,
-  onCommitDragDelta,
-  onBeginTransient,
-  onCommitTransient,
+  onCommitDrag,
   onClearSelection,
   onBrushFillMaskChange
 }: StageRuntimeControllerOptions) {
   const appRef = useRef<Application | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const brushDrawRef = useRef<BrushDrawState | null>(null);
-  const beginDecorationDragRef = useRef<(id: string, event: FederatedPointerEvent, root: Container) => void>(() => undefined);
   const sceneRef = useRef<StageSceneState | null>(null);
   const roleRef = useRef(role);
   const selectedIdsRef = useRef(selectedIds);
   const callbacksRef = useRef<StageCallbacks>({
-    onUpdateDecoration,
-    onApplyDragDelta,
-    onCommitDragDelta,
-    onBeginTransient,
-    onCommitTransient,
+    onCommitDrag,
     onClearSelection,
     onBrushFillMaskChange
   });
@@ -78,11 +66,42 @@ export function useStageRuntimeController({
     bodyAnimationLabel
   });
 
-  sceneBuildConfigRef.current = {
-    stageScale,
+  // Keep imperative Pixi handlers on committed React state. A layout effect
+  // runs before pointer input can resume and avoids exposing aborted renders.
+  useLayoutEffect(() => {
+    roleRef.current = role;
+    selectedIdsRef.current = selectedIds;
+    callbacksRef.current = {
+      onCommitDrag,
+      onClearSelection,
+      onBrushFillMaskChange
+    };
+    brushFillRef.current = {
+      active: brushFillActive,
+      brushSize: brushFillBrushSize,
+      mask: brushFillMask
+    };
+    if (!brushFillActive) {
+      brushDrawRef.current = null;
+    }
+    sceneBuildConfigRef.current = {
+      stageScale,
+      facingQuarterTurns,
+      bodyAnimationLabel
+    };
+  }, [
+    bodyAnimationLabel,
+    brushFillActive,
+    brushFillBrushSize,
+    brushFillMask,
     facingQuarterTurns,
-    bodyAnimationLabel
-  };
+    onBrushFillMaskChange,
+    onClearSelection,
+    onCommitDrag,
+    role,
+    selectedIds,
+    stageScale
+  ]);
 
   const stageRuntimeRefs = useMemo<StageRuntimeRefs>(
     () => ({
@@ -97,22 +116,28 @@ export function useStageRuntimeController({
     []
   );
 
-  beginDecorationDragRef.current = (id, event, root) => beginDecorationDrag(id, event, root, stageRuntimeRefs);
+  const decoOptions = useMemo<DisguiseDecoOptions>(
+    () => ({
+      onPointerDown: (id, global, root) => {
+        beginDecorationDrag(id, global, root, stageRuntimeRefs);
+      }
+    }),
+    [stageRuntimeRefs]
+  );
 
   return {
     appRef,
     dragRef,
     brushDrawRef,
-    beginDecorationDragRef,
     sceneRef,
     roleRef,
     selectedIdsRef,
-    callbacksRef,
     brushFillRef,
     stageBuildGenerationRef,
     stageTeardownRef,
     lastPlaybackResetRef,
     sceneBuildConfigRef,
-    stageRuntimeRefs
+    stageRuntimeRefs,
+    decoOptions
   };
 }

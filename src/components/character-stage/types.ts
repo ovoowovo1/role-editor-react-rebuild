@@ -1,25 +1,50 @@
 import type { MutableRefObject } from 'react';
-import type { Container, FederatedPointerEvent, Graphics } from 'pixi.js';
+import type { Container, Graphics } from 'pixi.js';
 import type { BrushFillMask, BrushFillPoint } from '../../lib/conversion/brushFillToDeco';
 import type { ActorClip } from '../../lib/runtime/actorClip';
 import type { GafMovieClip } from '../../lib/runtime/gafMovieClip';
-import type { DecorationLayer, RoleDocument } from '../../types/role';
+import type { RoleDocument } from '../../types/role';
+
+export interface StagePointerPosition {
+  x: number;
+  y: number;
+}
+
+export interface DraggedDisplayItem {
+  id: string;
+  container: Container;
+  startX: number;
+  startY: number;
+}
+
+export type DragVisual =
+  | {
+      kind: 'direct';
+      container: Container;
+      startX: number;
+      startY: number;
+    }
+  | {
+      kind: 'overlay';
+      container: Container;
+      startX: number;
+      startY: number;
+      items: DraggedDisplayItem[];
+    }
+  | {
+      kind: 'preview';
+      container: Container;
+      startX: number;
+      startY: number;
+    };
 
 export interface DragState {
-  id: string;
+  selectionIds: string[];
   offsetX: number;
   offsetY: number;
-  overlay?: {
-    container: Container;
-    items: Array<{ id: string; decoContainer: Container; startX: number; startY: number }>;
-    startX: number;
-    startY: number;
-  };
-  preview?: {
-    container: Container;
-    startX: number;
-    startY: number;
-  };
+  controllerStartX: number;
+  controllerStartY: number;
+  visual: DragVisual;
 }
 
 export interface BrushDrawState {
@@ -27,11 +52,7 @@ export interface BrushDrawState {
 }
 
 export interface StageCallbacks {
-  onUpdateDecoration(id: string, patch: Partial<DecorationLayer>, commit?: boolean): void;
-  onApplyDragDelta(dx: number, dy: number): void;
-  onCommitDragDelta(dx: number, dy: number): void;
-  onBeginTransient(): void;
-  onCommitTransient(): void;
+  onCommitDrag(selectionIds: readonly string[], dx: number, dy: number): void;
   onClearSelection(): void;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
 }
@@ -49,14 +70,13 @@ export interface StageSceneBuildConfig {
 }
 
 export interface DisguiseDecoOptions {
-  onPointerDown(id: string, event: FederatedPointerEvent, disguiseRoot: Container): void;
+  onPointerDown(id: string, global: StagePointerPosition, disguiseRoot: Container): void;
 }
 
 export interface DecoDisplayRecord {
   container: Container;
   displayKey: string;
   transformKey: string;
-  selected: boolean;
 }
 
 export interface StageSceneState {
@@ -68,12 +88,14 @@ export interface StageSceneState {
   selectionDragControllerGraphic: Graphics;
   selectionDragControllerVisuals: Container;
   brushFillOverlay: Container;
-  brushFillGraphic: Graphics;
+  brushFillCommittedGraphic: Graphics;
+  brushFillDraftGraphic: Graphics;
   selectionDragVisualKey: string;
   selectionDragVisualsById: Map<string, Container>;
   selectionDragTargetId: string | null;
   failedTextures: Set<string>;
   decoDisplays: Map<string, DecoDisplayRecord>;
+  decorationInteractionEnabled: boolean;
   lastDisguiseChildOrder: Container[];
   updatePosition(): void;
 }

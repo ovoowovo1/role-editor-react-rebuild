@@ -11,8 +11,7 @@ interface UseRoleMergeCommandsOptions {
   role: RoleDocument;
   roleRef: MutableRefObject<RoleDocument>;
   insertDraftSettings: InsertDraftSettings;
-  commitRole(nextRole: RoleDocument): void;
-  restoreSelection(ids: string[]): void;
+  commitRole(nextRole: RoleDocument, afterSelectionIds?: string[]): void;
   clearSelection(): void;
   selectDecoration(id: string, additive?: boolean): void;
 }
@@ -22,7 +21,6 @@ export function useRoleMergeCommands({
   roleRef,
   insertDraftSettings,
   commitRole,
-  restoreSelection,
   clearSelection,
   selectDecoration
 }: UseRoleMergeCommandsOptions) {
@@ -49,10 +47,9 @@ export function useRoleMergeCommands({
       const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
       const result = mergeImportedDecorationsIntoRole(roleRef.current, incoming, settings);
       if (!result) return;
-      commitRole(result.role);
-      restoreSelection(result.copiedIds);
+      commitRole(result.role, result.copiedIds);
     },
-    [commitRole, insertDraftSettings, restoreSelection, roleRef]
+    [commitRole, insertDraftSettings, roleRef]
   );
 
   const insertDecorationBatch = useCallback(
@@ -60,11 +57,10 @@ export function useRoleMergeCommands({
       const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
       const result = insertDecorationBatchIntoRole(roleRef.current, decorations, groupName, settings);
       if (!result) return 0;
-      commitRole(result.role);
-      restoreSelection(result.copiedIds);
+      commitRole(result.role, result.copiedIds);
       return result.copiedIds.length;
     },
-    [commitRole, insertDraftSettings, restoreSelection, roleRef]
+    [commitRole, insertDraftSettings, roleRef]
   );
 
   return {

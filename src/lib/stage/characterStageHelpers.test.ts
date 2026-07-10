@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { LARGE_MULTI_DRAG_THRESHOLD } from '../../constants/stage';
+import {
+  LIVE_MULTI_DRAG_ITEM_LIMIT,
+  PRECISE_SELECTION_BOUNDS_LIMIT,
+  STAGE_MAX_RESOLUTION
+} from '../../constants/stage';
 import { makeDecorationLayer, makeRoleDocument } from '../../test/roleFixtures';
 import {
   actorSceneKey,
@@ -9,8 +13,10 @@ import {
   committedBrushFillMask,
   decorationDisplayKey,
   decorationTransformKey,
+  dragAnchorPosition,
   displayTransformPatchForDecoration,
   displayTransformPatchForHeadLayer,
+  interpolatedBrushPoints,
   mergeBounds,
   pointBounds,
   positionRange,
@@ -18,8 +24,8 @@ import {
   sameChildOrder,
   selectionControllerPosition,
   selectionDragHitRect,
-  selectionDragVisualKey,
   shouldUsePointBoundsForSelection,
+  stageRendererResolution,
   stageSurfaceMetrics,
   summarizeMultiDragPositions,
   multiDragStartMode
@@ -31,7 +37,6 @@ describe('character stage helpers', () => {
 
     expect(decorationDisplayKey(deco)).toBe('asset\u0000code');
     expect(decorationTransformKey(deco)).toBe('1\u00002\u00003\u00004\u00005\u00000.5\u0000false');
-    expect(selectionDragVisualKey([deco], 10, 20)).toBe('10\u000020\u0000a:asset\u0000code:1\u00002\u00003\u00004\u00005\u00000.5\u0000false');
   });
 
   it('builds actor scene keys from role body inputs', () => {
@@ -65,6 +70,16 @@ describe('character stage helpers', () => {
       viewportSize: { width: 1, height: 1 },
       surfaceSize: { width: 1, height: 1 }
     });
+  });
+
+  it('caps canvas resolution and clamps drag anchors to the role range', () => {
+    expect(stageRendererResolution(0.5)).toBe(1);
+    expect(stageRendererResolution(1.5)).toBe(1.5);
+    expect(stageRendererResolution(STAGE_MAX_RESOLUTION + 2)).toBe(STAGE_MAX_RESOLUTION);
+    expect(stageRendererResolution(Number.NaN)).toBe(1);
+
+    expect(dragAnchorPosition(8, 9, 2, 1, 20)).toEqual({ x: 6, y: 8 });
+    expect(dragAnchorPosition(6, 8, 0, 0, 5)).toEqual({ x: 3, y: 4 });
   });
 
   it('clamps head layer index and compares child order by identity', () => {
@@ -121,6 +136,13 @@ describe('character stage helpers', () => {
       { x: 10, y: 0, radius: 10 }
     ]);
     expect(appendBrushPoint(points, { x: 11, y: 0, radius: 10 })).toBe(points);
+    expect(interpolatedBrushPoints(points[points.length - 1], { x: 20, y: 0, radius: 10 })).toEqual([
+      { x: 15, y: 0, radius: 10 },
+      { x: 20, y: 0, radius: 10 }
+    ]);
+    expect(interpolatedBrushPoints(undefined, { x: 1, y: 2, radius: 3 })).toEqual([
+      { x: 1, y: 2, radius: 3 }
+    ]);
   });
 
   it('combines committed and draft brush fill points', () => {
@@ -174,8 +196,9 @@ describe('character stage helpers', () => {
     expect(multiDragStartMode(1, 1)).toBe('single-fallback');
     expect(multiDragStartMode(2, 1)).toBe('single-fallback');
     expect(multiDragStartMode(2, 2)).toBe('overlay');
-    expect(multiDragStartMode(LARGE_MULTI_DRAG_THRESHOLD, 0)).toBe('preview');
-    expect(shouldUsePointBoundsForSelection(LARGE_MULTI_DRAG_THRESHOLD - 1)).toBe(false);
-    expect(shouldUsePointBoundsForSelection(LARGE_MULTI_DRAG_THRESHOLD)).toBe(true);
+    expect(multiDragStartMode(LIVE_MULTI_DRAG_ITEM_LIMIT, LIVE_MULTI_DRAG_ITEM_LIMIT)).toBe('overlay');
+    expect(multiDragStartMode(LIVE_MULTI_DRAG_ITEM_LIMIT + 1, LIVE_MULTI_DRAG_ITEM_LIMIT + 1)).toBe('preview');
+    expect(shouldUsePointBoundsForSelection(PRECISE_SELECTION_BOUNDS_LIMIT)).toBe(false);
+    expect(shouldUsePointBoundsForSelection(PRECISE_SELECTION_BOUNDS_LIMIT + 1)).toBe(true);
   });
 });

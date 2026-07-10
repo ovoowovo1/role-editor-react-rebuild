@@ -10,8 +10,7 @@ interface UseRoleLayerCommandsOptions {
   roleRef: MutableRefObject<RoleDocument>;
   selectedDecorationIds: string[];
   selectedLayerIds: string[];
-  commitRole(nextRole: RoleDocument): void;
-  setRole(updater: (current: RoleDocument) => RoleDocument, mode: 'history' | 'silent'): void;
+  commitRole(nextRole: RoleDocument, afterSelectionIds?: string[]): void;
   updateRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
 }
 
@@ -20,7 +19,6 @@ export function useRoleLayerCommands({
   selectedDecorationIds,
   selectedLayerIds,
   commitRole,
-  setRole,
   updateRole
 }: UseRoleLayerCommandsOptions) {
   const reorderDecorations = useCallback(
@@ -39,12 +37,16 @@ export function useRoleLayerCommands({
         return;
       }
 
-      setRole(
-        (current) => reorderBaseEditorLayersImmutable(current, activeRowId, overRowId, selectedDecorationIds, options) ?? current,
-        'history'
+      const baseNextRole = reorderBaseEditorLayersImmutable(
+        roleRef.current,
+        activeRowId,
+        overRowId,
+        selectedDecorationIds,
+        options
       );
+      if (baseNextRole) commitRole(baseNextRole);
     },
-    [commitRole, roleRef, selectedDecorationIds, selectedLayerIds, setRole]
+    [commitRole, roleRef, selectedDecorationIds, selectedLayerIds]
   );
 
   const moveSelectedToBoundary = useCallback(

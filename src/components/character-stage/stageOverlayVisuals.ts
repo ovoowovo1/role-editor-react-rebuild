@@ -1,39 +1,62 @@
 import { Container, Graphics } from 'pixi.js';
 import type { BrushFillMask, BrushFillPoint } from '../../lib/conversion/brushFillToDeco';
-import { brushFillPoints } from '../../lib/stage/characterStageHelpers';
 import { createDecoSelectionGlowFilter } from '../../lib/stage/decoSelectionFilter';
 
-let cachedGlowFilter: ReturnType<typeof createDecoSelectionGlowFilter> | null = null;
 let cachedControllerGlowFilter: ReturnType<typeof createDecoSelectionGlowFilter> | null = null;
-
-export function getCachedGlowFilter(): ReturnType<typeof createDecoSelectionGlowFilter> {
-  if (!cachedGlowFilter) cachedGlowFilter = createDecoSelectionGlowFilter();
-  return cachedGlowFilter;
-}
 
 export function getCachedControllerGlowFilter(): ReturnType<typeof createDecoSelectionGlowFilter> {
   if (!cachedControllerGlowFilter) cachedControllerGlowFilter = createDecoSelectionGlowFilter({ knockout: true });
   return cachedControllerGlowFilter;
 }
 
-export function drawBrushFillOverlay(
-  scene: { brushFillGraphic: Graphics; brushFillOverlay: Container },
-  mask: BrushFillMask,
-  draftPoints: BrushFillPoint[] = []
-): void {
-  const points = brushFillPoints(mask, draftPoints);
-  scene.brushFillGraphic.clear();
-  scene.brushFillOverlay.visible = points.length > 0;
-  scene.brushFillOverlay.eventMode = 'none';
+interface BrushFillOverlayScene {
+  brushFillOverlay: Container;
+  brushFillCommittedGraphic: Graphics;
+  brushFillDraftGraphic: Graphics;
+}
 
+function drawBrushPoints(graphic: Graphics, points: readonly BrushFillPoint[], clear = true): void {
+  if (clear) graphic.clear();
   if (!points.length) return;
 
-  scene.brushFillGraphic.beginFill(0x35d0ff, 0.18);
-  scene.brushFillGraphic.lineStyle({ width: 1, color: 0x9cffb2, alpha: 0.36 });
+  graphic.beginFill(0x35d0ff, 0.18);
+  graphic.lineStyle({ width: 1, color: 0x9cffb2, alpha: 0.36 });
   for (const point of points) {
-    scene.brushFillGraphic.drawCircle(point.x, point.y, point.radius);
+    graphic.drawCircle(point.x, point.y, point.radius);
   }
-  scene.brushFillGraphic.endFill();
+  graphic.endFill();
+}
+
+/** Synchronize the persisted mask. This is intentionally a full redraw. */
+export function drawBrushFillOverlay(scene: BrushFillOverlayScene, mask: BrushFillMask): void {
+  drawBrushPoints(scene.brushFillCommittedGraphic, mask.points);
+  scene.brushFillDraftGraphic.clear();
+  scene.brushFillOverlay.visible = mask.points.length > 0;
+  scene.brushFillOverlay.eventMode = 'none';
+}
+
+/**
+ * Start a transient stroke. The committed graphic is synchronized when the
+ * scene is built, when the mask prop changes, and when a stroke is committed,
+ * so pointer-down only needs to reset the inexpensive draft layer.
+ */
+export function beginBrushFillDraft(
+  scene: BrushFillOverlayScene,
+  mask: BrushFillMask,
+  points: readonly BrushFillPoint[]
+): void {
+  drawBrushPoints(scene.brushFillDraftGraphic, points);
+  scene.brushFillOverlay.visible = mask.points.length > 0 || points.length > 0;
+  scene.brushFillOverlay.eventMode = 'none';
+}
+
+/** Append only the newly interpolated points to the transient stroke graphic. */
+export function appendBrushFillDraft(
+  scene: BrushFillOverlayScene,
+  points: readonly BrushFillPoint[]
+): void {
+  drawBrushPoints(scene.brushFillDraftGraphic, points, false);
+  if (points.length) scene.brushFillOverlay.visible = true;
 }
 
 export function createLargeMultiDragPreview(width: number, height: number): Container {

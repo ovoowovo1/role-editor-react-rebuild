@@ -26,6 +26,12 @@ body,
   margin: 0;
 }
 
+#root,
+#root * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 body {
   overflow: hidden;
   background:
@@ -77,10 +83,8 @@ input:disabled {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border: 3.5px solid #cacaca;
   border-radius: 0;
   background: linear-gradient(#003949 0%, #000 100%);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.62), inset 0 0 48px rgba(53, 208, 255, 0.1);
   overflow: hidden;
 }
 
@@ -700,10 +704,28 @@ input:disabled {
     linear-gradient(180deg, rgba(0, 20, 32, 0.28), rgba(0, 0, 0, 0.26));
 }
 
+.stage-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.stage-scroll-surface {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+  overflow: visible;
+  isolation: isolate;
+}
+
 .pixi-host {
-  position: absolute;
-  inset: 0;
+  position: sticky;
+  top: 0;
+  left: 0;
   z-index: 2;
+  pointer-events: auto;
 }
 
 .pixi-host canvas {
@@ -728,6 +750,7 @@ input:disabled {
 /* Matches original RoleEditor stageBg: narrow column, centered, rotated + scaled from React inline style */
 .stage-bg {
   position: absolute;
+  top: 50%;
   left: 50%;
   width: 195px;
   z-index: 1;
@@ -1072,7 +1095,7 @@ input[type='range']::-webkit-slider-thumb {
 
 .layer-row {
   display: grid;
-  grid-template-columns: 24px 28px 54px minmax(0, 1fr) 30px 30px;
+  grid-template-columns: 24px 28px 54px 30px minmax(0, 1fr) 30px 30px;
   align-items: center;
   gap: 7px;
   min-height: 70px;

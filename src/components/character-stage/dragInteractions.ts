@@ -1,232 +1,270 @@
-import { Container, FederatedPointerEvent } from 'pixi.js';
+import { Container } from 'pixi.js';
 import type { DecorationLayer } from '../../types/role';
-import { clampToDisc } from '../../lib/math';
 import {
+  dragAnchorPosition,
   multiDragStartMode,
   positionRange,
   summarizeMultiDragPositions
 } from '../../lib/stage/characterStageHelpers';
+import { createLargeMultiDragPreview } from './stageOverlayVisuals';
+import { getDisplayRootPosition, reparentPreservingPosition } from './sceneGeometry';
 import {
-  createLargeMultiDragPreview,
-  getCachedGlowFilter
-} from './stageOverlayVisuals';
-import {
-  getDisplayRootPosition,
-  reparentPreservingPosition
-} from './sceneGeometry';
-import {
+  setDecorationInteractionEnabled,
   syncDisguiseChildOrder
 } from './sceneSync';
-import { hideSelectionDragController } from './selectionControllerSync';
-import type { DragState, StageRuntimeRefs } from './types';
+import {
+  hideSelectionDragController,
+  syncSelectionDragController
+} from './selectionControllerSync';
+import type { DraggedDisplayItem, StagePointerPosition, StageRuntimeRefs } from './types';
 
-export function beginDecorationDrag(
-  id: string,
-  event: FederatedPointerEvent,
-  root: Container,
-  refs: StageRuntimeRefs
-): void {
-  if (refs.brushFillRef.current.active) return;
-  const currentRole = refs.roleRef.current;
-  const selectedIdsSnapshot = refs.selectedIdsRef.current;
-  const selectedSet = new Set(selectedIdsSnapshot);
-  if (!selectedSet.has(id)) return;
-
-  const deco = currentRole.decorations.find((item) => item.id === id);
-  if (!deco) return;
-
-  if (refs.sceneRef.current) {
-    hideSelectionDragController(refs.sceneRef.current);
-    syncDisguiseChildOrder(refs.sceneRef.current, currentRole);
-  }
-
-  const isMultiDrag = selectedIdsSnapshot.length > 1;
-  if (isMultiDrag && refs.sceneRef.current) {
-    const currentScene = refs.sceneRef.current;
-    const selectedDecos: DecorationLayer[] = [];
-    const displayPositions = new Map<string, { x: number; y: number }>();
-    const selectedPositions: Array<{ id: string; x: number; y: number }> = [];
-    let overlayItemCount = 0;
-
-    for (const item of currentRole.decorations) {
-      if (!selectedSet.has(item.id)) continue;
-      const record = currentScene.decoDisplays.get(item.id);
-      if (record) overlayItemCount += 1;
-      const displayPosition = record
-        ? getDisplayRootPosition(record.container, currentScene.disguiseRoot)
-        : { x: item.x, y: item.y };
-      selectedDecos.push(item);
-      displayPositions.set(item.id, displayPosition);
-      selectedPositions.push({ id: item.id, x: displayPosition.x, y: displayPosition.y });
-    }
-
-    const summary = summarizeMultiDragPositions(selectedPositions);
-    const dragMode = multiDragStartMode(selectedDecos.length, overlayItemCount);
-    if (!summary || dragMode === 'single-fallback') {
-      beginSingleDecorationDrag(id, event, root, deco, refs);
-      return;
-    }
-
-    if (dragMode === 'preview') {
-      const preview = createLargeMultiDragPreview(summary.maxX - summary.minX, summary.maxY - summary.minY);
-      preview.position.set(summary.centerX, summary.centerY);
-      currentScene.disguiseRoot.addChild(preview);
-
-      const local = root.toLocal(event.global);
-      refs.dragRef.current = {
-        id,
-        offsetX: local.x - summary.centerX,
-        offsetY: local.y - summary.centerY,
-        preview: { container: preview, startX: summary.centerX, startY: summary.centerY }
-      };
-      return;
-    }
-
-    const items: NonNullable<DragState['overlay']>['items'] = [];
-    for (const item of selectedDecos) {
-      const record = currentScene.decoDisplays.get(item.id);
-      if (!record) continue;
-      const displayPosition = displayPositions.get(item.id) ?? getDisplayRootPosition(record.container, currentScene.disguiseRoot);
-      items.push({
-        id: item.id,
-        decoContainer: record.container,
-        startX: displayPosition.x,
-        startY: displayPosition.y
-      });
-    }
-
-    if (items.length < 2) {
-      beginSingleDecorationDrag(id, event, root, deco, refs);
-      return;
-    }
-
-    const overlay = new Container();
-    overlay.position.set(summary.centerX, summary.centerY);
-    overlay.filters = [getCachedGlowFilter()];
-    currentScene.disguiseRoot.addChild(overlay);
-
-    for (let i = items.length - 1; i >= 0; i -= 1) {
-      const item = items[i];
-      reparentPreservingPosition(item.decoContainer, overlay);
-    }
-
-    syncDisguiseChildOrder(currentScene, currentRole, overlay, selectedSet);
-
-    const local = root.toLocal(event.global);
-    refs.dragRef.current = {
-      id,
-      offsetX: local.x - summary.centerX,
-      offsetY: local.y - summary.centerY,
-      overlay: { container: overlay, items, startX: summary.centerX, startY: summary.centerY }
-    };
-    return;
-  }
-
-  beginSingleDecorationDrag(id, event, root, deco, refs);
+function selectedDecorationsForDrag(
+  decorations: DecorationLayer[],
+  selectedIds: readonly string[]
+): DecorationLayer[] {
+  const selectedSet = new Set(selectedIds);
+  return decorations.filter((deco) => selectedSet.has(deco.id));
 }
 
-function beginSingleDecorationDrag(
+function beginDirectDrag(
   id: string,
-  event: FederatedPointerEvent,
+  global: StagePointerPosition,
   root: Container,
-  deco: DecorationLayer,
+  selectionIds: string[],
   refs: StageRuntimeRefs
 ): void {
-  refs.callbacksRef.current.onBeginTransient();
-  const local = root.toLocal(event.global);
+  const scene = refs.sceneRef.current;
+  const record = scene?.decoDisplays.get(id);
+  if (!scene || !record) return;
+
+  const start = getDisplayRootPosition(record.container, scene.disguiseRoot);
+  const local = root.toLocal(global);
   refs.dragRef.current = {
-    id,
-    offsetX: local.x - deco.x,
-    offsetY: local.y - deco.y
+    selectionIds,
+    offsetX: local.x - start.x,
+    offsetY: local.y - start.y,
+    controllerStartX: scene.selectionDragController.position.x,
+    controllerStartY: scene.selectionDragController.position.y,
+    visual: {
+      kind: 'direct',
+      container: record.container,
+      startX: start.x,
+      startY: start.y
+    }
   };
 }
 
-export function updateDecorationDrag(event: FederatedPointerEvent, refs: StageRuntimeRefs): boolean {
-  const dragging = refs.dragRef.current;
-  const currentScene = refs.sceneRef.current;
-  if (!dragging || !currentScene) return false;
+function beginPreviewDrag(
+  global: StagePointerPosition,
+  root: Container,
+  selectionIds: string[],
+  summary: NonNullable<ReturnType<typeof summarizeMultiDragPositions>>,
+  refs: StageRuntimeRefs
+): void {
+  const scene = refs.sceneRef.current;
+  if (!scene) return;
 
-  const local = currentScene.disguiseRoot.toLocal(event.global);
-  let nx = local.x - dragging.offsetX;
-  let ny = local.y - dragging.offsetY;
+  const preview = createLargeMultiDragPreview(summary.maxX - summary.minX, summary.maxY - summary.minY);
+  preview.position.set(summary.centerX, summary.centerY);
+  scene.disguiseRoot.addChild(preview);
 
-  if (dragging.overlay) {
-    const disc = clampToDisc(nx, ny, positionRange(refs.roleRef.current));
-    dragging.overlay.container.position.set(disc.x, disc.y);
-    return true;
+  const local = root.toLocal(global);
+  refs.dragRef.current = {
+    selectionIds,
+    offsetX: local.x - summary.centerX,
+    offsetY: local.y - summary.centerY,
+    controllerStartX: scene.selectionDragController.position.x,
+    controllerStartY: scene.selectionDragController.position.y,
+    visual: {
+      kind: 'preview',
+      container: preview,
+      startX: summary.centerX,
+      startY: summary.centerY
+    }
+  };
+}
+
+function beginOverlayDrag(
+  global: StagePointerPosition,
+  root: Container,
+  selectionIds: string[],
+  selectedDecorations: DecorationLayer[],
+  displayPositions: Map<string, StagePointerPosition>,
+  summary: NonNullable<ReturnType<typeof summarizeMultiDragPositions>>,
+  refs: StageRuntimeRefs
+): boolean {
+  const scene = refs.sceneRef.current;
+  if (!scene) return false;
+
+  const items: DraggedDisplayItem[] = [];
+  for (const deco of selectedDecorations) {
+    const record = scene.decoDisplays.get(deco.id);
+    if (!record) continue;
+    const start = displayPositions.get(deco.id) ?? getDisplayRootPosition(record.container, scene.disguiseRoot);
+    items.push({
+      id: deco.id,
+      container: record.container,
+      startX: start.x,
+      startY: start.y
+    });
+  }
+  if (items.length < 2) return false;
+
+  const overlay = new Container();
+  overlay.position.set(summary.centerX, summary.centerY);
+  scene.disguiseRoot.addChild(overlay);
+
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    reparentPreservingPosition(items[index].container, overlay);
   }
 
-  if (dragging.preview) {
-    const disc = clampToDisc(nx, ny, positionRange(refs.roleRef.current));
-    dragging.preview.container.position.set(disc.x, disc.y);
-    return true;
+  const selectedSet = new Set(selectionIds);
+  syncDisguiseChildOrder(scene, refs.roleRef.current, overlay, selectedSet);
+
+  const local = root.toLocal(global);
+  refs.dragRef.current = {
+    selectionIds,
+    offsetX: local.x - summary.centerX,
+    offsetY: local.y - summary.centerY,
+    controllerStartX: scene.selectionDragController.position.x,
+    controllerStartY: scene.selectionDragController.position.y,
+    visual: {
+      kind: 'overlay',
+      container: overlay,
+      items,
+      startX: summary.centerX,
+      startY: summary.centerY
+    }
+  };
+  return true;
+}
+
+export function beginDecorationDrag(
+  id: string,
+  global: StagePointerPosition,
+  root: Container,
+  refs: StageRuntimeRefs
+): void {
+  if (refs.brushFillRef.current.active || refs.dragRef.current) return;
+
+  const scene = refs.sceneRef.current;
+  if (!scene) return;
+
+  const selectedDecorations = selectedDecorationsForDrag(
+    refs.roleRef.current.decorations,
+    refs.selectedIdsRef.current
+  );
+  const selectionIds = selectedDecorations.map((deco) => deco.id);
+  if (!selectionIds.includes(id)) return;
+
+  scene.selectionDragController.eventMode = 'none';
+  scene.selectionDragController.cursor = 'default';
+  setDecorationInteractionEnabled(scene, false);
+  syncDisguiseChildOrder(scene, refs.roleRef.current);
+
+  if (selectedDecorations.length < 2) {
+    beginDirectDrag(id, global, root, selectionIds, refs);
+    return;
   }
 
-  const disc = clampToDisc(nx, ny, positionRange(refs.roleRef.current));
-  nx = disc.x;
-  ny = disc.y;
+  const displayPositions = new Map<string, StagePointerPosition>();
+  const positions: Array<{ id: string; x: number; y: number }> = [];
+  let displayCount = 0;
 
-  const record = currentScene.decoDisplays.get(dragging.id);
-  if (record) {
-    record.container.position.set(nx, ny);
+  for (const deco of selectedDecorations) {
+    const record = scene.decoDisplays.get(deco.id);
+    if (record) displayCount += 1;
+    const position = record
+      ? getDisplayRootPosition(record.container, scene.disguiseRoot)
+      : { x: deco.x, y: deco.y };
+    displayPositions.set(deco.id, position);
+    positions.push({ id: deco.id, ...position });
   }
 
-  refs.callbacksRef.current.onUpdateDecoration(
-    dragging.id,
-    {
-      x: nx,
-      y: ny
-    },
-    false
+  const summary = summarizeMultiDragPositions(positions);
+  if (!summary) return;
+
+  const mode = multiDragStartMode(selectedDecorations.length, displayCount);
+  if (mode === 'preview') {
+    beginPreviewDrag(global, root, selectionIds, summary, refs);
+    return;
+  }
+
+  if (
+    mode === 'overlay' &&
+    beginOverlayDrag(global, root, selectionIds, selectedDecorations, displayPositions, summary, refs)
+  ) {
+    return;
+  }
+
+  beginDirectDrag(id, global, root, selectionIds, refs);
+}
+
+export function updateDecorationDrag(global: StagePointerPosition, refs: StageRuntimeRefs): boolean {
+  const drag = refs.dragRef.current;
+  const scene = refs.sceneRef.current;
+  if (!drag || !scene) return false;
+
+  const local = scene.disguiseRoot.toLocal(global);
+  const next = dragAnchorPosition(
+    local.x,
+    local.y,
+    drag.offsetX,
+    drag.offsetY,
+    positionRange(refs.roleRef.current)
+  );
+  drag.visual.container.position.set(next.x, next.y);
+  scene.selectionDragController.position.set(
+    drag.controllerStartX + next.x - drag.visual.startX,
+    drag.controllerStartY + next.y - drag.visual.startY
   );
   return true;
 }
 
+function restoreSelectionControllerOnNextFrame(
+  scene: NonNullable<StageRuntimeRefs['sceneRef']['current']>,
+  refs: StageRuntimeRefs
+): void {
+  requestAnimationFrame(() => {
+    if (refs.sceneRef.current !== scene || refs.dragRef.current || scene.actorStage.destroyed) return;
+    const selectedSet = new Set(refs.selectedIdsRef.current);
+    const selectedDecorations = refs.roleRef.current.decorations.filter((deco) => selectedSet.has(deco.id));
+    syncSelectionDragController(scene, selectedDecorations, false);
+    syncDisguiseChildOrder(scene, refs.roleRef.current);
+  });
+}
+
 export function commitDecorationDrag(refs: StageRuntimeRefs): boolean {
-  if (!refs.dragRef.current) return false;
-  const dragging = refs.dragRef.current;
-
-  if (dragging.overlay) {
-    const currentScene = refs.sceneRef.current;
-    const dx = dragging.overlay.container.position.x - dragging.overlay.startX;
-    const dy = dragging.overlay.container.position.y - dragging.overlay.startY;
-
-    if (currentScene) {
-      for (const item of dragging.overlay.items) {
-        reparentPreservingPosition(item.decoContainer, currentScene.disguiseRoot);
-      }
-      syncDisguiseChildOrder(currentScene, refs.roleRef.current);
-    }
-
-    if (!dragging.overlay.container.destroyed) {
-      dragging.overlay.container.destroy({ children: false });
-    }
-
-    requestAnimationFrame(() => {
-      refs.callbacksRef.current.onCommitDragDelta(dx, dy);
-    });
-
-    refs.dragRef.current = null;
-    return true;
-  }
-
-  if (dragging.preview) {
-    const dx = dragging.preview.container.position.x - dragging.preview.startX;
-    const dy = dragging.preview.container.position.y - dragging.preview.startY;
-
-    if (!dragging.preview.container.destroyed) {
-      dragging.preview.container.destroy({ children: true });
-    }
-
-    requestAnimationFrame(() => {
-      refs.callbacksRef.current.onCommitDragDelta(dx, dy);
-    });
-
-    refs.dragRef.current = null;
-    return true;
-  }
+  const drag = refs.dragRef.current;
+  if (!drag) return false;
 
   refs.dragRef.current = null;
-  refs.callbacksRef.current.onCommitTransient();
+  const scene = refs.sceneRef.current;
+  const { visual } = drag;
+  const dx = visual.container.position.x - visual.startX;
+  const dy = visual.container.position.y - visual.startY;
+
+  if (visual.kind === 'overlay') {
+    if (scene) {
+      for (const item of visual.items) {
+        reparentPreservingPosition(item.container, scene.disguiseRoot);
+      }
+    }
+    if (!visual.container.destroyed) {
+      visual.container.destroy({ children: false });
+    }
+  } else if (visual.kind === 'preview' && !visual.container.destroyed) {
+    visual.container.destroy({ children: true });
+  }
+
+  if (scene) {
+    setDecorationInteractionEnabled(scene, !refs.brushFillRef.current.active);
+    syncDisguiseChildOrder(scene, refs.roleRef.current);
+  }
+
+  refs.callbacksRef.current.onCommitDrag(drag.selectionIds, dx, dy);
+  if (scene) {
+    restoreSelectionControllerOnNextFrame(scene, refs);
+  }
   return true;
 }

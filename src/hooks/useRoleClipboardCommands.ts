@@ -16,8 +16,7 @@ interface UseRoleClipboardCommandsOptions {
   selectedDecorationIds: string[];
   stableSelectedDecorations: DecorationLayer[];
   baseSelectedDecorations: DecorationLayer[];
-  commitRole(nextRole: RoleDocument): void;
-  restoreSelection(ids: string[]): void;
+  commitRole(nextRole: RoleDocument, afterSelectionIds?: string[]): void;
   setSelectedLayerIds(ids: string[]): void;
   updateRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
 }
@@ -29,7 +28,6 @@ export function useRoleClipboardCommands({
   stableSelectedDecorations,
   baseSelectedDecorations,
   commitRole,
-  restoreSelection,
   setSelectedLayerIds,
   updateRole
 }: UseRoleClipboardCommandsOptions) {
@@ -62,14 +60,12 @@ export function useRoleClipboardCommands({
     const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.copy);
     const result = pasteLocalClipboardIntoRole(roleRef.current, localClipboard, settings);
     if (!result) return;
-    commitRole(result.role);
-    restoreSelection(result.pastedIds);
+    commitRole(result.role, result.pastedIds);
   }, [
     baseClipboard,
     commitRole,
     insertDraftSettings,
     localClipboard,
-    restoreSelection,
     roleRef,
     selectedDecorationIds,
     setSelectedLayerIds,
@@ -81,18 +77,16 @@ export function useRoleClipboardCommands({
     const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.copy);
     const copied = mirroredCopiedDecorations(stableSelectedDecorations, 'horizontal');
     const nextRole = insertDecorations(roleRef.current, copied, settings);
-    commitRole(nextRole);
-    restoreSelection(copied.map((item) => item.id));
-  }, [commitRole, insertDraftSettings, restoreSelection, roleRef, stableSelectedDecorations]);
+    commitRole(nextRole, copied.map((item) => item.id));
+  }, [commitRole, insertDraftSettings, roleRef, stableSelectedDecorations]);
 
   const mirrorCopyVerticalSelected = useCallback(() => {
     if (!stableSelectedDecorations.length) return;
     const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.copy);
     const copied = mirroredCopiedDecorations(stableSelectedDecorations, 'vertical');
     const nextRole = insertDecorations(roleRef.current, copied, settings);
-    commitRole(nextRole);
-    restoreSelection(copied.map((item) => item.id));
-  }, [commitRole, insertDraftSettings, restoreSelection, roleRef, stableSelectedDecorations]);
+    commitRole(nextRole, copied.map((item) => item.id));
+  }, [commitRole, insertDraftSettings, roleRef, stableSelectedDecorations]);
 
   return {
     clipboardCount: baseClipboard.length,

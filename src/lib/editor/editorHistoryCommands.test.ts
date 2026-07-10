@@ -18,7 +18,6 @@ describe('editor history commands', () => {
     expect(result?.localFuture).toHaveLength(1);
     expect(result?.nextRole.decorations[0]).toMatchObject({ x: 7, y: 24 });
     expect(result?.restoreSelectionIds).toEqual(['a']);
-    expect(result?.clearSelection).toBe(false);
   });
 
   it('undoes transform entries and stores the current transform for redo', () => {
@@ -65,17 +64,27 @@ describe('editor history commands', () => {
     });
   });
 
-  it('uses snapshot entries as full role restores and clears selection', () => {
+  it('restores snapshot selection on undo and redo', () => {
     const current = makeRoleDocument({ name: 'current' });
     const snapshot = makeRoleDocument({ name: 'snapshot' });
-    const past: LocalHistoryEntry[] = [{ kind: 'snapshot', role: snapshot }];
+    const past: LocalHistoryEntry[] = [
+      { kind: 'snapshot', role: snapshot, selectionIds: ['before'], inverseSelectionIds: ['after'] }
+    ];
 
-    const result = resolveLocalUndo(current, past, []);
+    const undoResult = resolveLocalUndo(current, past, []);
 
-    expect(result?.nextRole.name).toBe('snapshot');
-    expect(result?.localFuture[0]).toMatchObject({ kind: 'snapshot', role: { name: 'current' } });
-    expect(result?.restoreSelectionIds).toEqual([]);
-    expect(result?.clearSelection).toBe(true);
+    expect(undoResult?.nextRole.name).toBe('snapshot');
+    expect(undoResult?.restoreSelectionIds).toEqual(['before']);
+    expect(undoResult?.localFuture[0]).toMatchObject({
+      kind: 'snapshot',
+      role: { name: 'current' },
+      selectionIds: ['after'],
+      inverseSelectionIds: ['before']
+    });
+
+    const redoResult = resolveLocalRedo(snapshot, [], undoResult?.localFuture ?? []);
+    expect(redoResult?.nextRole.name).toBe('current');
+    expect(redoResult?.restoreSelectionIds).toEqual(['after']);
   });
 
   it('returns null when there is no local history to handle', () => {

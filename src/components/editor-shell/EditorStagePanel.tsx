@@ -26,11 +26,7 @@ export function EditorStagePanel({ editor, shell }: EditorStagePanelProps) {
           bodyAnimationRestartKey={shell.bodyAnimationRestartKey}
           stageScale={editor.stageScale}
           facingQuarterTurns={shell.facingQuarterTurns}
-          onUpdateDecoration={editor.updateDecoration}
-          onApplyDragDelta={(dx, dy) => editor.applyDragDeltaToSelected(dx, dy)}
-          onCommitDragDelta={editor.commitDragDeltaToSelected}
-          onBeginTransient={editor.beginTransient}
-          onCommitTransient={editor.commitTransient}
+          onCommitDrag={editor.commitDrag}
           onClearSelection={editor.clearSelection}
           brushFillActive={shell.brushFillActive}
           brushFillBrushSize={shell.brushFillBrushSize}

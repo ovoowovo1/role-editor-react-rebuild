@@ -200,9 +200,8 @@ button:not(:disabled):active {
   flex: 0 0 auto;
   gap: 6px;
   padding: 7px 12px 0;
-  overflow-x: auto;
+  overflow-x: hidden;
   overscroll-behavior-x: contain;
-  scrollbar-width: thin;
   border-bottom: 1px solid rgba(232, 251, 255, 0.38);
   background: rgba(0, 0, 0, 0.12);
 }
@@ -250,7 +249,7 @@ button:not(:disabled):active {
   width: clamp(280px, 30vw, 470px);
   min-width: 250px;
   max-width: 540px;
-  flex: 0 1 clamp(280px, 30vw, 470px);
+  flex: 0 0 auto;
 }
 
 .edit-block {
@@ -646,6 +645,8 @@ button:not(:disabled):active {
 
   .top-bar {
     padding-inline: 8px;
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
 
   .top-bar-button {

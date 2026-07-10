@@ -1,6 +1,5 @@
 import { Container } from 'pixi.js';
 import type { RoleDocument } from '../../types/role';
-import { DECO_GLOW_CAP } from '../../constants/stage';
 import {
   clampedHeadLayerIndex,
   decorationDisplayKey,
@@ -11,16 +10,8 @@ import {
   applyDecorationDisplayTransform,
   createDisguiseEntryDisplay
 } from './pixiVisuals';
-import { getCachedGlowFilter } from './stageOverlayVisuals';
 import type { DecoDisplayRecord, DisguiseDecoOptions, StageSceneState } from './types';
 import { syncSelectionDragController } from './selectionControllerSync';
-
-function syncDecorationSelection(record: DecoDisplayRecord, selected: boolean, skipGlow: boolean): void {
-  const nextFilters = selected && !skipGlow ? [getCachedGlowFilter()] : null;
-  if (record.selected === selected && record.container.filters === nextFilters) return;
-  record.container.filters = nextFilters;
-  record.selected = selected;
-}
 
 function replaceDisguiseChildren(root: Container, children: Container[]): void {
   root.removeChildren();
@@ -51,7 +42,7 @@ export function syncDisguiseChildOrder(scene: StageSceneState, role: RoleDocumen
   topFirstChildren.splice(headIndex, 0, scene.headLayerClip);
 
   const orderedChildren = topFirstChildren.slice().reverse();
-  if (!overlay && scene.selectionDragController.visible) {
+  if (scene.selectionDragController.visible) {
     orderedChildren.push(scene.selectionDragController);
   }
   if (scene.brushFillOverlay.visible) {
@@ -63,16 +54,31 @@ export function syncDisguiseChildOrder(scene: StageSceneState, role: RoleDocumen
   scene.lastDisguiseChildOrder = orderedChildren;
 }
 
+export function setDecorationInteractionEnabled(
+  scene: StageSceneState,
+  enabled: boolean
+): void {
+  if (scene.decorationInteractionEnabled === enabled) return;
+  scene.decorationInteractionEnabled = enabled;
+  for (const { container } of scene.decoDisplays.values()) {
+    container.eventMode = enabled ? 'static' : 'none';
+    container.cursor = enabled ? 'pointer' : 'default';
+  }
+}
+
 export function syncDecorationDisplays(
   scene: StageSceneState,
   role: RoleDocument,
   selectedIds: string[],
   decoOptions: DisguiseDecoOptions,
-  activeOverlay?: { container: Container; selectedSet: Set<string> } | null
+  activeOverlay?: { container: Container; selectedSet: Set<string> } | null,
+  hasActiveDrag = false,
+  decorationInteractionEnabled = true
 ): void {
   const decorationsById = new Map(role.decorations.map((deco) => [deco.id, deco]));
-  const selectedSet = new Set(selectedIds);
-  const skipGlow = selectedIds.length > DECO_GLOW_CAP || selectedIds.length > 0;
+  const selectedDecorations = selectedIds
+    .map((id) => decorationsById.get(id))
+    .filter((deco): deco is NonNullable<typeof deco> => Boolean(deco));
 
   for (const [id, record] of scene.decoDisplays) {
     const deco = decorationsById.get(id);
@@ -94,11 +100,13 @@ export function syncDecorationDisplays(
       record = {
         container,
         displayKey: decorationDisplayKey(deco),
-        transformKey: '',
-        selected: false
+        transformKey: ''
       };
       scene.decoDisplays.set(deco.id, record);
     }
+
+    record.container.eventMode = decorationInteractionEnabled ? 'static' : 'none';
+    record.container.cursor = decorationInteractionEnabled ? 'pointer' : 'default';
 
     const transformKey = decorationTransformKey(deco);
     const isOverlayChild = activeOverlay?.selectedSet.has(deco.id) && record.container.parent === activeOverlay.container;
@@ -106,9 +114,9 @@ export function syncDecorationDisplays(
       applyDecorationDisplayTransform(record.container, deco);
       record.transformKey = transformKey;
     }
-    syncDecorationSelection(record, selectedSet.has(deco.id), skipGlow);
   }
 
-  syncSelectionDragController(scene, role, selectedIds, !!activeOverlay);
+  scene.decorationInteractionEnabled = decorationInteractionEnabled;
+  syncSelectionDragController(scene, selectedDecorations, hasActiveDrag);
   syncDisguiseChildOrder(scene, role, activeOverlay?.container, activeOverlay?.selectedSet);
 }

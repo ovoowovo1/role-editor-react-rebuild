@@ -45,3 +45,60 @@ test('color block choices wrap into the next row without large vertical gaps', a
   expect(nextRowTop - firstRowTop).toBeLessThanOrEqual(boxes[0].height + 16);
   expectNoPageErrors(monitor);
 });
+
+test('choice list honors a user-resized width', async ({ page }) => {
+  const monitor = watchPageErrors(page);
+  await page.setViewportSize({ width: 1200, height: 760 });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+  const choiceList = page.locator('.choice-list');
+  await choiceList.evaluate((element) => {
+    (element as HTMLElement).style.width = '430px';
+  });
+
+  const resized = await choiceList.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      flexBasis: style.flexBasis,
+      resize: style.resize,
+      width: element.getBoundingClientRect().width
+    };
+  });
+
+  expect(resized.flexBasis).toBe('auto');
+  expect(resized.resize).toBe('horizontal');
+  expect(resized.width).toBeGreaterThan(420);
+  expect(resized.width).toBeLessThan(440);
+  expectNoPageErrors(monitor);
+});
+
+test('editor content disables browser text selection', async ({ page }) => {
+  const monitor = watchPageErrors(page);
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+  const selectionStyles = await page.locator('#root').evaluate((root) => {
+    const button = root.querySelector('button');
+    const input = root.querySelector('input');
+    return {
+      root: getComputedStyle(root).userSelect,
+      button: button ? getComputedStyle(button).userSelect : null,
+      input: input ? getComputedStyle(input).userSelect : null
+    };
+  });
+
+  expect(selectionStyles).toEqual({ root: 'none', button: 'none', input: 'none' });
+  expectNoPageErrors(monitor);
+});
+
+test('top bar only scrolls at mobile widths', async ({ page }) => {
+  const monitor = watchPageErrors(page);
+  await page.setViewportSize({ width: 1200, height: 760 });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+  const topBar = page.locator('.top-bar');
+  await expect(topBar).toHaveCSS('overflow-x', 'hidden');
+
+  await page.setViewportSize({ width: 700, height: 760 });
+  await expect(topBar).toHaveCSS('overflow-x', 'auto');
+  expectNoPageErrors(monitor);
+});

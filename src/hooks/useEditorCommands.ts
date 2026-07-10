@@ -28,7 +28,6 @@ export function useEditorCommands({
   setSelectedTab: Dispatch<SetStateAction<PartTab>>;
   updateRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
 }) {
-  const { setPresent: setRole } = history;
   const selection = useRoleSelection({ role, roleRef });
   const {
     selectedLayerIds,
@@ -86,9 +85,6 @@ export function useEditorCommands({
     commitRole,
     recordLocalHistoryEntry,
     restoreSelection,
-    clearSelection,
-    setSelectedLayerIds,
-    setRole,
     updateRole,
     withImmediateHistory,
     withTransformHistory
@@ -101,7 +97,6 @@ export function useEditorCommands({
     stableSelectedDecorations,
     baseSelectedDecorations,
     commitRole,
-    restoreSelection,
     setSelectedLayerIds,
     updateRole
   });
@@ -119,7 +114,6 @@ export function useEditorCommands({
     selectedDecorationIds,
     selectedLayerIds,
     commitRole,
-    setRole,
     updateRole
   });
 
@@ -128,7 +122,6 @@ export function useEditorCommands({
     roleRef,
     insertDraftSettings,
     commitRole,
-    restoreSelection,
     clearSelection,
     selectDecoration
   });

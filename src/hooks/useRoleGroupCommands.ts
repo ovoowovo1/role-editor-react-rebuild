@@ -18,7 +18,7 @@ interface UseRoleGroupCommandsOptions {
   role: RoleDocument;
   roleRef: MutableRefObject<RoleDocument>;
   selectedLayerIds: string[];
-  commitRole(nextRole: RoleDocument): void;
+  commitRole(nextRole: RoleDocument, afterSelectionIds?: string[]): void;
   updateRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
 }
 

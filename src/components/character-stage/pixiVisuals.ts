@@ -110,7 +110,11 @@ export function createDisguiseEntryDisplay(
   wrapper.cursor = 'pointer';
 
   wrapper.on('pointerdown', (event) => {
-    decoOptions.onPointerDown(deco.id, event, disguiseRoot);
+    decoOptions.onPointerDown(
+      deco.id,
+      { x: event.global.x, y: event.global.y },
+      disguiseRoot
+    );
   });
   return wrapper;
 }

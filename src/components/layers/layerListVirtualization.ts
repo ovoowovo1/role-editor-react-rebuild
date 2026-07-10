@@ -33,13 +33,16 @@ export interface DraggableTarget {
   row: LayerRowModel;
 }
 
-export interface VirtualLayout {
+export interface VirtualGeometry {
   totalHeight: number;
-  visibleItems: VirtualRenderItem[];
   offsets: number[];
   heights: number[];
   rowIndexById: Map<string, number>;
   draggableTargets: DraggableTarget[];
+}
+
+export interface VirtualLayout extends VirtualGeometry {
+  visibleItems: VirtualRenderItem[];
 }
 
 export interface LayerDragState {
@@ -97,12 +100,7 @@ export function isDraggableRow(row: VirtualLayerRow): row is LayerRowModel {
   return row.type !== 'spacer';
 }
 
-export function buildVirtualItems(
-  rows: VirtualLayerRow[],
-  scrollTop: number,
-  viewportHeight: number,
-  overscanRows: number
-): VirtualLayout {
+export function buildVirtualGeometry(rows: VirtualLayerRow[]): VirtualGeometry {
   const offsets: number[] = [];
   const heights: number[] = [];
   const rowIndexById = new Map<string, number>();
@@ -113,7 +111,7 @@ export function buildVirtualItems(
     const height = layerRowHeight(row);
     const top = totalHeight;
     rowIndexById.set(row.rowId, index);
-    offsets.push(totalHeight);
+    offsets.push(top);
     heights.push(height);
     totalHeight += height;
     if (isDraggableRow(row)) {
@@ -128,56 +126,103 @@ export function buildVirtualItems(
     }
   });
 
-  const viewportBottom = scrollTop + Math.max(viewportHeight, 1);
-  let startIndex = 0;
-  while (startIndex < rows.length && offsets[startIndex] + heights[startIndex] < scrollTop) {
-    startIndex += 1;
-  }
-  startIndex = Math.max(0, startIndex - overscanRows);
+  return { totalHeight, offsets, heights, rowIndexById, draggableTargets };
+}
 
-  let endIndex = startIndex;
-  while (endIndex < rows.length && offsets[endIndex] <= viewportBottom) {
-    endIndex += 1;
+function firstVisibleRowIndex(
+  offsets: readonly number[],
+  heights: readonly number[],
+  scrollTop: number
+): number {
+  let low = 0;
+  let high = offsets.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (offsets[mid] + heights[mid] < scrollTop) low = mid + 1;
+    else high = mid;
   }
-  endIndex = Math.min(rows.length, endIndex + overscanRows);
+  return low;
+}
+
+function firstRowAfterViewport(offsets: readonly number[], viewportBottom: number): number {
+  let low = 0;
+  let high = offsets.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (offsets[mid] <= viewportBottom) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
+export function virtualItemsInViewport(
+  rows: VirtualLayerRow[],
+  geometry: Pick<VirtualGeometry, 'offsets' | 'heights'>,
+  scrollTop: number,
+  viewportHeight: number,
+  overscanRows: number
+): VirtualRenderItem[] {
+  const viewportBottom = scrollTop + Math.max(viewportHeight, 1);
+  const startIndex = Math.max(
+    0,
+    firstVisibleRowIndex(geometry.offsets, geometry.heights, scrollTop) - overscanRows
+  );
+  const endIndex = Math.min(
+    rows.length,
+    firstRowAfterViewport(geometry.offsets, viewportBottom) + overscanRows
+  );
 
   const visibleItems: VirtualRenderItem[] = [];
   for (let index = startIndex; index < endIndex; index += 1) {
     visibleItems.push({
       row: rows[index],
       index,
-      top: offsets[index],
-      height: heights[index]
+      top: geometry.offsets[index],
+      height: geometry.heights[index]
     });
   }
-
-  return { totalHeight, visibleItems, offsets, heights, rowIndexById, draggableTargets };
+  return visibleItems;
 }
 
-export function closestDraggableRowId(targets: DraggableTarget[], virtualY: number): string | null {
+/** Convenience wrapper for callers that do not need to cache row geometry. */
+export function buildVirtualItems(
+  rows: VirtualLayerRow[],
+  scrollTop: number,
+  viewportHeight: number,
+  overscanRows: number
+): VirtualLayout {
+  const geometry = buildVirtualGeometry(rows);
+  return {
+    ...geometry,
+    visibleItems: virtualItemsInViewport(rows, geometry, scrollTop, viewportHeight, overscanRows)
+  };
+}
+
+export function closestDraggableTarget(
+  targets: DraggableTarget[],
+  virtualY: number
+): DraggableTarget | null {
   if (!targets.length) return null;
 
   let low = 0;
   let high = targets.length;
   while (low < high) {
     const mid = Math.floor((low + high) / 2);
-    if (targets[mid].center < virtualY) {
-      low = mid + 1;
-    } else {
-      high = mid;
-    }
+    if (targets[mid].center < virtualY) low = mid + 1;
+    else high = mid;
   }
 
   const next = low < targets.length ? targets[low] : null;
   const previous = low > 0 ? targets[low - 1] : null;
-  if (!previous) return next?.rowId ?? null;
-  if (!next) return previous.rowId;
-  return Math.abs(next.center - virtualY) < Math.abs(virtualY - previous.center) ? next.rowId : previous.rowId;
+  if (!previous) return next;
+  if (!next) return previous;
+  return Math.abs(next.center - virtualY) < Math.abs(virtualY - previous.center)
+    ? next
+    : previous;
 }
 
-export function closestDraggableTarget(targets: DraggableTarget[], virtualY: number): DraggableTarget | null {
-  const rowId = closestDraggableRowId(targets, virtualY);
-  return rowId ? targets.find((target) => target.rowId === rowId) ?? null : null;
+export function closestDraggableRowId(targets: DraggableTarget[], virtualY: number): string | null {
+  return closestDraggableTarget(targets, virtualY)?.rowId ?? null;
 }
 
 export function layerIdFromRowId(rowId: string): string | null {

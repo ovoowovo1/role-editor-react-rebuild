@@ -1,6 +1,6 @@
 import { useEffect, type MutableRefObject } from 'react';
 import type { BrushFillMask } from '../../lib/conversion/brushFillToDeco';
-import type { DecorationLayer, RoleDocument } from '../../types/role';
+import type { RoleDocument } from '../../types/role';
 import type { BrushDrawState, BrushFillState, StageCallbacks } from './types';
 
 interface StageRuntimeSyncOptions {
@@ -14,11 +14,7 @@ interface StageRuntimeSyncOptions {
   callbacksRef: MutableRefObject<StageCallbacks>;
   brushFillRef: MutableRefObject<BrushFillState>;
   brushDrawRef: MutableRefObject<BrushDrawState | null>;
-  onUpdateDecoration(id: string, patch: Partial<DecorationLayer>, commit?: boolean): void;
-  onApplyDragDelta(dx: number, dy: number): void;
-  onCommitDragDelta(dx: number, dy: number): void;
-  onBeginTransient(): void;
-  onCommitTransient(): void;
+  onCommitDrag(selectionIds: readonly string[], dx: number, dy: number): void;
   onClearSelection(): void;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
 }
@@ -34,11 +30,7 @@ export function useStageRuntimeRefSync({
   callbacksRef,
   brushFillRef,
   brushDrawRef,
-  onUpdateDecoration,
-  onApplyDragDelta,
-  onCommitDragDelta,
-  onBeginTransient,
-  onCommitTransient,
+  onCommitDrag,
   onClearSelection,
   onBrushFillMaskChange
 }: StageRuntimeSyncOptions): void {
@@ -52,23 +44,15 @@ export function useStageRuntimeRefSync({
 
   useEffect(() => {
     callbacksRef.current = {
-      onUpdateDecoration,
-      onApplyDragDelta,
-      onCommitDragDelta,
-      onBeginTransient,
-      onCommitTransient,
+      onCommitDrag,
       onClearSelection,
       onBrushFillMaskChange
     };
   }, [
     callbacksRef,
-    onApplyDragDelta,
-    onBeginTransient,
     onBrushFillMaskChange,
     onClearSelection,
-    onCommitDragDelta,
-    onCommitTransient,
-    onUpdateDecoration
+    onCommitDrag
   ]);
 
   useEffect(() => {

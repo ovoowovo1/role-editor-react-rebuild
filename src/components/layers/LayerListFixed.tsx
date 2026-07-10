@@ -17,9 +17,9 @@ import { SelectLayerDialog } from './SelectLayerDialog';
 import { useLayerListDrag } from './useLayerListDrag';
 import {
   VIRTUAL_DRAG_OVERSCAN_ROWS,
-  buildVirtualItems,
-  type VirtualLayerRow,
-  type VirtualLayout
+  buildVirtualGeometry,
+  virtualItemsInViewport,
+  type VirtualLayerRow
 } from './layerListVirtualization';
 
 interface LayerListProps {
@@ -116,17 +116,22 @@ export function LayerList({
     ],
     [rowModels]
   );
-  const virtualLayout: VirtualLayout = useMemo(
+  const virtualGeometry = useMemo(
+    () => buildVirtualGeometry(virtualRows),
+    [virtualRows]
+  );
+  const visibleItems = useMemo(
     () =>
-      buildVirtualItems(
+      virtualItemsInViewport(
         virtualRows,
+        virtualGeometry,
         scrollState.scrollTop,
         scrollState.viewportHeight,
         VIRTUAL_DRAG_OVERSCAN_ROWS
       ),
-    [scrollState.scrollTop, scrollState.viewportHeight, virtualRows]
+    [scrollState.scrollTop, scrollState.viewportHeight, virtualGeometry, virtualRows]
   );
-  const { totalHeight, visibleItems, offsets, heights, rowIndexById, draggableTargets } = virtualLayout;
+  const { totalHeight, offsets, heights, rowIndexById, draggableTargets } = virtualGeometry;
 
   const {
     dragState,

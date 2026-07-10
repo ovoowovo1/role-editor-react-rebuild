@@ -14,7 +14,6 @@ export interface LocalHistoryCommandResult {
   localFuture: LocalHistoryEntry[];
   nextRole: RoleDocument;
   restoreSelectionIds: string[];
-  clearSelection: boolean;
 }
 
 export function resolveLocalUndo(
@@ -32,8 +31,7 @@ export function resolveLocalUndo(
       localPast: nextPast,
       localFuture: pushLocalFutureEntry(localFuture, previous),
       nextRole: applyTranslateDelta(currentRole, previous.ids, -previous.dx, -previous.dy),
-      restoreSelectionIds: previous.selectionIds,
-      clearSelection: false
+      restoreSelectionIds: previous.selectionIds
     };
   }
 
@@ -51,17 +49,18 @@ export function resolveLocalUndo(
       localPast: nextPast,
       localFuture: nextFuture,
       nextRole: applyDecorationTransformTarget(currentRole, previous.target),
-      restoreSelectionIds: previous.selectionIds,
-      clearSelection: false
+      restoreSelectionIds: previous.selectionIds
     };
   }
 
   return {
     localPast: nextPast,
-    localFuture: pushLocalFutureEntry(localFuture, makeSnapshotEntry(currentRole)),
+    localFuture: pushLocalFutureEntry(
+      localFuture,
+      makeSnapshotEntry(currentRole, previous.inverseSelectionIds, previous.selectionIds)
+    ),
     nextRole: previous.role,
-    restoreSelectionIds: [],
-    clearSelection: true
+    restoreSelectionIds: previous.selectionIds
   };
 }
 
@@ -80,8 +79,7 @@ export function resolveLocalRedo(
       localPast: pushLocalHistoryEntry(localPast, next),
       localFuture: nextFuture,
       nextRole: applyTranslateDelta(currentRole, next.ids, next.dx, next.dy),
-      restoreSelectionIds: next.selectionIds,
-      clearSelection: false
+      restoreSelectionIds: next.selectionIds
     };
   }
 
@@ -99,16 +97,17 @@ export function resolveLocalRedo(
       localPast: nextPast,
       localFuture: nextFuture,
       nextRole: applyDecorationTransformTarget(currentRole, next.target),
-      restoreSelectionIds: next.selectionIds,
-      clearSelection: false
+      restoreSelectionIds: next.selectionIds
     };
   }
 
   return {
-    localPast: pushLocalHistoryEntry(localPast, makeSnapshotEntry(currentRole)),
+    localPast: pushLocalHistoryEntry(
+      localPast,
+      makeSnapshotEntry(currentRole, next.inverseSelectionIds, next.selectionIds)
+    ),
     localFuture: nextFuture,
     nextRole: next.role,
-    restoreSelectionIds: [],
-    clearSelection: true
+    restoreSelectionIds: next.selectionIds
   };
 }
