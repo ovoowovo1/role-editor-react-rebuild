@@ -17,19 +17,25 @@ test('groups, ungroups, undoes, and redoes selected layers', async ({ page }, te
   const fixture = await writeRoleFixture(testInfo, 'group-history-source', makeEditorSmokeRole(2));
 
   await importRoleFile(page, fixture, 2);
-  await page.getByTestId('layer-row-e2e-deco-1').click();
-  await page.getByTestId('layer-row-e2e-deco-2').click({ modifiers: ['ControlOrMeta'] });
+  await page.getByTestId('layer-row-e2e-deco-1').locator('.layer-badge').click();
+  await page.getByTestId('layer-row-e2e-deco-2').locator('.layer-badge').click({ modifiers: ['ControlOrMeta'] });
 
   await expect(page.getByTestId('group-selected-button')).toBeEnabled();
   await page.getByTestId('group-selected-button').click();
   const groupRows = page.locator('[data-testid^="group-row-"]');
   await expect(groupRows).toHaveCount(1);
+  await expect(page.getByTestId('layer-row-e2e-deco-1')).toHaveClass(/selected/);
+  await expect(page.getByTestId('layer-row-e2e-deco-2')).toHaveClass(/selected/);
 
   await page.getByTestId('undo-button').click();
   await expect(groupRows).toHaveCount(0);
+  await expect(page.getByTestId('layer-row-e2e-deco-1')).toHaveClass(/selected/);
+  await expect(page.getByTestId('layer-row-e2e-deco-2')).toHaveClass(/selected/);
 
   await page.getByTestId('redo-button').click();
   await expect(groupRows).toHaveCount(1);
+  await expect(page.getByTestId('layer-row-e2e-deco-1')).toHaveClass(/selected/);
+  await expect(page.getByTestId('layer-row-e2e-deco-2')).toHaveClass(/selected/);
 
   await page.locator('[data-testid^="group-ungroup-"]').first().click();
   await expect(groupRows).toHaveCount(0);
@@ -42,7 +48,7 @@ test('clears selection from blank areas without clearing after stage drag', asyn
 
   await importRoleFile(page, fixture, 1);
   const row = page.getByTestId('layer-row-e2e-deco-1');
-  await row.click();
+  await row.locator('.layer-badge').click();
   await expect(row).toHaveClass(/selected/);
 
   const layerList = page.getByTestId('layer-list-scroll');
@@ -51,14 +57,14 @@ test('clears selection from blank areas without clearing after stage drag', asyn
   await layerList.click({ position: { x: 8, y: Math.max(8, listBox.height - 8) } });
   await expect(row).not.toHaveClass(/selected/);
 
-  await row.click();
+  await row.locator('.layer-badge').click();
   await expect(row).toHaveClass(/selected/);
   const canvas = page.locator('.pixi-host canvas');
   await expect(canvas).toBeVisible();
   await canvas.click({ position: { x: 8, y: 8 } });
   await expect(row).not.toHaveClass(/selected/);
 
-  await row.click();
+  await row.locator('.layer-badge').click();
   await expect(row).toHaveClass(/selected/);
   const canvasBox = await canvas.boundingBox();
   if (!canvasBox) throw new Error('Expected stage canvas to be visible.');
@@ -190,6 +196,50 @@ test('restores and clears the recorded selection when undoing and redoing a dele
   expectNoPageErrors(monitor);
 });
 
+test('preserves head selection when undoing and redoing head visibility', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'head-visibility-history-source', makeEditorSmokeRole(1));
+
+  await importRoleFile(page, fixture, 1);
+  const headRow = page.getByTestId('layer-row-head');
+  await headRow.locator('.layer-badge').click();
+  await expect(headRow).toHaveClass(/selected/);
+
+  await page.getByTestId('layer-visibility-head').click();
+  await expect(headRow).toHaveClass(/muted/);
+
+  await page.getByTestId('undo-button').click();
+  await expect(headRow).not.toHaveClass(/muted/);
+  await expect(headRow).toHaveClass(/selected/);
+
+  await page.getByTestId('redo-button').click();
+  await expect(headRow).toHaveClass(/muted/);
+  await expect(headRow).toHaveClass(/selected/);
+  expectNoPageErrors(monitor);
+});
+
+test('preserves deco selection when undoing and redoing visibility', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'deco-visibility-history-source', makeEditorSmokeRole(1));
+
+  await importRoleFile(page, fixture, 1);
+  const decoRow = page.getByTestId('layer-row-e2e-deco-1');
+  await decoRow.locator('.layer-badge').click();
+  await expect(decoRow).toHaveClass(/selected/);
+
+  await page.getByTestId('layer-visibility-e2e-deco-1').click();
+  await expect(decoRow).toHaveClass(/muted/);
+
+  await page.getByTestId('undo-button').click();
+  await expect(decoRow).not.toHaveClass(/muted/);
+  await expect(decoRow).toHaveClass(/selected/);
+
+  await page.getByTestId('redo-button').click();
+  await expect(decoRow).toHaveClass(/muted/);
+  await expect(decoRow).toHaveClass(/selected/);
+  expectNoPageErrors(monitor);
+});
+
 test('layer visibility excludes hidden deco from legacy compact export', async ({ page }, testInfo) => {
   const monitor = watchPageErrors(page);
   const sourceRole = makeEditorSmokeRole(2);
@@ -210,8 +260,8 @@ test('renames, collapses, toggles visibility, and preserves group metadata', asy
   const fixture = await writeRoleFixture(testInfo, 'group-management-source', makeEditorSmokeRole(2));
 
   await importRoleFile(page, fixture, 2);
-  await page.getByTestId('layer-row-e2e-deco-1').click();
-  await page.getByTestId('layer-row-e2e-deco-2').click({ modifiers: ['ControlOrMeta'] });
+  await page.getByTestId('layer-row-e2e-deco-1').locator('.layer-badge').click();
+  await page.getByTestId('layer-row-e2e-deco-2').locator('.layer-badge').click({ modifiers: ['ControlOrMeta'] });
   await page.getByTestId('group-selected-button').click();
 
   const groupId = await firstGroupId(page);

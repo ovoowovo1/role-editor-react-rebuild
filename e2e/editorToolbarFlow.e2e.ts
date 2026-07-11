@@ -17,7 +17,7 @@ test('copy, paste, mirror copy, and delete selected update exported layer count'
   const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
 
   await importRoleFile(page, fixture, 1);
-  await page.getByTestId('layer-row-e2e-deco-1').click();
+  await page.getByTestId('layer-row-e2e-deco-1').locator('.layer-badge').click();
 
   await page.keyboard.press(`${modifier}+C`);
   await page.keyboard.press(`${modifier}+V`);
@@ -34,6 +34,34 @@ test('copy, paste, mirror copy, and delete selected update exported layer count'
 
   const exportPath = await downloadJsonExport(page, testInfo, 'toolbar-export.json');
   expect(nonHeadDecoCodes(await readLegacyPayload(exportPath))).toHaveLength(3);
+  expectNoPageErrors(monitor);
+});
+
+test('restores the recorded selection when undoing and redoing a paste', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'paste-selection-history-source', makeEditorSmokeRole(1));
+  const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+  await importRoleFile(page, fixture, 1);
+  const originalRow = page.getByTestId('layer-row-e2e-deco-1');
+  await originalRow.locator('.layer-badge').click();
+  await expect(originalRow).toHaveClass(/selected/);
+
+  await page.keyboard.press(`${modifier}+C`);
+  await page.keyboard.press(`${modifier}+V`);
+  await expect.poll(() => visibleLayerIds(page)).toHaveLength(3);
+  const pastedLayerId = (await visibleLayerIds(page)).find((id) => id !== 'e2e-deco-1' && id !== 'head');
+  if (!pastedLayerId) throw new Error('Expected paste to add a deco layer.');
+  const pastedRow = page.getByTestId(`layer-row-${pastedLayerId}`);
+  await expect(pastedRow).toHaveClass(/selected/);
+
+  await page.getByTestId('undo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toEqual(['e2e-deco-1', 'head']);
+  await expect(originalRow).toHaveClass(/selected/);
+
+  await page.getByTestId('redo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toContain(pastedLayerId);
+  await expect(pastedRow).toHaveClass(/selected/);
   expectNoPageErrors(monitor);
 });
 

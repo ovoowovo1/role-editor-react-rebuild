@@ -18,7 +18,7 @@ test('transform controls update selected deco export values', async ({ page }, t
   const code = sourceRole.decorations[0].code;
 
   await importRoleFile(page, fixture, 1);
-  await page.getByTestId('layer-row-e2e-deco-1').click();
+  await page.getByTestId('layer-row-e2e-deco-1').locator('.layer-badge').click();
 
   await setNumberInput(page, 'transform-pos-x-number', 12.5);
   await setNumberInput(page, 'transform-pos-y-number', -7.5);
@@ -43,7 +43,7 @@ test('keyboard nudge supports undo and redo', async ({ page }, testInfo) => {
   const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
 
   await importRoleFile(page, fixture, 1);
-  await page.getByTestId('layer-row-e2e-deco-1').click();
+  await page.getByTestId('layer-row-e2e-deco-1').locator('.layer-badge').click();
   await page.keyboard.press('ArrowRight');
 
   const movedPath = await downloadJsonExport(page, testInfo, 'keyboard-moved.json');
@@ -66,8 +66,8 @@ test('stage multi-drag commits one undoable translation for the selected layers'
   const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
 
   await importRoleFile(page, fixture, 2);
-  await page.getByTestId('layer-row-e2e-deco-1').click();
-  await page.getByTestId('layer-row-e2e-deco-2').click({ modifiers: ['ControlOrMeta'] });
+  await page.getByTestId('layer-row-e2e-deco-1').locator('.layer-badge').click();
+  await page.getByTestId('layer-row-e2e-deco-2').locator('.layer-badge').click({ modifiers: ['ControlOrMeta'] });
 
   const canvas = page.locator('.pixi-host canvas');
   await expect(canvas).toBeVisible();

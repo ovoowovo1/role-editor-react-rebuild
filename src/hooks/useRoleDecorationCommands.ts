@@ -101,12 +101,11 @@ export function useRoleDecorationCommands({
 
   const setSelectedVisible = useCallback(
     (visible: boolean) => {
-      updateRole((current) => {
-        setSelectedVisibleInRole(current, selectedDecorationIds, visible);
-        return current;
-      });
+      const nextRole = cloneRole(roleRef.current);
+      setSelectedVisibleInRole(nextRole, selectedDecorationIds, visible);
+      commitRole(nextRole);
     },
-    [selectedDecorationIds, updateRole]
+    [commitRole, roleRef, selectedDecorationIds]
   );
 
   const toggleDecorationVisibility = useCallback(
@@ -115,12 +114,11 @@ export function useRoleDecorationCommands({
         commitRole(toggleHeadVisibility(roleRef.current));
         return;
       }
-      updateRole((current) => {
-        toggleDecorationVisibilityInRole(current, id);
-        return current;
-      });
+      const nextRole = cloneRole(roleRef.current);
+      toggleDecorationVisibilityInRole(nextRole, id);
+      commitRole(nextRole);
     },
-    [commitRole, roleRef, updateRole]
+    [commitRole, roleRef]
   );
 
   const deleteDecoration = useCallback(
