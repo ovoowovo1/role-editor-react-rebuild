@@ -3,12 +3,12 @@ import type { BodyPartTab, PartOption, RoleDocument } from '../../types/role';
 import { getBodyPartOption } from '../../mock/options';
 import {
   actorAtlasFrames,
-  actorRuntimeManifest,
   gafSources
 } from '../../mock/gafManifest';
 import { ACTOR_BODY_SCALE } from '../../lib/runtime/actorClipAdapter';
 import { ActorClip } from '../../lib/runtime/actorClip';
 import { createActorGafClip, type GafMovieClip } from '../../lib/runtime/gafMovieClip';
+import { actorRuntimeManifest } from '../../lib/runtime/gafRuntimeManifest';
 import { actorPartRuntime, getPartFrame, isRuntimeEmptyFrame, sanitizePartScale } from '../../lib/runtime/twlibPartRuntime';
 import { displayTransformPatchForHeadLayer } from '../../lib/stage/characterStageHelpers';
 import { applyDisplayTransform } from './pixiVisuals';

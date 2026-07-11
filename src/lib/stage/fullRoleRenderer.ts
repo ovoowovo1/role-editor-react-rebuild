@@ -12,11 +12,10 @@ import { clampedHeadLayerIndex, displayTransformPatchForDecoration, displayTrans
 import { getBodyPartOption, optionById } from '../../mock/options';
 import {
   actorAtlasFrames,
-  actorRuntimeManifest,
   decorationAtlasFrames,
-  decorationRuntimeManifest,
   gafSources
 } from '../../mock/gafManifest';
+import { actorRuntimeManifest, decorationRuntimeManifest } from '../runtime/gafRuntimeManifest';
 import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../runtime/actorBodyAnimation';
 
 const ALPHA_MASK_DECO_CODES: Set<string> = new Set();

@@ -1,5 +1,6 @@
 import { Container, Matrix } from 'pixi.js';
-import { actorAtlasFrames, actorRuntimeManifest, assetsRuntimeManifest, gafSources } from '../../mock/gafManifest';
+import { actorAtlasFrames, gafSources } from '../../mock/gafManifest';
+import { actorRuntimeManifest, assetsRuntimeManifest } from './gafRuntimeManifest';
 import { actorPreviewSlots, type ActorPreviewSlot } from './actorClipAdapter';
 import { actorPartRuntime } from './twlibPartRuntime';
 import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from './actorBodyAnimation';

@@ -85,7 +85,7 @@ npm run test:run                # 執行一次 Vitest
 npm run check                   # 執行單元測試、前端 build、Worker 與 renderer 檢查
 npm run test:e2e                # 執行 Playwright e2e 測試
 npm run test:e2e:headed         # 以 headed mode 執行 Playwright e2e 測試
-npm run generate:gaf            # 產生 src/generated/gafManifest.json
+npm run generate:gaf            # 產生 GAF metadata 與 runtime manifests
 npm run renderer:dev            # 啟動 renderer 開發伺服器
 npm run renderer:build          # 建立 renderer server
 npm run renderer:start          # 建立 frontend 與 renderer 後啟動 renderer server
@@ -140,10 +140,11 @@ twactor.png
 npm run generate:gaf
 ```
 
-產生結果會寫入：
+產生結果會分成啟動時使用的輕量 metadata，以及 Pixi 預覽延後載入的 runtime：
 
 ```text
 src/generated/gafManifest.json
+src/generated/gafRuntimeManifest.json
 ```
 
 `npm run dev` 與 `npm run build` 會透過 npm lifecycle script 自動執行 manifest generation。

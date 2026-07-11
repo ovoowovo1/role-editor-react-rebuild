@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HEAD_LAYER_ID } from '../../constants/layers';
 import type { DecorationGroup, DecorationLayer, RoleDocument } from '../../types/role';
 import {
+  createGroupTreeIndex,
   descendantLayerIdsForGroup,
   isGroupDescendant,
   normalizeGroupsForRole,
@@ -68,6 +69,44 @@ describe('group tree utils', () => {
     expect(descendantLayerIdsForGroup(groups, 'parent')).toEqual(['a', 'b', 'c']);
     expect(isGroupDescendant(groups, 'parent', 'child')).toBe(true);
     expect(isGroupDescendant(groups, 'child', 'parent')).toBe(false);
+
+    const index = createGroupTreeIndex(groups);
+    expect(index.topLevelGroupIds).toEqual(new Set(['parent']));
+    expect(index.descendantLayerIds('parent')).toBe(index.descendantLayerIds('parent'));
+    expect(index.descendantLayerIds('parent')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('keeps cycle-safe descendant order when the reusable index cannot cache the graph', () => {
+    const groups = [
+      group('a', [
+        { type: 'group', id: 'b' },
+        { type: 'layer', id: 'a-layer' }
+      ]),
+      group('b', [
+        { type: 'group', id: 'a' },
+        { type: 'layer', id: 'b-layer' }
+      ])
+    ];
+
+    const index = createGroupTreeIndex(groups);
+    expect(index.descendantLayerIds('a')).toEqual(['b-layer', 'a-layer']);
+    expect(index.descendantLayerIds('b')).toEqual(['a-layer', 'b-layer']);
+  });
+
+  it('does not parse unrelated group members for a single descendant lookup', () => {
+    let unrelatedMemberReads = 0;
+    const target = group('target', [{ type: 'layer', id: 'target-layer' }]);
+    const unrelated = group('unrelated', [{ type: 'layer', id: 'unrelated-layer' }]);
+    Object.defineProperty(unrelated, 'members', {
+      configurable: true,
+      get() {
+        unrelatedMemberReads += 1;
+        return [{ type: 'layer', id: 'unrelated-layer' }];
+      }
+    });
+
+    expect(descendantLayerIdsForGroup([target, unrelated], 'target')).toEqual(['target-layer']);
+    expect(unrelatedMemberReads).toBe(0);
   });
 
   it('normalizes invalid, duplicate, and cyclic group members away', () => {

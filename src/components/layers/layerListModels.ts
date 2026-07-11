@@ -1,6 +1,6 @@
 import { GROUP_ROW_PREFIX, HEAD_LAYER_ID, HEAD_ROW_ID, ITEM_ROW_PREFIX } from '../../constants/layers';
 import type { DecorationGroup, DecorationLayer } from '../../types/role';
-import { descendantLayerIdsForGroup, membersForGroup, topLevelGroupIds } from '../../lib/editor/groupTree';
+import { createGroupTreeIndex } from '../../lib/editor/groupTree';
 
 interface VirtualLayerModel {
   id: string;
@@ -69,21 +69,33 @@ export function buildLayerRowModels({
     virtualLayers.push({ id: HEAD_LAYER_ID, rowId: HEAD_ROW_ID, type: 'head' });
   }
 
-  const groupById = new Map(groups.map((group) => [group.id, group]));
+  const groupTree = createGroupTreeIndex(groups);
+  const groupById = groupTree.byId;
   const directGroupByLayerId = new Map<string, DecorationGroup>();
   groups.forEach((group) => {
-    membersForGroup(group).forEach((member) => {
+    groupTree.members(group).forEach((member) => {
       if (member.type === 'layer') directGroupByLayerId.set(member.id, group);
     });
   });
   const virtualLayerById = new Map(virtualLayers.map((layer) => [layer.id, layer]));
   const virtualLayerIndexById = new Map(virtualLayers.map((layer, index) => [layer.id, index]));
-  const topLevelGroups = topLevelGroupIds(groups);
+  const topLevelGroups = groupTree.topLevelGroupIds;
   const rootGroupByLayerId = new Map<string, DecorationGroup>();
   groups.forEach((group) => {
     if (!topLevelGroups.has(group.id)) return;
-    descendantLayerIdsForGroup(groups, group.id).forEach((id) => rootGroupByLayerId.set(id, group));
+    groupTree.descendantLayerIds(group.id).forEach((id) => rootGroupByLayerId.set(id, group));
   });
+  const firstLayerIndexByGroupId = new Map<string, number>();
+  const firstLayerIndexForGroup = (groupId: string): number => {
+    const cached = firstLayerIndexByGroupId.get(groupId);
+    if (cached != null) return cached;
+    let firstIndex = Number.MAX_SAFE_INTEGER;
+    for (const id of groupTree.descendantLayerIds(groupId)) {
+      firstIndex = Math.min(firstIndex, virtualLayerIndexById.get(id) ?? Number.MAX_SAFE_INTEGER);
+    }
+    firstLayerIndexByGroupId.set(groupId, firstIndex);
+    return firstIndex;
+  };
 
   const models: LayerRowModel[] = [];
   const renderedGroupIds = new Set<string>();
@@ -119,7 +131,7 @@ export function buildLayerRowModels({
   const pushGroup = (group: DecorationGroup, depth: number) => {
     if (renderedGroupIds.has(group.id)) return;
     renderedGroupIds.add(group.id);
-    const descendants = descendantLayerIdsForGroup(groups, group.id);
+    const descendants = groupTree.descendantLayerIds(group.id);
     const selected = descendants.length > 0 && (isLargeSelection || descendants.every((id) => isSelected(id)));
     models.push({
       key: group.id,
@@ -133,15 +145,12 @@ export function buildLayerRowModels({
     });
 
     if (group.collapsed) return;
-    const orderedMembers = membersForGroup(group)
+    const orderedMembers = groupTree.members(group)
       .map((member, index) => ({ member, index }))
       .sort((left, right) => {
         const firstIndex = (entry: typeof left): number => {
           if (entry.member.type === 'layer') return virtualLayerIndexById.get(entry.member.id) ?? Number.MAX_SAFE_INTEGER;
-          const firstDescendant = descendantLayerIdsForGroup(groups, entry.member.id)
-            .map((id) => virtualLayerIndexById.get(id) ?? Number.MAX_SAFE_INTEGER)
-            .sort((a, b) => a - b)[0];
-          return firstDescendant ?? Number.MAX_SAFE_INTEGER;
+          return firstLayerIndexForGroup(entry.member.id);
         };
         const diff = firstIndex(left) - firstIndex(right);
         return diff || left.index - right.index;

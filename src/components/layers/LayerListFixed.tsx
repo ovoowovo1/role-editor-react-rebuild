@@ -75,12 +75,13 @@ export function LayerList({
   );
 
   const selectableLayerNumbers = useMemo(
-    () =>
-      rowModels
+    () => selectItemsOpen
+      ? rowModels
         .filter((row) => row.type === 'head' || row.type === 'item')
         .map((row) => ({ number: (row.index ?? 0) + 1, id: row.type === 'head' ? HEAD_LAYER_ID : row.deco?.id ?? '' }))
-        .filter((row) => row.id),
-    [rowModels]
+        .filter((row) => row.id)
+      : [],
+    [rowModels, selectItemsOpen]
   );
 
   const handleScroll = useCallback((event: ReactUIEvent<HTMLDivElement>) => {
@@ -120,17 +121,6 @@ export function LayerList({
     () => buildVirtualGeometry(virtualRows),
     [virtualRows]
   );
-  const visibleItems = useMemo(
-    () =>
-      virtualItemsInViewport(
-        virtualRows,
-        virtualGeometry,
-        scrollState.scrollTop,
-        scrollState.viewportHeight,
-        VIRTUAL_DRAG_OVERSCAN_ROWS
-      ),
-    [scrollState.scrollTop, scrollState.viewportHeight, virtualGeometry, virtualRows]
-  );
   const { totalHeight, offsets, heights, rowIndexById, draggableTargets } = virtualGeometry;
 
   const {
@@ -148,6 +138,17 @@ export function LayerList({
     groups,
     onReorder
   });
+  const visibleItems = useMemo(
+    () =>
+      virtualItemsInViewport(
+        virtualRows,
+        virtualGeometry,
+        scrollState.scrollTop,
+        scrollState.viewportHeight,
+        VIRTUAL_DRAG_OVERSCAN_ROWS
+      ),
+    [scrollState.scrollTop, scrollState.viewportHeight, virtualGeometry, virtualRows]
+  );
 
   const handleBlankListClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (!selectedIds.length || dragState) return;

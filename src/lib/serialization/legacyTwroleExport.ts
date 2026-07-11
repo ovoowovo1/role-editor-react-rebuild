@@ -210,17 +210,6 @@ export async function buildLegacyCompactPayloadWithThumb(role: RoleDocument): Pr
   };
 }
 
-export function createRoleJsonBlob(role: RoleDocument): Blob {
-  return new Blob([JSON.stringify(buildLegacyCompactPayload(role), null, 2)], { type: 'application/json' });
-}
-
-export function createTwroleBlob(role: RoleDocument): Blob {
-  const json = JSON.stringify(buildLegacyCompactPayload(role));
-  const compressed = gzip(json, { level: 1 });
-  const header = new Uint8Array(TWROLE_HEADER);
-  return new Blob([header, compressed], { type: 'application/octet-stream' });
-}
-
 export async function createRoleJsonBlobWithThumb(role: RoleDocument): Promise<Blob> {
   return new Blob([JSON.stringify(await buildLegacyCompactPayloadWithThumb(role), null, 2)], { type: 'application/json' });
 }

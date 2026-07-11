@@ -208,8 +208,3 @@ export function validSelectionIds(role: RoleDocument, ids: string[]): string[] {
   const seen = new Set<string>();
   return ids.filter((id) => valid.has(id) && !seen.has(id) && seen.add(id));
 }
-
-export function nextSelection(current: string[], id: string, additive: boolean): string[] {
-  if (!additive) return [id];
-  return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
-}

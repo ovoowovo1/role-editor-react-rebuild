@@ -1,5 +1,6 @@
 /**
- * Build-time generator: parses public/assets/gaf/*.gaf into src/generated/gafManifest.json.
+ * Build-time generator: parses public/assets/gaf/*.gaf into lightweight metadata
+ * and a separately loaded runtime manifest under src/generated/.
  * Falls back to scripts/gafManifest.fallback.json when binaries are missing.
  */
 
@@ -19,13 +20,15 @@ import {
   readPngDimensions,
   validateAtlasAgainstPng
 } from './lib/gafManifestExtract.mjs';
+import { splitGafManifestPayload } from './lib/gafManifestPayload.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 
 const GAFDIR = path.join(root, 'public', 'assets', 'gaf');
 const FALLBACK = path.join(root, 'scripts', 'gafManifest.fallback.json');
-const OUT = path.join(root, 'src', 'generated', 'gafManifest.json');
+const METADATA_OUT = path.join(root, 'src', 'generated', 'gafManifest.json');
+const RUNTIME_OUT = path.join(root, 'src', 'generated', 'gafRuntimeManifest.json');
 
 const DEC_GAF = path.join(GAFDIR, 'decorations.gaf');
 const ACT_GAF = path.join(GAFDIR, 'twactor.gaf');
@@ -38,10 +41,9 @@ function copyFallback(reason) {
   if (!fs.existsSync(FALLBACK)) {
     throw new Error(`[generate:gaf] ${reason} and ${path.relative(root, FALLBACK)} is missing — run node scripts/extractFallbackFromLegacyTs.mjs`);
   }
-  fs.mkdirSync(path.dirname(OUT), { recursive: true });
-  fs.copyFileSync(FALLBACK, OUT);
+  writeGeneratedManifests(JSON.parse(fs.readFileSync(FALLBACK, 'utf8')));
   console.warn(`[generate:gaf] ${reason}`);
-  console.warn(`[generate:gaf] Using fallback → ${path.relative(root, OUT)}`);
+  console.warn(`[generate:gaf] Using fallback → ${path.relative(root, METADATA_OUT)}`);
 }
 
 function writeIfChanged(filePath, contents) {
@@ -50,6 +52,18 @@ function writeIfChanged(filePath, contents) {
   }
   fs.writeFileSync(filePath, contents);
   return true;
+}
+
+function writeGeneratedManifests(payload) {
+  const { metadata, runtime } = splitGafManifestPayload(payload);
+  fs.mkdirSync(path.dirname(METADATA_OUT), { recursive: true });
+  const metadataChanged = writeIfChanged(METADATA_OUT, `${JSON.stringify(metadata, null, 2)}\n`);
+  const runtimeChanged = writeIfChanged(RUNTIME_OUT, `${JSON.stringify(runtime)}\n`);
+  const actions = [
+    `${metadataChanged ? 'Wrote' : 'Unchanged'} ${path.relative(root, METADATA_OUT)}`,
+    `${runtimeChanged ? 'Wrote' : 'Unchanged'} ${path.relative(root, RUNTIME_OUT)}`
+  ];
+  console.log(`[generate:gaf] ${actions.join('; ')} (${metadata.decorationGafSymbols.length} deco symbols)`);
 }
 
 /** @returns {Promise<Buffer>} */
@@ -166,11 +180,7 @@ async function main() {
     actorRuntime
   };
 
-  fs.mkdirSync(path.dirname(OUT), { recursive: true });
-  const output = `${JSON.stringify(payload, null, 2)}\n`;
-  const changed = writeIfChanged(OUT, output);
-  const action = changed ? 'Wrote' : 'Unchanged';
-  console.log(`[generate:gaf] ${action} ${path.relative(root, OUT)} (${payload.decorationGafSymbols.length} deco symbols)`);
+  writeGeneratedManifests(payload);
 }
 
 main().catch((err) => {

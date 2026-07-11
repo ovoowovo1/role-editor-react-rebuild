@@ -96,8 +96,6 @@ export function resolveGafTimelineId(manifest: GafRuntimeManifest, linkageOrId: 
   return null;
 }
 
-export const resolveActorTimelineId = resolveGafTimelineId;
-
 /** Prefer serialized GAF runtime; fall back to single-atlas sprites (CI / missing binaries). */
 export function createGafClip(
   failedTextures: Set<string>,

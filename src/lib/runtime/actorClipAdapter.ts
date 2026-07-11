@@ -30,12 +30,6 @@ export interface ActorPreviewSlot {
   matrix?: ActorPreviewMatrix;
 }
 
-export const actorClipHierarchy = {
-  root: ['footContainer', 'capeClip.container', 'body'],
-  footContainer: ['rightFoot.clip', 'leftFoot.clip'],
-  bodyAnimation: ['rightHand.clip', 'leftHand.clip', 'headClip.container']
-} as const;
-
 /**
  * Outer scale for the whole ActorClip-equivalent rig. The original TWLibLib
  * ActorClip renders its GAFMovieClip at natural size (1.0) directly under

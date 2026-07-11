@@ -457,18 +457,3 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
     </>
   );
 }
-
-export function AutoCreateTwrolePanel(props: AutoCreateTwrolePanelProps) {
-  return (
-    <section className="choice-list extra-panel auto-create-panel" aria-label={t('autoCreate.title')}>
-      <header className="choice-list-header extra-panel-header">
-        <strong>{t('autoCreate.title')}</strong>
-        <span>{t('autoCreate.sourceCount', { count: props.decoOptions.length })}</span>
-      </header>
-
-      <div className="extra-scroll">
-        <AutoCreateTwrolePanelContent {...props} />
-      </div>
-    </section>
-  );
-}

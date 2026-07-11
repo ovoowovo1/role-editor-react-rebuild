@@ -3,12 +3,12 @@ import type { DecorationLayer, PartOption } from '../../types/role';
 import { optionById } from '../../mock/options';
 import {
   decorationAtlasFrames,
-  decorationRuntimeManifest,
   gafSources
 } from '../../mock/gafManifest';
 import { clamp } from '../../lib/math';
 import { applyGafAtlasToSprite } from '../../lib/runtime/gafAtlasSprite';
 import { createGafClip } from '../../lib/runtime/gafMovieClip';
+import { decorationRuntimeManifest } from '../../lib/runtime/gafRuntimeManifest';
 import { isMissingDecoAssetId } from '../../lib/serialization/roleSerialization';
 import {
   displayTransformPatchForDecoration,

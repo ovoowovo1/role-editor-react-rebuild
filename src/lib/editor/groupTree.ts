@@ -24,6 +24,93 @@ export function groupById(groups: DecorationGroup[]): Map<string, DecorationGrou
   return new Map(groups.map((group) => [group.id, group]));
 }
 
+export interface GroupTreeIndex {
+  readonly byId: ReadonlyMap<string, DecorationGroup>;
+  readonly topLevelGroupIds: ReadonlySet<string>;
+  members(group: DecorationGroup): readonly DecorationGroupMember[];
+  descendantLayerIds(groupId: string): readonly string[];
+}
+
+export function createGroupTreeIndex(groups: DecorationGroup[]): GroupTreeIndex {
+  const byId = groupById(groups);
+  const membersById = new Map(groups.map((group) => [group.id, groupMembers(group)]));
+  const nestedGroupIds = new Set<string>();
+  membersById.forEach((members) => {
+    members.forEach((member) => {
+      if (member.type === 'group') nestedGroupIds.add(member.id);
+    });
+  });
+
+  let hasCycle = false;
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+  const detectCycle = (groupId: string): void => {
+    if (hasCycle || visited.has(groupId)) return;
+    if (visiting.has(groupId)) {
+      hasCycle = true;
+      return;
+    }
+    visiting.add(groupId);
+    for (const member of membersById.get(groupId) ?? []) {
+      if (member.type === 'group' && byId.has(member.id)) detectCycle(member.id);
+    }
+    visiting.delete(groupId);
+    visited.add(groupId);
+  };
+  groups.forEach((group) => detectCycle(group.id));
+
+  const traverse = (rootGroupId: string): string[] => {
+    const ids: string[] = [];
+    const seenGroups = new Set<string>();
+    const seenLayers = new Set<string>();
+    const visit = (groupId: string): void => {
+      if (seenGroups.has(groupId)) return;
+      seenGroups.add(groupId);
+      if (!byId.has(groupId)) return;
+      for (const member of membersById.get(groupId) ?? []) {
+        if (member.type === 'group') {
+          visit(member.id);
+        } else if (!seenLayers.has(member.id)) {
+          seenLayers.add(member.id);
+          ids.push(member.id);
+        }
+      }
+    };
+    visit(rootGroupId);
+    return ids;
+  };
+
+  const descendantCache = new Map<string, readonly string[]>();
+  const resolveAcyclicDescendants = (groupId: string): readonly string[] => {
+    const cached = descendantCache.get(groupId);
+    if (cached) return cached;
+    if (!byId.has(groupId)) return [];
+    const ids: string[] = [];
+    const seenLayers = new Set<string>();
+    for (const member of membersById.get(groupId) ?? []) {
+      const memberIds = member.type === 'group' ? resolveAcyclicDescendants(member.id) : [member.id];
+      for (const id of memberIds) {
+        if (seenLayers.has(id)) continue;
+        seenLayers.add(id);
+        ids.push(id);
+      }
+    }
+    descendantCache.set(groupId, ids);
+    return ids;
+  };
+
+  return {
+    byId,
+    topLevelGroupIds: new Set(groups.filter((group) => !nestedGroupIds.has(group.id)).map((group) => group.id)),
+    members(group) {
+      return membersById.get(group.id) ?? groupMembers(group);
+    },
+    descendantLayerIds(groupId) {
+      return hasCycle ? traverse(groupId) : resolveAcyclicDescendants(groupId);
+    }
+  };
+}
+
 export function directParentGroupId(groups: DecorationGroup[], member: DecorationGroupMember): string | null {
   for (const group of groups) {
     if (groupMembers(group).some((item) => item.type === member.type && item.id === member.id)) {

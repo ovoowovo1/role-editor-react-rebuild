@@ -10,13 +10,15 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.indexOf('src/generated/gafRuntimeManifest.json') >= 0 || id.indexOf('src\\generated\\gafRuntimeManifest.json') >= 0) {
+            return 'gaf-runtime';
+          }
           if (id.indexOf('src/generated/gafManifest.json') >= 0 || id.indexOf('src\\generated\\gafManifest.json') >= 0) {
-            return 'gaf-manifest';
+            return 'gaf-metadata';
           }
           if (id.indexOf('node_modules') < 0) return;
           if (id.indexOf('node_modules/react/') >= 0 || id.indexOf('node_modules/react-dom/') >= 0) return 'react-vendor';
           if (id.indexOf('node_modules/pixi.js/') >= 0) return 'pixi-vendor';
-          if (id.indexOf('node_modules/@dnd-kit/') >= 0) return 'dnd-vendor';
           if (id.indexOf('node_modules/pako/') >= 0) return 'codec-vendor';
         }
       }

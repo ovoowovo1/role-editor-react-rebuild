@@ -6,7 +6,6 @@ import {
   ITEM_ROW_PREFIX
 } from '../../constants/layers';
 import type { DecorationGroup, RoleDocument } from '../../types/role';
-import { createId } from '../math';
 import type { LayerReorderOptions } from './editorLayerDrag';
 import { atomToLayerId, atomsForRole, deriveRoleFromAtoms, layerIdToAtom, orderedLayerIds } from './layerOrdering';
 import { groupForItem } from './editorGroupMutations';
@@ -143,7 +142,6 @@ export function reorderIncludingHead(
       return role;
     }
   }
-  const joinTargetGroup = groupForTarget(role, over, options);
   const overAtoms = atomsForTarget(role, over, options);
   const movingAtoms = atomsForActive(role, active, selectedIds);
   const involvesHead = movingAtoms.includes(HEAD_ATOM) || overAtoms.includes(HEAD_ATOM);
@@ -198,12 +196,6 @@ function nextGroupName(role: RoleDocument): string {
 
 export function nextGroupId(): string {
   return `group-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-export function ungroupedSelectedLayerIds(role: RoleDocument, selectedIds: string[]): string[] {
-  const selected = new Set(selectedIds);
-  const grouped = new Set((role.groups ?? []).flatMap((group) => descendantLayerIdsForGroup(role.groups ?? [], group.id)));
-  return orderedLayerIds(role, selectedIds).filter((id) => selected.has(id) && !grouped.has(id));
 }
 
 interface GroupSelectionTarget {
@@ -367,4 +359,3 @@ export function toggleLayerSelection(current: string[], ids: string[], additive:
   });
   return Array.from(next);
 }
-

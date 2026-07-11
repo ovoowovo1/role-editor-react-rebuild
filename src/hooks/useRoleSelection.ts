@@ -55,7 +55,8 @@ export function useRoleSelection({ role, roleRef }: UseRoleSelectionOptions): Ro
     setSelectedLayerIds((ids) => {
       const valid = new Set(role.decorations.map((item) => item.id));
       valid.add(HEAD_LAYER_ID);
-      return ids.filter((id) => valid.has(id));
+      const nextIds = ids.filter((id) => valid.has(id));
+      return nextIds.length === ids.length ? ids : nextIds;
     });
   }, [role.decorations]);
 

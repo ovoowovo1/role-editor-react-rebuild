@@ -118,12 +118,9 @@ export function useEditorCommands({
   });
 
   const mergeCommands = useRoleMergeCommands({
-    role,
     roleRef,
     insertDraftSettings,
-    commitRole,
-    clearSelection,
-    selectDecoration
+    commitRole
   });
 
   const changeCamp = useCallback(

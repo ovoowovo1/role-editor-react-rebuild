@@ -1,10 +1,12 @@
 import { Container } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
-import { actorAtlasFrames, actorRuntimeManifest, gafSources } from '../../mock/gafManifest';
+import { actorAtlasFrames, gafSources } from '../../mock/gafManifest';
 import { partOptions } from '../../mock/options';
 import { ActorCape } from './actorClip';
-import { loadActorPartPreview, shouldUseActorPartRuntimePreview } from './actorPartPreview';
+import { loadActorPartPreview } from './actorPartPreview';
+import { shouldUseActorPartRuntimePreview } from './actorPartPreviewPolicy';
 import { createActorGafClip, type GafMovieClip } from './gafMovieClip';
+import { actorRuntimeManifest } from './gafRuntimeManifest';
 
 function childClipFrames(container: Container): number[] {
   return container.children

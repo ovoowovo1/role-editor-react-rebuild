@@ -10,7 +10,7 @@ import {
   applyDecorationDisplayTransform,
   createDisguiseEntryDisplay
 } from './pixiVisuals';
-import type { DecoDisplayRecord, DisguiseDecoOptions, StageSceneState } from './types';
+import type { DisguiseDecoOptions, StageSceneState } from './types';
 import { syncSelectionDragController } from './selectionControllerSync';
 
 function replaceDisguiseChildren(root: Container, children: Container[]): void {

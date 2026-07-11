@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { PartOption } from '../types/role';
-import { loadActorPartPreview, shouldUseActorPartRuntimePreview } from '../lib/runtime/actorPartPreview';
+import { shouldUseActorPartRuntimePreview } from '../lib/runtime/actorPartPreviewPolicy';
 import { probeAtlasTextureUrl } from '../lib/runtime/atlasTextureAvailability';
 
 interface AssetPreviewProps {
@@ -36,14 +36,14 @@ export function AssetPreview({ option, size = 50, className = '' }: AssetPreview
     }
     let cancelled = false;
     setRuntimePreview({ key: actorPreviewKey, dataUrl: null, loading: true });
-    const preview = loadActorPartPreview(option);
-    if (!preview) {
-      setRuntimePreview(null);
-      return;
-    }
-    preview.then((dataUrl) => {
-      if (!cancelled) setRuntimePreview({ key: actorPreviewKey, dataUrl, loading: false });
-    });
+    void import('../lib/runtime/actorPartPreview')
+      .then(({ loadActorPartPreview }) => loadActorPartPreview(option))
+      .then((dataUrl) => {
+        if (!cancelled) setRuntimePreview({ key: actorPreviewKey, dataUrl, loading: false });
+      })
+      .catch(() => {
+        if (!cancelled) setRuntimePreview(null);
+      });
     return () => {
       cancelled = true;
     };

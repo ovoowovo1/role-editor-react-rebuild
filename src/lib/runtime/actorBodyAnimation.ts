@@ -1,7 +1,6 @@
-import { actorRuntimeManifest } from '../../mock/gafManifest';
+import { actorBodyAnimationSequences } from '../../mock/gafManifest';
 
 export const DEFAULT_ACTOR_BODY_ANIMATION_LABEL = 'IDLE_KONGFU_TYPE';
-const ACTOR_BODY_LIBRARY = 'actor01_body';
 
 export interface ActorBodyAnimationOption {
   label: string;
@@ -10,9 +9,7 @@ export interface ActorBodyAnimationOption {
 }
 
 export function getActorBodyAnimationOptions(): ActorBodyAnimationOption[] {
-  const bodyTimelineId = actorRuntimeManifest?.timelinesByLinkage[ACTOR_BODY_LIBRARY];
-  const bodyTimeline = bodyTimelineId ? actorRuntimeManifest?.timelinesById[bodyTimelineId] : undefined;
-  return Object.entries(bodyTimeline?.sequences ?? {})
+  return Object.entries(actorBodyAnimationSequences)
     .map(([label, sequence]) => ({
       label,
       startFrame: sequence.startFrame,

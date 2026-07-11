@@ -1,9 +1,8 @@
-import type { DecorationLayer, EditorClipboardItem, PartOption, RoleDocument } from '../../types/role';
+import type { DecorationLayer, EditorClipboardItem, RoleDocument } from '../../types/role';
 import { getHeadLayerIndex } from './layerOrdering';
-import { createId, normalizeDegrees, round } from '../math';
+import { createId, normalizeDegrees } from '../math';
 import { shiftHeadLayerForDeletedIndexes, shiftHeadLayerForInsert } from './editorRoleUtils';
 import { membersForGroup, withGroupMembers } from './groupTree';
-import { copyDecoration } from './editorImportMerge';
 
 export function insertAfterSelection(role: RoleDocument, selectedIds: string[]): number {
   const idToIndex = new Map(role.decorations.map((item, i) => [item.id, i]));
@@ -11,30 +10,6 @@ export function insertAfterSelection(role: RoleDocument, selectedIds: string[]):
     .map((id) => idToIndex.get(id) ?? -1)
     .filter((index) => index >= 0);
   return indexes.length ? Math.max(...indexes) + 1 : 0;
-}
-
-export function makeDecoration(option: PartOption, index: number): DecorationLayer {
-  const spread = 14;
-  return {
-    id: createId('deco'),
-    code: option.code,
-    assetId: option.id,
-    name: option.label,
-    x: round(((index % 5) - 2) * spread, 2),
-    y: round(-50 + Math.floor(index / 5) * 8, 2),
-    scaleX: 1,
-    scaleY: 1,
-    rotation: 0,
-    visible: true,
-    opacity: 1
-  };
-}
-
-export function copyDecorationForInsert(item: DecorationLayer | EditorClipboardItem, offset = 0): DecorationLayer {
-  return copyDecoration(item, {
-    x: round(item.x + offset, 2),
-    y: round(item.y + offset, 2)
-  });
 }
 
 export function setSelectedVisibleInRole(current: RoleDocument, selectedIds: string[], visible: boolean): void {

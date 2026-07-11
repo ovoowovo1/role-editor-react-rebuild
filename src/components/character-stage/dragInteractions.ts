@@ -12,10 +12,7 @@ import {
   setDecorationInteractionEnabled,
   syncDisguiseChildOrder
 } from './sceneSync';
-import {
-  hideSelectionDragController,
-  syncSelectionDragController
-} from './selectionControllerSync';
+import { syncSelectionDragController } from './selectionControllerSync';
 import type { DraggedDisplayItem, StagePointerPosition, StageRuntimeRefs } from './types';
 
 function selectedDecorationsForDrag(

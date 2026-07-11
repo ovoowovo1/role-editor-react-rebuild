@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import type { MutableRefObject } from 'react';
 import type { DecorationLayer, RoleDocument } from '../types/role';
 import { settingsForScope, type InsertDraftSettings } from '../lib/editor/editorInsertSettings';
@@ -8,42 +8,18 @@ import {
 } from '../lib/editor/editorImportMerge';
 
 interface UseRoleMergeCommandsOptions {
-  role: RoleDocument;
   roleRef: MutableRefObject<RoleDocument>;
   insertDraftSettings: InsertDraftSettings;
   commitRole(nextRole: RoleDocument, afterSelectionIds?: string[]): void;
-  clearSelection(): void;
-  selectDecoration(id: string, additive?: boolean): void;
 }
 
 export function useRoleMergeCommands({
-  role,
   roleRef,
   insertDraftSettings,
-  commitRole,
-  clearSelection,
-  selectDecoration
+  commitRole
 }: UseRoleMergeCommandsOptions) {
-  const pendingMergeBeforeIdsRef = useRef<Set<string> | null>(null);
-
-  useEffect(() => {
-    const beforeIds = pendingMergeBeforeIdsRef.current;
-    if (!beforeIds) return;
-
-    const mergedIds = [...new Set(role.decorations.filter((item) => !beforeIds.has(item.id)).map((item) => item.id))];
-    if (!mergedIds.length) return;
-
-    pendingMergeBeforeIdsRef.current = null;
-    window.setTimeout(() => {
-      clearSelection();
-      mergedIds.forEach((id, index) => selectDecoration(id, index > 0));
-    }, 0);
-  }, [clearSelection, role.decorations, selectDecoration]);
-
   const mergeImportedRole = useCallback(
     (incoming: RoleDocument) => {
-      pendingMergeBeforeIdsRef.current = new Set(roleRef.current.decorations.map((item) => item.id));
-
       const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.mergeBatch);
       const result = mergeImportedDecorationsIntoRole(roleRef.current, incoming, settings);
       if (!result) return;

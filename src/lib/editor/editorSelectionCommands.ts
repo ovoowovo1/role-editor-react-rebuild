@@ -7,8 +7,8 @@ import { roundPosition } from './editorTransformHistory';
 export function selectedLayerIdsForGroup(role: RoleDocument, groupId: string): string[] {
   const group = role.groups?.find((item) => item.id === groupId);
   if (!group) return [];
-  const groupIds = descendantLayerIdsForGroup(role.groups ?? [], group.id);
-  return layerIdsForRole({ ...role, decorations: role.decorations.filter((deco) => groupIds.includes(deco.id)) });
+  const groupIds = new Set(descendantLayerIdsForGroup(role.groups ?? [], group.id));
+  return layerIdsForRole({ ...role, decorations: role.decorations.filter((deco) => groupIds.has(deco.id)) });
 }
 
 function patchDecoration(current: RoleDocument, id: string, patch: Partial<DecorationLayer>): RoleDocument {
@@ -25,9 +25,10 @@ export function patchDecorationForSelectionDrag(
   selectedIds: string[]
 ): RoleDocument {
   const selectedDecoIds = selectedIds.filter((itemId) => itemId !== HEAD_LAYER_ID);
+  const selectedDecoIdSet = new Set(selectedDecoIds);
   const shouldMoveSelection =
     selectedDecoIds.length > 1 &&
-    selectedDecoIds.includes(id) &&
+    selectedDecoIdSet.has(id) &&
     (typeof patch.x === 'number' || typeof patch.y === 'number');
 
   if (!shouldMoveSelection) return patchDecoration(current, id, patch);
@@ -43,7 +44,7 @@ export function patchDecorationForSelectionDrag(
   return {
     ...current,
     decorations: current.decorations.map((item) => {
-      if (!selectedDecoIds.includes(item.id)) return item;
+      if (!selectedDecoIdSet.has(item.id)) return item;
       if (item.id === id) return { ...item, ...patch };
       const nextPatch: Partial<DecorationLayer> = {};
       if (hasDx) nextPatch.x = roundPosition(item.x + dx);
@@ -52,4 +53,3 @@ export function patchDecorationForSelectionDrag(
     })
   };
 }
-
