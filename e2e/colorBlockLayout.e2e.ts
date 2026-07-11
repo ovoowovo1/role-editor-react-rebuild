@@ -102,3 +102,19 @@ test('top bar only scrolls at mobile widths', async ({ page }) => {
   await expect(topBar).toHaveCSS('overflow-x', 'auto');
   expectNoPageErrors(monitor);
 });
+
+test('top bar keyboard navigation switches between editor modes', async ({ page }) => {
+  const monitor = watchPageErrors(page);
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+  const decoTab = page.locator('[data-tab-mode="deco"]');
+  await decoTab.focus();
+  await page.keyboard.press('End');
+  await expect(page.locator('[data-tab-mode="extra"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.extra-panel')).toBeVisible();
+
+  await page.keyboard.press('Home');
+  await expect(decoTab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.choice-list')).toBeVisible();
+  expectNoPageErrors(monitor);
+});

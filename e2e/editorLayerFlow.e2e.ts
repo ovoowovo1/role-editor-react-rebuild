@@ -12,6 +12,21 @@ import {
   writeRoleFixture
 } from './editorSmoke.helpers';
 
+async function pointerDrag(
+  page: import('@playwright/test').Page,
+  source: import('@playwright/test').Locator,
+  target: import('@playwright/test').Locator,
+  targetVerticalRatio = 0.5
+): Promise<void> {
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  if (!sourceBox || !targetBox) throw new Error('Expected both drag source and target to be visible.');
+
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height * targetVerticalRatio, { steps: 4 });
+}
+
 test('groups, ungroups, undoes, and redoes selected layers', async ({ page }, testInfo) => {
   const monitor = watchPageErrors(page);
   const fixture = await writeRoleFixture(testInfo, 'group-history-source', makeEditorSmokeRole(2));
@@ -39,6 +54,122 @@ test('groups, ungroups, undoes, and redoes selected layers', async ({ page }, te
 
   await page.locator('[data-testid^="group-ungroup-"]').first().click();
   await expect(groupRows).toHaveCount(0);
+  expectNoPageErrors(monitor);
+});
+
+test('pointer-drops an ungrouped deco into a group and restores membership through undo and redo', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'pointer-join-group-source', makeEditorSmokeRole(3));
+
+  await importRoleFile(page, fixture, 3);
+  await page.getByTestId('layer-row-e2e-deco-1').locator('.layer-badge').click();
+  await page.getByTestId('layer-row-e2e-deco-2').locator('.layer-badge').click({ modifiers: ['ControlOrMeta'] });
+  await page.getByTestId('group-selected-button').click();
+  const groupId = await firstGroupId(page);
+  const groupRow = page.getByTestId(`group-row-${groupId}`);
+
+  await pointerDrag(page, page.getByTestId('layer-drag-e2e-deco-3'), groupRow);
+  await expect(groupRow).toHaveClass(/join-target/);
+  await page.mouse.up();
+  await expect(page.locator('.layer-row.group-child')).toHaveCount(3);
+  await expect(page.getByTestId('layer-row-e2e-deco-3')).toHaveClass(/group-child/);
+
+  await page.getByTestId('undo-button').click();
+  await expect(page.locator('.layer-row.group-child')).toHaveCount(2);
+  await expect(page.getByTestId('layer-row-e2e-deco-3')).not.toHaveClass(/group-child/);
+
+  await page.getByTestId('redo-button').click();
+  await expect(page.locator('.layer-row.group-child')).toHaveCount(3);
+  await expect(page.getByTestId('layer-row-e2e-deco-3')).toHaveClass(/group-child/);
+  expectNoPageErrors(monitor);
+});
+
+test('pointer-drops a group into another group and restores the nested group through undo and redo', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'pointer-nested-group-source', makeEditorSmokeRole(4));
+
+  await importRoleFile(page, fixture, 4);
+  await page.getByTestId('layer-row-e2e-deco-1').locator('.layer-badge').click();
+  await page.getByTestId('layer-row-e2e-deco-2').locator('.layer-badge').click({ modifiers: ['ControlOrMeta'] });
+  await page.getByTestId('group-selected-button').click();
+  const parentGroupId = await firstGroupId(page);
+
+  await page.getByTestId('layer-row-e2e-deco-3').locator('.layer-badge').click();
+  await page.getByTestId('layer-row-e2e-deco-4').locator('.layer-badge').click({ modifiers: ['ControlOrMeta'] });
+  await page.getByTestId('group-selected-button').click();
+  const groupIds = await page.locator('[data-group-id]').evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute('data-group-id')).filter((id): id is string => Boolean(id))
+  );
+  const childGroupId = groupIds.find((id) => id !== parentGroupId);
+  if (!childGroupId) throw new Error('Expected a second group to be created.');
+
+  const parentGroup = page.getByTestId(`group-row-${parentGroupId}`);
+  const childGroup = page.getByTestId(`group-row-${childGroupId}`);
+  await pointerDrag(page, page.getByTestId(`group-drag-${childGroupId}`), parentGroup);
+  await expect(parentGroup).toHaveClass(/join-target/);
+  await page.mouse.up();
+  await expect(childGroup).toHaveAttribute('data-depth', '1');
+  await expect(page.locator('.layer-row.group-child')).toHaveCount(4);
+
+  await page.getByTestId('undo-button').click();
+  await expect(childGroup).toHaveAttribute('data-depth', '0');
+  await expect(page.locator('.layer-row.group-child')).toHaveCount(4);
+
+  await page.getByTestId('redo-button').click();
+  await expect(childGroup).toHaveAttribute('data-depth', '1');
+  await expect(page.locator('.layer-row.group-child')).toHaveCount(4);
+  expectNoPageErrors(monitor);
+});
+
+test('pointer-drags a multi-selection as one layer block and preserves it through undo and redo', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'pointer-multi-sort-source', makeEditorSmokeRole(4));
+
+  await importRoleFile(page, fixture, 4);
+  const initialOrder = await visibleLayerIds(page);
+  const firstRow = page.getByTestId('layer-row-e2e-deco-1');
+  const secondRow = page.getByTestId('layer-row-e2e-deco-2');
+  await firstRow.locator('.layer-badge').click();
+  await secondRow.locator('.layer-badge').click({ modifiers: ['ControlOrMeta'] });
+
+  await pointerDrag(page, page.getByTestId('layer-drag-e2e-deco-1'), page.getByTestId('layer-row-e2e-deco-4'));
+  await page.mouse.up();
+  await expect.poll(() => visibleLayerIds(page)).not.toEqual(initialOrder);
+  const movedOrder = await visibleLayerIds(page);
+  expect(movedOrder).toEqual(expect.arrayContaining(initialOrder));
+  await expect(firstRow).toHaveClass(/selected/);
+  await expect(secondRow).toHaveClass(/selected/);
+
+  await page.getByTestId('undo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toEqual(initialOrder);
+  await expect(firstRow).toHaveClass(/selected/);
+  await expect(secondRow).toHaveClass(/selected/);
+
+  await page.getByTestId('redo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toEqual(movedOrder);
+  await expect(firstRow).toHaveClass(/selected/);
+  await expect(secondRow).toHaveClass(/selected/);
+  expectNoPageErrors(monitor);
+});
+
+test('clears redo history when a new edit follows an undone group operation', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'history-branch-source', makeEditorSmokeRole(2));
+
+  await importRoleFile(page, fixture, 2);
+  await page.getByTestId('layer-row-e2e-deco-1').locator('.layer-badge').click();
+  await page.getByTestId('layer-row-e2e-deco-2').locator('.layer-badge').click({ modifiers: ['ControlOrMeta'] });
+  await page.getByTestId('group-selected-button').click();
+  await expect(page.locator('[data-testid^="group-row-"]')).toHaveCount(1);
+
+  await page.getByTestId('undo-button').click();
+  await expect(page.locator('[data-testid^="group-row-"]')).toHaveCount(0);
+  await expect(page.getByTestId('redo-button')).toBeEnabled();
+
+  await page.locator('.choice-block').first().click();
+  await expect.poll(() => visibleLayerIds(page)).toHaveLength(4);
+  await expect(page.getByTestId('redo-button')).toBeDisabled();
+  await expect(page.locator('[data-testid^="group-row-"]')).toHaveCount(0);
   expectNoPageErrors(monitor);
 });
 
@@ -73,6 +204,30 @@ test('clears selection from blank areas without clearing after stage drag', asyn
   await page.mouse.move(canvasBox.x + canvasBox.width / 2 + 24, canvasBox.y + canvasBox.height / 2 + 12);
   await page.mouse.up();
   await expect(row).toHaveClass(/selected/);
+  expectNoPageErrors(monitor);
+});
+
+test('selects multiple layers from the layer-number dialog and rejects missing layers', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'layer-number-selection-source', makeEditorSmokeRole(3));
+
+  await importRoleFile(page, fixture, 3);
+  await page.locator('.layer-tools button').nth(1).click();
+  const dialogInput = page.locator('.dialog-form input');
+  await expect(dialogInput).toBeVisible();
+
+  await dialogInput.fill('1, 99');
+  await page.locator('.modal-footer .button--primary').click();
+  await expect(page.locator('[role="alert"]')).toBeVisible();
+  await expect(dialogInput).toBeVisible();
+
+  await dialogInput.fill('1, 3');
+  await page.locator('.modal-footer .button--primary').click();
+  await expect(dialogInput).toHaveCount(0);
+  await expect(page.getByTestId('layer-row-e2e-deco-1')).toHaveClass(/selected/);
+  await expect(page.getByTestId('layer-row-e2e-deco-3')).toHaveClass(/selected/);
+  await expect(page.getByTestId('layer-row-e2e-deco-2')).not.toHaveClass(/selected/);
+  await expect(page.getByTestId('group-selected-button')).toBeEnabled();
   expectNoPageErrors(monitor);
 });
 

@@ -59,7 +59,12 @@ export function TopMenu({
           <button className="primary-button subtle" type="button" data-testid="export-json-button" onClick={onExportJson}>
             {t('menu.exportJson')}
           </button>
-          <button className="primary-button subtle" type="button" onClick={onOpenInsertSettings}>
+          <button
+            className="primary-button subtle"
+            type="button"
+            data-testid="insert-settings-button"
+            onClick={onOpenInsertSettings}
+          >
             {t('menu.insertSettings')}
           </button>
           <FilePickerButton

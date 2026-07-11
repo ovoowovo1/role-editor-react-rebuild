@@ -16,7 +16,12 @@ interface LegacyDecoEntry {
 
 interface LegacyPayload {
   data: {
+    dr?: number;
     cr: {
+      head?: { f: number; s: number };
+      cape?: { f: number; s: number };
+      hand?: { f: number; s: number };
+      foot?: { f: number; s: number };
       deco: LegacyDecoEntry[];
     };
   };
