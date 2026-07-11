@@ -2,6 +2,11 @@
   "name": "tw-role-editor-react-rebuild",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": "22.x",
+    "npm": "10.x"
+  },
+  "packageManager": "npm@10.9.8",
   "type": "module",
   "scripts": {
     "generate:gaf": "node scripts/generateGafManifest.mjs",
