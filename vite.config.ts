@@ -17,6 +17,7 @@ export default defineConfig({
             return 'gaf-metadata';
           }
           if (id.indexOf('node_modules') < 0) return;
+          if (/[\\/]node_modules[\\/]chart\.js[\\/]/.test(id)) return 'chart-vendor';
           if (id.indexOf('node_modules/react/') >= 0 || id.indexOf('node_modules/react-dom/') >= 0) return 'react-vendor';
           if (id.indexOf('node_modules/pixi.js/') >= 0) return 'pixi-vendor';
           if (id.indexOf('node_modules/pako/') >= 0) return 'codec-vendor';

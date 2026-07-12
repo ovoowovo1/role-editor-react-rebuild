@@ -20,6 +20,7 @@ import {
   AutoCreateMseChart,
   MAX_MSE_HISTORY_POINTS,
   mseHistoryPoint,
+  preloadAutoCreateMseChartCanvas,
   shouldRecordMseProgress,
   type MseHistoryPoint
 } from './AutoCreateMseChart';
@@ -105,6 +106,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
   const recordProgress = useCallback((nextProgress: AutoCreateTwroleProgress) => {
     setProgress(nextProgress);
     if (!shouldRecordMseProgress(nextProgress)) return;
+    preloadAutoCreateMseChartCanvas();
     setMseHistory((current) => {
       const nextPoint = mseHistoryPoint(nextProgress);
       if (current.some((point) => point.key === nextPoint.key)) return current;
@@ -377,7 +379,13 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
         />
 
         <div className="extra-actions auto-create-actions">
-          <button type="button" className="primary-button save" disabled={!file || running || filteredDecoOptions.length === 0 || !workerAvailable} onClick={convert}>
+          <button
+            type="button"
+            className="primary-button save"
+            data-testid="auto-create-generate-button"
+            disabled={!file || running || filteredDecoOptions.length === 0 || !workerAvailable}
+            onClick={convert}
+          >
             {running
               ? stopping
                 ? t('autoCreate.stopping')

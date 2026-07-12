@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { t } from '../../i18n';
+import { preloadAutoCreateMseChartCanvas } from '../auto-create/AutoCreateMseChart';
 import { AutoCreateTwrolePanelContent } from '../auto-create/AutoCreateTwrolePanel';
 import {
   BrushFillPanel,
@@ -55,6 +56,9 @@ export function ExtraPanel({
   const changeToolTab = useCallback(
     (nextToolTab: ExtraPanelToolTab) => {
       setToolTab(nextToolTab);
+      if (nextToolTab === 'autoCreate') {
+        preloadAutoCreateMseChartCanvas();
+      }
       if (nextToolTab !== 'standard') {
         onBrushFillActiveChange(false);
       }
@@ -81,6 +85,7 @@ export function ExtraPanel({
                 aria-selected={toolTab === tab}
                 aria-controls={`extra-panel-${tab}`}
                 id={`extra-tool-tab-${tab}`}
+                onFocus={tab === 'autoCreate' ? preloadAutoCreateMseChartCanvas : undefined}
                 onClick={() => changeToolTab(tab)}
               >
                 {tab === 'standard' ? t('extra.method.standard') : t('extra.method.autoCreate')}
