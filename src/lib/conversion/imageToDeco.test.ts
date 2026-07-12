@@ -19,6 +19,8 @@ const originalRevokeObjectUrl = URL.revokeObjectURL;
 interface FakeImageData { width: number; height: number; pixels: Uint8ClampedArray; }
 
 function installImageCanvasMock(images: Record<string, FakeImageData>) {
+  const getImageData = vi.fn();
+
   class FakeImage {
     naturalWidth = 0;
     naturalHeight = 0;
@@ -47,6 +49,7 @@ function installImageCanvasMock(images: Record<string, FakeImageData>) {
       drawImage(image: FakeImage) { drawn = images[image.src] ?? null; },
       clearRect() {},
       getImageData() {
+        getImageData();
         return { data: drawn?.pixels ?? new Uint8ClampedArray(4) };
       }
     };
@@ -63,6 +66,7 @@ function installImageCanvasMock(images: Record<string, FakeImageData>) {
   Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: (callback: FrameRequestCallback) => { callback(0); return 1; } });
   URL.createObjectURL = vi.fn(() => 'blob:target');
   URL.revokeObjectURL = vi.fn();
+  return { getImageData };
 }
 
 afterEach(() => {
@@ -134,6 +138,15 @@ describe('image to deco helpers', () => {
     expect(bestPaletteMatch(30, 30, 220, palette, 'brightness-color').option.id).toBe('blue');
   });
 
+  it('keeps the first palette entry when color distances tie', () => {
+    const first = paletteEntry('first', 10, 20, 30);
+    const second = paletteEntry('second', 10, 20, 30);
+
+    for (const algorithm of ['cielab', 'weighted-rgb', 'rgb', 'luminance', 'hsv', 'hsl', 'brightness-color'] as const) {
+      expect(bestPaletteMatch(10, 20, 30, [first, second], algorithm).option.id).toBe('first');
+    }
+  });
+
   it('builds a palette, skips transparent and broken sources, and reports progress', async () => {
     installImageCanvasMock({
       'red.png': { width: 1, height: 1, pixels: new Uint8ClampedArray([250, 10, 10, 255]) },
@@ -153,6 +166,47 @@ describe('image to deco helpers', () => {
     expect(progress).toHaveBeenLastCalledWith({ stage: 'palette', done: 3, total: 3 });
   });
 
+  it('caches atlas readback by option identity and alpha threshold while applying minimum pixels per build', async () => {
+    const mock = installImageCanvasMock({
+      'mixed.png': {
+        width: 2,
+        height: 1,
+        pixels: new Uint8ClampedArray([255, 0, 0, 10, 0, 255, 0, 11])
+      }
+    });
+    const option = makePartOption('mixed', { icon: 'mixed.png' });
+    const base = { ...IMAGE_TO_DECO_PRESETS.performance, alphaThreshold: 10, minSourceOpaquePixels: 1 };
+
+    const first = await buildDecoPalette([option], base);
+    const filtered = await buildDecoPalette([option], { ...base, minSourceOpaquePixels: 2 });
+    const otherThreshold = await buildDecoPalette([option], { ...base, alphaThreshold: 11 });
+
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({ r: 0, g: 255, b: 0, opaquePixels: 1 });
+    expect(filtered).toEqual([]);
+    expect(otherThreshold).toEqual([]);
+    expect(mock.getImageData).toHaveBeenCalledTimes(2);
+  });
+
+  it('evicts rejected image and palette promises so a transient source failure can retry', async () => {
+    const images: Record<string, FakeImageData> = {};
+    const mock = installImageCanvasMock(images);
+    const option = makePartOption('retry', { icon: 'transient-retry.png' });
+    const options = { ...IMAGE_TO_DECO_PRESETS.performance, alphaThreshold: 0, minSourceOpaquePixels: 1 };
+
+    await expect(buildDecoPalette([option], options)).resolves.toEqual([]);
+    images['transient-retry.png'] = {
+      width: 1,
+      height: 1,
+      pixels: new Uint8ClampedArray([12, 34, 56, 255])
+    };
+
+    await expect(buildDecoPalette([option], options)).resolves.toMatchObject([
+      { r: 12, g: 34, b: 56, opaquePixels: 1 }
+    ]);
+    expect(mock.getImageData).toHaveBeenCalledTimes(1);
+  });
+
   it('converts pixels, skips transparency, limits layers, resizes, and emits progress warnings', async () => {
     installImageCanvasMock({
       'red.png': { width: 1, height: 1, pixels: new Uint8ClampedArray([255, 0, 0, 255]) },
@@ -170,5 +224,58 @@ describe('image to deco helpers', () => {
     expect(result.warnings).toHaveLength(2);
     expect(result.previewDataUrl).toBe('data:image/png;base64,mock');
     expect(progress).toHaveBeenCalledWith({ stage: 'image', done: 1, total: 1 });
+  });
+
+  it('reuses a palette readback across conversions without changing decoration order, stats, or warnings', async () => {
+    const mock = installImageCanvasMock({
+      'red-255-cache.png': { width: 1, height: 1, pixels: new Uint8ClampedArray([255, 0, 0, 255]) },
+      'red-254-cache.png': { width: 1, height: 1, pixels: new Uint8ClampedArray([254, 0, 0, 255]) },
+      'blob:target': {
+        width: 3,
+        height: 1,
+        pixels: new Uint8ClampedArray([
+          255, 0, 0, 255,
+          255, 0, 0, 255,
+          254, 0, 0, 255
+        ])
+      }
+    });
+    let algorithmReads = 0;
+    const options = {
+      maxSize: 3,
+      alphaThreshold: 10,
+      gapFactor: 2,
+      targetScaleMultiplier: 1,
+      targetRatio: 1,
+      maxLayers: 3,
+      minSourceOpaquePixels: 1
+    } as ImageToDecoConversionOptions;
+    Object.defineProperty(options, 'colorAlgorithm', {
+      get: () => {
+        algorithmReads += 1;
+        return 'rgb';
+      }
+    });
+    const decoOptions = [
+      makePartOption('red-255-cache', { icon: 'red-255-cache.png' }),
+      makePartOption('red-254-cache', { icon: 'red-254-cache.png' })
+    ];
+
+    const first = await convertImageFileToDecos(new File(['x'], 'memo.png'), decoOptions, options);
+    const firstReadCount = mock.getImageData.mock.calls.length;
+    expect(algorithmReads).toBe(2);
+    const second = await convertImageFileToDecos(new File(['x'], 'memo.png'), decoOptions, options);
+
+    expect(first.decorations.map(({ id: _id, ...decoration }) => decoration)).toEqual(
+      second.decorations.map(({ id: _id, ...decoration }) => decoration)
+    );
+    expect(first.decorations.map((decoration) => decoration.assetId)).toEqual([
+      'red-255-cache',
+      'red-255-cache',
+      'red-254-cache'
+    ]);
+    expect({ ...first, decorations: [] }).toEqual({ ...second, decorations: [] });
+    expect(mock.getImageData.mock.calls.length - firstReadCount).toBe(1);
+    expect(algorithmReads).toBe(4);
   });
 });

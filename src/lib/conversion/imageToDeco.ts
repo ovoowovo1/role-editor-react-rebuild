@@ -115,6 +115,7 @@ export const IMAGE_TO_DECO_PRESETS: Record<Exclude<ImageToDecoQuality, 'custom'>
 };
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
+const paletteEntryCache = new WeakMap<PartOption, Map<number, Promise<DecoPaletteEntry | null>>>();
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -147,6 +148,9 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     image.src = src;
   });
   imageCache.set(src, request);
+  void request.catch(() => {
+    if (imageCache.get(src) === request) imageCache.delete(src);
+  });
   return request;
 }
 
@@ -352,6 +356,29 @@ async function optionToPaletteEntry(
   };
 }
 
+function cachedPaletteEntry(
+  option: PartOption,
+  alphaThreshold: number
+): Promise<DecoPaletteEntry | null> {
+  let thresholdCache = paletteEntryCache.get(option);
+  if (!thresholdCache) {
+    thresholdCache = new Map();
+    paletteEntryCache.set(option, thresholdCache);
+  }
+
+  const cached = thresholdCache.get(alphaThreshold);
+  if (cached) return cached;
+
+  const request = optionToPaletteEntry(option, alphaThreshold);
+  thresholdCache.set(alphaThreshold, request);
+  void request.catch(() => {
+    if (thresholdCache?.get(alphaThreshold) !== request) return;
+    thresholdCache.delete(alphaThreshold);
+    if (!thresholdCache.size) paletteEntryCache.delete(option);
+  });
+  return request;
+}
+
 export async function buildDecoPalette(
   options: PartOption[],
   conversionOptions: ImageToDecoConversionOptions,
@@ -362,7 +389,7 @@ export async function buildDecoPalette(
 
   for (let index = 0; index < options.length; index += 1) {
     try {
-      const entry = await optionToPaletteEntry(options[index], conversionOptions.alphaThreshold);
+      const entry = await cachedPaletteEntry(options[index], conversionOptions.alphaThreshold);
       if (entry && entry.opaquePixels >= conversionOptions.minSourceOpaquePixels) {
         palette.push(entry);
       }
@@ -440,6 +467,7 @@ export async function convertImageFileToDecos(
   const centerX = (outputWidth - 1) / 2;
   const centerY = (outputHeight - 1) / 2;
   const totalPixels = outputWidth * outputHeight;
+  const paletteMatches = new Map<number, DecoPaletteEntry>();
   let opaquePixels = 0;
   let skippedPixels = 0;
   let truncated = false;
@@ -459,13 +487,18 @@ export async function convertImageFileToDecos(
         continue;
       }
 
-      const entry = bestPaletteMatch(
-        data[index],
-        data[index + 1],
-        data[index + 2],
-        palette,
-        conversionOptions.colorAlgorithm
-      );
+      const rgbKey = (data[index] << 16) | (data[index + 1] << 8) | data[index + 2];
+      let entry = paletteMatches.get(rgbKey);
+      if (!entry) {
+        entry = bestPaletteMatch(
+          data[index],
+          data[index + 1],
+          data[index + 2],
+          palette,
+          conversionOptions.colorAlgorithm
+        );
+        paletteMatches.set(rgbKey, entry);
+      }
       const itemScale = (conversionOptions.gapFactor / entry.visualWidth) * conversionOptions.targetScaleMultiplier;
       const count = decorations.length + 1;
 

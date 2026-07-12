@@ -38,6 +38,93 @@ interface Bounds {
   maxY: number;
 }
 
+interface BrushMaskSpatialIndex {
+  cellSize: number;
+  buckets: Map<string, BrushFillPoint[]>;
+  widePoints: BrushFillPoint[];
+}
+
+function positiveRadiusMedian(points: BrushFillPoint[]): number {
+  const radii = points
+    .map((point) => point.radius)
+    .filter((radius) => Number.isFinite(radius) && radius > 0)
+    .sort((a, b) => a - b);
+  if (!radii.length) return 0;
+  const middle = Math.floor(radii.length / 2);
+  return radii.length % 2 === 0
+    ? (radii[middle - 1] + radii[middle]) / 2
+    : radii[middle];
+}
+
+function spatialCellKey(cellX: number, cellY: number): string {
+  return `${cellX},${cellY}`;
+}
+
+function buildBrushMaskSpatialIndex(mask: BrushFillMask, step: number): BrushMaskSpatialIndex {
+  const cellSize = Math.max(step, 2 * positiveRadiusMedian(mask.points), 1);
+  const buckets = new Map<string, BrushFillPoint[]>();
+  const widePoints: BrushFillPoint[] = [];
+
+  for (const point of mask.points) {
+    // The legacy distance check squares radius, so a negative imported radius
+    // behaves like its absolute value. Keep that edge-case semantics in the index.
+    const radius = Math.abs(point.radius);
+    const minCellX = Math.floor((point.x - radius) / cellSize);
+    const maxCellX = Math.floor((point.x + radius) / cellSize);
+    const minCellY = Math.floor((point.y - radius) / cellSize);
+    const maxCellY = Math.floor((point.y + radius) / cellSize);
+    const coveredCellCount = (maxCellX - minCellX + 1) * (maxCellY - minCellY + 1);
+
+    if (coveredCellCount > 64) {
+      widePoints.push(point);
+      continue;
+    }
+
+    for (let cellY = minCellY; cellY <= maxCellY; cellY += 1) {
+      for (let cellX = minCellX; cellX <= maxCellX; cellX += 1) {
+        const key = spatialCellKey(cellX, cellY);
+        const bucket = buckets.get(key);
+        if (bucket) bucket.push(point);
+        else buckets.set(key, [point]);
+      }
+    }
+  }
+
+  return { cellSize, buckets, widePoints };
+}
+
+function pointIsInsideCircle(point: BrushFillPoint, x: number, y: number): boolean {
+  const dx = x - point.x;
+  const dy = y - point.y;
+  return dx * dx + dy * dy <= point.radius * point.radius;
+}
+
+/** Builds the exact mask lookup used by brush conversion. The callback is useful for structural perf tests. */
+export function createBrushMaskPointTester(
+  mask: BrushFillMask,
+  step: number,
+  onCandidateCompared?: (point: BrushFillPoint) => void
+): (x: number, y: number) => boolean {
+  const index = buildBrushMaskSpatialIndex(mask, step);
+
+  return (x, y) => {
+    const cellX = Math.floor(x / index.cellSize);
+    const cellY = Math.floor(y / index.cellSize);
+    const bucket = index.buckets.get(spatialCellKey(cellX, cellY));
+    if (bucket) {
+      for (const point of bucket) {
+        onCandidateCompared?.(point);
+        if (pointIsInsideCircle(point, x, y)) return true;
+      }
+    }
+    for (const point of index.widePoints) {
+      onCandidateCompared?.(point);
+      if (pointIsInsideCircle(point, x, y)) return true;
+    }
+    return false;
+  };
+}
+
 export function brushMaskBounds(mask: BrushFillMask): Bounds | null {
   if (!mask.points.length) return null;
   return mask.points.reduce<Bounds>(
@@ -57,11 +144,7 @@ export function brushMaskBounds(mask: BrushFillMask): Bounds | null {
 }
 
 export function maskContainsPoint(mask: BrushFillMask, x: number, y: number): boolean {
-  return mask.points.some((point) => {
-    const dx = x - point.x;
-    const dy = y - point.y;
-    return dx * dx + dy * dy <= point.radius * point.radius;
-  });
+  return mask.points.some((point) => pointIsInsideCircle(point, x, y));
 }
 
 export function parseHexColor(value: string): { r: number; g: number; b: number } {
@@ -143,12 +226,13 @@ export async function convertBrushFillToDecos(
   const endY = Math.ceil(bounds.maxY / step) * step;
   const maxLayers = Math.max(0, Math.floor(options.maxLayers));
   const decorations: DecorationLayer[] = [];
+  const containsPoint = createBrushMaskPointTester(mask, step);
   let sampledPixels = 0;
   let truncated = false;
 
   for (let y = startY; y <= endY; y += step) {
     for (let x = startX; x <= endX; x += step) {
-      if (!maskContainsPoint(mask, x, y)) continue;
+      if (!containsPoint(x, y)) continue;
       sampledPixels += 1;
       if (decorations.length >= maxLayers) {
         truncated = true;
