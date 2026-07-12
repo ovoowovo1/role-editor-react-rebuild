@@ -1,6 +1,6 @@
 import { HEAD_LAYER_ID } from '../../constants/layers';
 import type { DecorationGroup, DecorationGroupMember, RoleDocument } from '../../types/role';
-import { descendantLayerIdsForGroup, membersForGroup, normalizeGroupsForRole } from '../editor/groupTree';
+import { createGroupTreeIndex, membersForGroup, normalizeGroupsForRole } from '../editor/groupTree';
 import { getHeadLayerIndex } from '../editor/layerOrdering';
 
 export interface LegacyDecoGroup {
@@ -86,27 +86,39 @@ function normalizeMembersFromLegacyGroup(group: LegacyDecoGroupInput, role: Role
   return normalizeItemIdsFromLegacyGroup(group, role).map((id) => ({ type: 'layer', id }));
 }
 
-function legacyMembersForExport(group: DecorationGroup, indexByLayerId: Map<string, number>): LegacyDecoGroupMember[] {
-  return membersForGroup(group)
-    .map((member): LegacyDecoGroupMember | null => {
-      if (member.type === 'group') return { type: 'group', id: member.id };
-      const itemIndex = indexByLayerId.get(member.id);
-      return {
-        type: 'layer',
-        id: member.id,
-        ...(typeof itemIndex === 'number' ? { itemIndex } : {})
-      };
-    })
-    .filter((member): member is LegacyDecoGroupMember => member !== null);
+function legacyMembersForExport(
+  group: DecorationGroup,
+  indexByLayerId: Map<string, number>
+): LegacyDecoGroupMember[] {
+  const members: LegacyDecoGroupMember[] = [];
+  const seen = new Set<string>();
+  for (const member of membersForGroup(group)) {
+    const key = `${member.type}\u0000${member.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (member.type === 'group') {
+      members.push({ type: 'group', id: member.id });
+      continue;
+    }
+    const itemIndex = indexByLayerId.get(member.id);
+    members.push({
+      type: 'layer',
+      id: member.id,
+      ...(typeof itemIndex === 'number' ? { itemIndex } : {})
+    });
+  }
+  return members;
 }
 
 export function exportLegacyDecoGroups(role: RoleDocument): LegacyDecoGroup[] {
   const indexByLayerId = new Map<string, number>();
   bottomToTopLayerIds(role).forEach((id, index) => indexByLayerId.set(id, index));
+  const groups = role.groups ?? [];
+  const groupIndex = createGroupTreeIndex(groups);
 
-  return (role.groups ?? [])
+  return groups
     .map((group): LegacyDecoGroup | null => {
-      const itemIndexes = descendantLayerIdsForGroup(role.groups ?? [], group.id)
+      const itemIndexes = groupIndex.descendantLayerIds(group.id)
         .map((id) => indexByLayerId.get(id))
         .filter((index): index is number => typeof index === 'number')
         .sort((a, b) => a - b);

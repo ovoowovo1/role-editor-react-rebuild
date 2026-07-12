@@ -3,6 +3,7 @@ import { HEAD_LAYER_ID } from '../../constants/layers';
 import { makeDecorationLayer, makeRoleDocument } from '../../test/roleFixtures';
 import type { ImportResult } from '../../types/role';
 import { applyLegacyPayloadMetadata, getLegacyCampGender } from './legacyGroupImport';
+import { normalizeImportedRole } from './roleSerialization';
 
 function importResult(): ImportResult {
   return {
@@ -59,5 +60,18 @@ describe('legacy group import metadata', () => {
       id: 'config-group',
       itemIds: ['b', 'a']
     });
+  });
+
+  it.each([
+    ['root', (document: ImportResult['role']) => ({ ...document, dr: 9, decoGroups: [{ id: 'g', itemIndexes: [0, 2] }] })],
+    ['data', (document: ImportResult['role']) => ({ data: { ...document, dr: 9, decoGroups: [{ id: 'g', itemIndexes: [0, 2] }] } })],
+    ['data.cr', (document: ImportResult['role']) => ({ data: { ...document, dr: 9, cr: { decoGroups: [{ id: 'g', itemIndexes: [0, 2] }] } } })]
+  ])('normalizes dr and legacy groups directly from the %s payload path', (_path, envelope) => {
+    const document = importResult().role;
+    const result = normalizeImportedRole(envelope(document));
+
+    expect(result.role).toMatchObject({ camp: 'third', gender: 'female' });
+    expect(result.role.groups).toHaveLength(1);
+    expect(result.role.groups[0]).toMatchObject({ id: 'g', itemIds: ['c', HEAD_LAYER_ID] });
   });
 });

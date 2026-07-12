@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { t } from '../i18n';
 import { downloadBlob } from '../lib/math';
-import { parseRoleFileWithLegacyGroups, parseRoleFileInWorkerWithLegacyGroups } from '../lib/serialization/legacyGroupImport';
+import { parseRoleFileWithWorkerFallback } from '../lib/serialization/roleSerialization';
 import { createRoleJsonBlobWithThumb, createTwroleBlobWithThumb } from '../lib/serialization/legacyTwroleExport';
 import type { RoleDocument } from '../types/role';
 
@@ -22,7 +22,7 @@ export function useRoleFileActions({
     async (file: File) => {
       setStatus(t('status.importing', { name: file.name }));
       try {
-        const result = await parseRoleFileInWorkerWithLegacyGroups(file).catch(() => parseRoleFileWithLegacyGroups(file));
+        const result = await parseRoleFileWithWorkerFallback(file);
         importRole(result.role);
         setStatus(result.warnings.length ? result.warnings.join(' ') : t('status.imported', { name: file.name }));
       } catch (error) {
@@ -37,7 +37,7 @@ export function useRoleFileActions({
     async (file: File) => {
       setStatus(t('status.merging', { name: file.name }));
       try {
-        const result = await parseRoleFileInWorkerWithLegacyGroups(file).catch(() => parseRoleFileWithLegacyGroups(file));
+        const result = await parseRoleFileWithWorkerFallback(file);
         mergeImportedRole(result.role);
         setStatus(result.warnings.length ? `${t('status.merged', { name: file.name })}. ${result.warnings.join(' ')}` : t('status.merged', { name: file.name }));
       } catch (error) {

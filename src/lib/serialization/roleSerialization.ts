@@ -3,11 +3,13 @@ export {
   makeMissingDecoAssetId
 } from './roleSerializationLegacy';
 export {
+  decodeRolePayload,
   normalizeImportedRole,
   normalizeRoleDocument,
   parseRoleBytes,
   parseRoleFile,
-  parseRoleFileInWorker
+  parseRoleFileInWorker,
+  parseRoleFileWithWorkerFallback
 } from './roleSerializationImport';
 export {
   createRoleJsonBlob,

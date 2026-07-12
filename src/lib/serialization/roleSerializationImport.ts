@@ -14,6 +14,7 @@ import type {
 } from '../../types/role';
 import { createId, safeNumber } from '../math';
 import { normalizeLegacyDecoGroups } from './legacyDecoGroups';
+import { applyLegacyPayloadMetadata } from './legacyImportMetadata';
 import {
   BODY_PART_TABS,
   defaultPartFrames,
@@ -339,7 +340,7 @@ export function normalizeImportedRole(raw: unknown): ImportResult {
     warnings.push(`Missing deco symbols preserved as placeholders: ${preview}${suffix}.`);
   }
 
-  return { role, warnings };
+  return applyLegacyPayloadMetadata({ role, warnings }, envelope);
 }
 
 function tryParseJsonText(bytes: Uint8Array): unknown | null {
@@ -361,40 +362,39 @@ function tryDecodeBase64(text: string): Uint8Array | null {
   }
 }
 
-export function parseRoleBytes(bytes: Uint8Array): ImportResult {
-  let raw: unknown | null = null;
-
+export function decodeRolePayload(bytes: Uint8Array): unknown {
   if (bytes.length > 2 && bytes[0] === TWROLE_HEADER[0] && bytes[1] === TWROLE_HEADER[1]) {
     const text = ungzip(bytes.slice(2), { to: 'string' }) as string;
-    raw = JSON.parse(text);
-  } else {
-    raw = tryParseJsonText(bytes);
+    const payload = JSON.parse(text);
+    if (payload) return payload;
+  }
 
-    if (!raw) {
+  const json = tryParseJsonText(bytes);
+  if (json) return json;
+
+  try {
+    const text = ungzip(bytes, { to: 'string' }) as string;
+    const payload = JSON.parse(text);
+    if (payload) return payload;
+  } catch {
+    const text = new TextDecoder().decode(bytes).trim();
+    const decoded = tryDecodeBase64(text);
+    if (decoded) {
       try {
-        const text = ungzip(bytes.slice(2), { to: 'string' }) as string;
-        raw = JSON.parse(text);
+        const jsonText = ungzip(decoded, { to: 'string' }) as string;
+        const payload = JSON.parse(jsonText);
+        if (payload) return payload;
       } catch {
-        try {
-          const text = ungzip(bytes, { to: 'string' }) as string;
-          raw = JSON.parse(text);
-        } catch {
-          const text = new TextDecoder().decode(bytes).trim();
-          const decoded = tryDecodeBase64(text);
-          if (decoded) {
-            const jsonText = ungzip(decoded, { to: 'string' }) as string;
-            raw = JSON.parse(jsonText);
-          }
-        }
+        // Fall through to the stable unsupported-format error below.
       }
     }
   }
 
-  if (!raw) {
-    throw new Error('Unsupported role file. Expected JSON, .twrole header+gzip, raw gzip JSON, or base64 gzip JSON.');
-  }
+  throw new Error('Unsupported role file. Expected JSON, .twrole header+gzip, raw gzip JSON, or base64 gzip JSON.');
+}
 
-  return normalizeImportedRole(raw);
+export function parseRoleBytes(bytes: Uint8Array): ImportResult {
+  return normalizeImportedRole(decodeRolePayload(bytes));
 }
 
 export async function parseRoleFile(file: File): Promise<ImportResult> {
@@ -407,8 +407,7 @@ type WorkerSuccess = { type: 'parse-role-ok'; result: ImportResult };
 type WorkerFailure = { type: 'parse-role-error'; error: string };
 type WorkerResponse = WorkerSuccess | WorkerFailure;
 
-export async function parseRoleFileInWorker(file: File): Promise<ImportResult> {
-  const bytes = await file.arrayBuffer();
+function parseRoleBytesInWorker(bytes: Uint8Array): Promise<ImportResult> {
   return new Promise<ImportResult>((resolve, reject) => {
     let worker: Worker | null = null;
     try {
@@ -430,11 +429,27 @@ export async function parseRoleFileInWorker(file: File): Promise<ImportResult> {
         cleanup();
         reject(new Error(event.message || 'Role import worker crashed.'));
       };
-      const request: WorkerRequest = { type: 'parse-role', bytes };
-      worker.postMessage(request, [bytes]);
+      const transferableBytes = bytes.slice().buffer as ArrayBuffer;
+      const request: WorkerRequest = { type: 'parse-role', bytes: transferableBytes };
+      worker.postMessage(request, [transferableBytes]);
     } catch (error) {
       worker?.terminate();
       reject(error);
     }
   });
+}
+
+export async function parseRoleFileInWorker(file: File): Promise<ImportResult> {
+  const buffer = await file.arrayBuffer();
+  return parseRoleBytesInWorker(new Uint8Array(buffer));
+}
+
+export async function parseRoleFileWithWorkerFallback(file: File): Promise<ImportResult> {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  try {
+    return await parseRoleBytesInWorker(bytes);
+  } catch {
+    return parseRoleBytes(bytes);
+  }
 }

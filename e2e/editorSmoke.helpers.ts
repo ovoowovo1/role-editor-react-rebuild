@@ -14,6 +14,15 @@ interface LegacyDecoEntry {
   r: number;
 }
 
+interface LegacyDecoGroup {
+  id?: string;
+  name?: string;
+  visible?: boolean;
+  collapsed?: boolean;
+  itemIndexes?: number[];
+  members?: Array<{ type: 'layer' | 'group'; id: string; itemIndex?: number }>;
+}
+
 interface LegacyPayload {
   data: {
     dr?: number;
@@ -25,7 +34,7 @@ interface LegacyPayload {
       deco: LegacyDecoEntry[];
     };
   };
-  decoGroups?: Array<{ name?: string; visible?: boolean; collapsed?: boolean; itemIndexes?: number[] }>;
+  decoGroups?: LegacyDecoGroup[];
 }
 
 export interface PageErrorMonitor {
