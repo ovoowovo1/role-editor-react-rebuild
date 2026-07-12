@@ -2,6 +2,7 @@ import { Container, Rectangle } from 'pixi.js';
 import type { DecorationLayer } from '../../types/role';
 import { clamp } from '../../lib/math';
 import {
+  decorationDisplayKey,
   mergeBounds,
   pointBounds,
   selectionControllerPosition,
@@ -53,6 +54,7 @@ export function hideSelectionDragController(scene: StageSceneState): void {
   scene.selectionDragTargetId = null;
   scene.selectionDragVisualKey = '';
   scene.selectionDragVisualsById.clear();
+  scene.selectionDragVisualDisplayKeysById.clear();
   scene.selectionDragController.visible = false;
   scene.selectionDragController.eventMode = 'none';
   scene.selectionDragController.hitArea = null;
@@ -82,38 +84,63 @@ function selectionBounds(scene: StageSceneState, selectedDecorations: Decoration
   return bounds;
 }
 
-function syncSelectionDragControllerVisuals(
-  scene: StageSceneState,
-  selectedDecorations: DecorationLayer[],
-  centerX: number,
-  centerY: number
-): void {
-  const nextKey = selectionDragVisualKey(selectedDecorations, centerX, centerY);
-  if (scene.selectionDragVisualKey === nextKey) return;
+function replaceControllerVisualOrder(root: Container, visuals: Container[]): void {
+  const current = root.children;
+  if (
+    current.length === visuals.length &&
+    current.every((child, index) => child === visuals[index])
+  ) {
+    return;
+  }
 
-  scene.selectionDragVisualKey = nextKey;
-  scene.selectionDragVisualsById.clear();
-  scene.selectionDragControllerVisuals.removeChildren().forEach((child) => {
-    if (!child.destroyed) child.destroy({ children: true });
-  });
-
-  for (const deco of selectedDecorations) {
-    const visual = createDecorationVisual(deco, scene.failedTextures);
-    if (!visual) continue;
-    visual.eventMode = 'none';
-    visual.cursor = 'default';
-    visual.position.set(deco.x - centerX, deco.y - centerY);
-    scene.selectionDragControllerVisuals.addChild(visual);
-    scene.selectionDragVisualsById.set(deco.id, visual);
+  root.removeChildren();
+  const chunkSize = 1000;
+  for (let index = 0; index < visuals.length; index += chunkSize) {
+    root.addChild(...visuals.slice(index, index + chunkSize));
   }
 }
 
-function syncSelectionDragControllerVisualTransforms(
+export function syncSelectionDragControllerVisuals(
   scene: StageSceneState,
   selectedDecorations: DecorationLayer[],
   centerX: number,
   centerY: number
 ): void {
+  const nextKey = selectionDragVisualKey(selectedDecorations);
+  if (scene.selectionDragVisualKey !== nextKey) {
+    const nextDecorationsById = new Map(selectedDecorations.map((deco) => [deco.id, deco]));
+
+    for (const [id, visual] of scene.selectionDragVisualsById) {
+      const deco = nextDecorationsById.get(id);
+      const displayKey = deco ? decorationDisplayKey(deco) : null;
+      if (displayKey && scene.selectionDragVisualDisplayKeysById.get(id) === displayKey) continue;
+      if (visual.parent === scene.selectionDragControllerVisuals) {
+        scene.selectionDragControllerVisuals.removeChild(visual);
+      }
+      if (!visual.destroyed) visual.destroy({ children: true });
+      scene.selectionDragVisualsById.delete(id);
+      scene.selectionDragVisualDisplayKeysById.delete(id);
+    }
+
+    for (const deco of selectedDecorations) {
+      if (scene.selectionDragVisualsById.has(deco.id)) continue;
+      const visual = createDecorationVisual(deco, scene.failedTextures);
+      if (!visual) continue;
+      visual.eventMode = 'none';
+      visual.cursor = 'default';
+      scene.selectionDragVisualsById.set(deco.id, visual);
+      scene.selectionDragVisualDisplayKeysById.set(deco.id, decorationDisplayKey(deco));
+    }
+
+    replaceControllerVisualOrder(
+      scene.selectionDragControllerVisuals,
+      selectedDecorations
+        .map((deco) => scene.selectionDragVisualsById.get(deco.id))
+        .filter((visual): visual is Container => Boolean(visual))
+    );
+    scene.selectionDragVisualKey = nextKey;
+  }
+
   for (const deco of selectedDecorations) {
     const visual = scene.selectionDragVisualsById.get(deco.id);
     if (!visual) continue;
@@ -160,7 +187,6 @@ export function syncSelectionDragController(
   scene.selectionDragController.hitArea = hitArea;
   scene.selectionDragController.filters = [getCachedControllerGlowFilter()];
   syncSelectionDragControllerVisuals(scene, visibleSelections, center.x, center.y);
-  syncSelectionDragControllerVisualTransforms(scene, visibleSelections, center.x, center.y);
   scene.selectionDragControllerGraphic.clear();
   scene.selectionDragControllerGraphic.beginFill(0x000000, 0.001);
   scene.selectionDragControllerGraphic.drawRect(hitArea.x, hitArea.y, hitArea.width, hitArea.height);

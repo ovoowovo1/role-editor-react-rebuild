@@ -9,8 +9,7 @@ import {
   drawBrushFillOverlay
 } from './stageOverlayVisuals';
 import {
-  setDecorationInteractionEnabled,
-  syncDisguiseChildOrder
+  setDecorationInteractionEnabled
 } from './sceneSync';
 import type { StagePointerPosition, StageRuntimeRefs } from './types';
 
@@ -29,11 +28,7 @@ export function beginBrushFillDraw(global: StagePointerPosition, refs: StageRunt
   };
   refs.brushDrawRef.current = { points: [point] };
 
-  const wasVisible = currentScene.brushFillOverlay.visible;
   beginBrushFillDraft(currentScene, refs.brushFillRef.current.mask, [point]);
-  if (currentScene.brushFillOverlay.visible !== wasVisible) {
-    syncDisguiseChildOrder(currentScene, refs.roleRef.current);
-  }
   return true;
 }
 

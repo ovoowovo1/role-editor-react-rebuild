@@ -6,8 +6,10 @@ import type { RoleDocument } from '../../types/role';
 import { applyHeadLayerDisplayTransform } from './actorVisuals';
 import {
   setDecorationInteractionEnabled,
-  syncDecorationDisplays,
-  syncDisguiseChildOrder
+  syncDecorationDisplayRecords,
+  syncDisguiseChildOrder,
+  syncSelectionControllerForIds,
+  type ActiveDecorationOverlay
 } from './sceneSync';
 import { drawBrushFillOverlay } from './stageOverlayVisuals';
 import type { BrushDrawState, DisguiseDecoOptions, DragState, StageSceneState } from './types';
@@ -20,12 +22,22 @@ interface StageDisplaySyncOptions {
   sceneVersion: number;
   appRef: MutableRefObject<Application | null>;
   roleRef: MutableRefObject<RoleDocument>;
+  selectedIdsRef: MutableRefObject<string[]>;
   sceneRef: MutableRefObject<StageSceneState | null>;
   dragRef: MutableRefObject<DragState | null>;
   brushDrawRef: MutableRefObject<BrushDrawState | null>;
   decoOptions: DisguiseDecoOptions;
   scheduleDeferredStageSync(run: () => void): void;
   cancelDeferredStageSync(): void;
+}
+
+function activeDecorationOverlay(drag: DragState | null): ActiveDecorationOverlay | null {
+  return drag?.visual.kind === 'overlay'
+    ? {
+        container: drag.visual.container,
+        selectedSet: new Set(drag.selectionIds)
+      }
+    : null;
 }
 
 export function useStageDisplaySync({
@@ -36,6 +48,7 @@ export function useStageDisplaySync({
   sceneVersion,
   appRef,
   roleRef,
+  selectedIdsRef,
   sceneRef,
   dragRef,
   brushDrawRef,
@@ -43,64 +56,87 @@ export function useStageDisplaySync({
   scheduleDeferredStageSync,
   cancelDeferredStageSync
 }: StageDisplaySyncOptions): void {
+  // Interaction is independent from role and selection updates. Running this
+  // first also means displays created in the same commit inherit the right mode.
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
+    setDecorationInteractionEnabled(scene, !brushFillActive && !dragRef.current);
+    const canvas = appRef.current?.view as HTMLCanvasElement | undefined;
+    if (canvas) canvas.style.cursor = brushFillActive ? 'crosshair' : '';
+  }, [appRef, brushFillActive, dragRef, sceneRef, sceneVersion]);
 
-    const syncStage = () => {
+  useEffect(() => {
+    const syncDisplays = (repairDependentPaths: boolean) => {
       const currentScene = sceneRef.current;
       if (!currentScene) return;
       const activeDrag = dragRef.current;
-      const activeOverlay = activeDrag?.visual.kind === 'overlay'
-        ? {
-            container: activeDrag.visual.container,
-            selectedSet: new Set(activeDrag.selectionIds)
-          }
-        : null;
-      applyHeadLayerDisplayTransform(currentScene.headLayerClip, role);
-      syncDecorationDisplays(
-        currentScene,
-        role,
-        selectedIds,
-        decoOptions,
-        activeOverlay,
-        Boolean(activeDrag) || brushFillActive,
-        !brushFillActive && !activeDrag
-      );
+      const activeOverlay = activeDecorationOverlay(activeDrag);
+      const currentRole = roleRef.current;
+      applyHeadLayerDisplayTransform(currentScene.headLayerClip, currentRole);
+      syncDecorationDisplayRecords(currentScene, currentRole, decoOptions, activeOverlay);
+
+      // Selection/order effects may have run before a deferred display update.
+      // Repair them from current refs without turning ordinary selection changes
+      // back into a full decoration scan.
+      if (repairDependentPaths) {
+        syncSelectionControllerForIds(
+          currentScene,
+          selectedIdsRef.current,
+          Boolean(activeDrag)
+        );
+        syncDisguiseChildOrder(
+          currentScene,
+          currentRole,
+          activeOverlay?.container,
+          activeOverlay?.selectedSet
+        );
+      }
     };
 
     if (role.decorations.length >= DEFER_STAGE_SYNC_DECO_COUNT) {
-      scheduleDeferredStageSync(syncStage);
+      scheduleDeferredStageSync(() => syncDisplays(true));
       return () => cancelDeferredStageSync();
     }
 
     cancelDeferredStageSync();
-    syncStage();
+    syncDisplays(false);
   }, [
-    decoOptions,
-    brushFillActive,
     cancelDeferredStageSync,
+    decoOptions,
     dragRef,
-    role,
+    role.decorations,
+    role.headLayer,
+    role.partFrames?.head,
+    role.partScales?.head,
+    role.parts.head,
+    roleRef,
     sceneRef,
     scheduleDeferredStageSync,
-    selectedIds
+    selectedIdsRef
   ]);
 
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
-    if (!brushDrawRef.current) {
-      drawBrushFillOverlay(scene, brushFillMask);
-    }
-    setDecorationInteractionEnabled(
+    syncSelectionControllerForIds(scene, selectedIds, Boolean(dragRef.current));
+  }, [dragRef, role.decorations, sceneRef, sceneVersion, selectedIds]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene || brushDrawRef.current) return;
+    drawBrushFillOverlay(scene, brushFillMask);
+  }, [brushDrawRef, brushFillMask, sceneRef, sceneVersion]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const activeOverlay = activeDecorationOverlay(dragRef.current);
+    syncDisguiseChildOrder(
       scene,
-      !brushFillActive && !dragRef.current
+      role,
+      activeOverlay?.container,
+      activeOverlay?.selectedSet
     );
-    syncDisguiseChildOrder(scene, roleRef.current);
-    const canvas = appRef.current?.view as HTMLCanvasElement | undefined;
-    if (canvas) {
-      canvas.style.cursor = brushFillActive ? 'crosshair' : '';
-    }
-  }, [appRef, brushDrawRef, brushFillActive, brushFillMask, dragRef, roleRef, sceneRef, sceneVersion]);
+  }, [dragRef, role.decorations, role.headLayerIndex, sceneRef, sceneVersion]);
 }

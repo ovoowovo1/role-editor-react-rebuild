@@ -7,7 +7,12 @@ import {
 } from '../../lib/runtime/atlasTextureAvailability';
 import type { RoleDocument } from '../../types/role';
 import { applyHeadLayerDisplayTransform } from './actorVisuals';
-import { syncDecorationDisplays } from './sceneSync';
+import {
+  setDecorationInteractionEnabled,
+  syncDecorationDisplayRecords,
+  syncDisguiseChildOrder,
+  syncSelectionControllerForIds
+} from './sceneSync';
 import { createStagePointerHandlers } from './stageInteractions';
 import { drawBrushFillOverlay } from './stageOverlayVisuals';
 import { buildStageScene } from './stageSceneBuilder';
@@ -100,15 +105,10 @@ export function useStageSceneLifecycle({
       const currentRole = roleRef.current;
       applyHeadLayerDisplayTransform(scene.headLayerClip, currentRole);
       drawBrushFillOverlay(scene, brushFillRef.current.mask);
-      syncDecorationDisplays(
-        scene,
-        currentRole,
-        selectedIdsRef.current,
-        decoOptions,
-        null,
-        false,
-        !brushFillRef.current.active
-      );
+      setDecorationInteractionEnabled(scene, !brushFillRef.current.active);
+      syncDecorationDisplayRecords(scene, currentRole, decoOptions);
+      syncSelectionControllerForIds(scene, selectedIdsRef.current);
+      syncDisguiseChildOrder(scene, currentRole);
       scene.updatePosition();
 
       const pointerHandlers = createStagePointerHandlers(stageRuntimeRefs);
@@ -132,6 +132,9 @@ export function useStageSceneLifecycle({
           if (!child.destroyed) child.destroy({ children: true });
         }
         scene.decoDisplays.clear();
+        scene.decorationsById.clear();
+        scene.selectionDragVisualsById.clear();
+        scene.selectionDragVisualDisplayKeysById.clear();
         scene.lastDisguiseChildOrder = [];
         if (sceneRef.current === scene) {
           sceneRef.current = null;

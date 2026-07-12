@@ -3,7 +3,7 @@ import type { Container, Graphics } from 'pixi.js';
 import type { BrushFillMask, BrushFillPoint } from '../../lib/conversion/brushFillToDeco';
 import type { ActorClip } from '../../lib/runtime/actorClip';
 import type { GafMovieClip } from '../../lib/runtime/gafMovieClip';
-import type { RoleDocument } from '../../types/role';
+import type { DecorationLayer, RoleDocument } from '../../types/role';
 
 export interface StagePointerPosition {
   x: number;
@@ -92,9 +92,11 @@ export interface StageSceneState {
   brushFillDraftGraphic: Graphics;
   selectionDragVisualKey: string;
   selectionDragVisualsById: Map<string, Container>;
+  selectionDragVisualDisplayKeysById: Map<string, string>;
   selectionDragTargetId: string | null;
   failedTextures: Set<string>;
   decoDisplays: Map<string, DecoDisplayRecord>;
+  decorationsById: Map<string, DecorationLayer>;
   decorationInteractionEnabled: boolean;
   lastDisguiseChildOrder: Container[];
   updatePosition(): void;

@@ -132,14 +132,11 @@ export function multiDragStartMode(selectedDecorationCount: number, overlayItemC
   return overlayItemCount >= 2 ? 'overlay' : 'single-fallback';
 }
 
-export function actorSceneKey(role: RoleDocument, bodyAnimationLabel: string): string {
+export function actorSceneKey(role: RoleDocument, _bodyAnimationLabel?: string): string {
   return JSON.stringify({
-    camp: role.camp,
-    gender: role.gender,
     parts: role.parts,
     partFrames: role.partFrames,
-    partScales: role.partScales,
-    bodyAnimationLabel
+    partScales: role.partScales
   });
 }
 
@@ -159,12 +156,10 @@ export function decorationTransformKey(deco: DecorationLayer): string {
   ].join('\u0000');
 }
 
-export function selectionDragVisualKey(selectedDecorations: DecorationLayer[], centerX: number, centerY: number): string {
-  return [
-    centerX,
-    centerY,
-    selectedDecorations.map((deco) => `${deco.id}:${decorationDisplayKey(deco)}:${decorationTransformKey(deco)}`).join('|')
-  ].join('\u0000');
+export function selectionDragVisualKey(selectedDecorations: DecorationLayer[]): string {
+  return JSON.stringify(
+    selectedDecorations.map((deco) => [deco.id, deco.assetId, deco.code])
+  );
 }
 
 export function quarterTurnRotationRadians(facingQuarterTurns: number): number {

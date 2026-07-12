@@ -23,6 +23,7 @@ import {
   quarterTurnRotationRadians,
   sameChildOrder,
   selectionControllerPosition,
+  selectionDragVisualKey,
   selectionDragHitRect,
   shouldUsePointBoundsForSelection,
   stageRendererResolution,
@@ -39,16 +40,42 @@ describe('character stage helpers', () => {
     expect(decorationTransformKey(deco)).toBe('1\u00002\u00003\u00004\u00005\u00000.5\u0000false');
   });
 
-  it('builds actor scene keys from role body inputs', () => {
-    const key = actorSceneKey(makeRoleDocument({
+  it('rebuilds actor scenes only for parts, frames, and scales', () => {
+    const role = makeRoleDocument({
       camp: 'third',
       gender: 'female',
-      parts: { head: 'h1', hand: 'hand', foot: 'foot', cape: 'cape' }
-    }), 'idle');
+      parts: { head: 'h1', hand: 'hand', foot: 'foot', cape: 'cape' },
+      partFrames: { head: 2, hand: 0, foot: 0, cape: 0 },
+      partScales: { head: 1.2, hand: 1, foot: 1, cape: 1 }
+    });
+    const key = actorSceneKey(role, 'idle');
 
-    expect(key).toContain('"camp":"third"');
-    expect(key).toContain('"gender":"female"');
-    expect(key).toContain('"bodyAnimationLabel":"idle"');
+    expect(actorSceneKey({ ...role, camp: 'civil', gender: 'male' }, 'run')).toBe(key);
+    expect(actorSceneKey({ ...role, parts: { ...role.parts, head: 'h2' } }, 'idle')).not.toBe(key);
+    expect(actorSceneKey({ ...role, partFrames: { ...role.partFrames, head: 3 } }, 'idle')).not.toBe(key);
+    expect(actorSceneKey({ ...role, partScales: { ...role.partScales, head: 1.3 } }, 'idle')).not.toBe(key);
+  });
+
+  it('keeps selection visual identity stable across transform-only changes', () => {
+    const first = makeDecorationLayer('a', { assetId: 'asset', code: 'code', x: 1, rotation: 5 });
+    const transformed = { ...first, x: 20, y: -3, rotation: 90, scaleX: 2, opacity: 0.4 };
+
+    expect(selectionDragVisualKey([first])).toBe(selectionDragVisualKey([transformed]));
+    expect(selectionDragVisualKey([first, makeDecorationLayer('b')]))
+      .not.toBe(selectionDragVisualKey([makeDecorationLayer('b'), first]));
+    expect(selectionDragVisualKey([{ ...first, assetId: 'other' }]))
+      .not.toBe(selectionDragVisualKey([first]));
+  });
+
+  it('serializes selection visual identity without delimiter collisions', () => {
+    const delimiterInId = makeDecorationLayer('a:b', { assetId: 'c', code: 'd' });
+    const delimiterInAsset = makeDecorationLayer('a', { assetId: 'b:c', code: 'd' });
+    const delimiterInCode = makeDecorationLayer('a', { assetId: 'b', code: 'c\u0000d|e' });
+
+    expect(selectionDragVisualKey([delimiterInId]))
+      .not.toBe(selectionDragVisualKey([delimiterInAsset]));
+    expect(selectionDragVisualKey([delimiterInAsset]))
+      .not.toBe(selectionDragVisualKey([delimiterInCode]));
   });
 
   it('normalizes stage position range values', () => {

@@ -10,9 +10,9 @@ import { createLargeMultiDragPreview } from './stageOverlayVisuals';
 import { getDisplayRootPosition, reparentPreservingPosition } from './sceneGeometry';
 import {
   setDecorationInteractionEnabled,
-  syncDisguiseChildOrder
+  syncDisguiseChildOrder,
+  syncSelectionControllerForIds
 } from './sceneSync';
-import { syncSelectionDragController } from './selectionControllerSync';
 import type { DraggedDisplayItem, StagePointerPosition, StageRuntimeRefs } from './types';
 
 function selectedDecorationsForDrag(
@@ -224,9 +224,7 @@ function restoreSelectionControllerOnNextFrame(
 ): void {
   requestAnimationFrame(() => {
     if (refs.sceneRef.current !== scene || refs.dragRef.current || scene.actorStage.destroyed) return;
-    const selectedSet = new Set(refs.selectedIdsRef.current);
-    const selectedDecorations = refs.roleRef.current.decorations.filter((deco) => selectedSet.has(deco.id));
-    syncSelectionDragController(scene, selectedDecorations, false);
+    syncSelectionControllerForIds(scene, refs.selectedIdsRef.current);
     syncDisguiseChildOrder(scene, refs.roleRef.current);
   });
 }

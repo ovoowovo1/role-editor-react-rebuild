@@ -12,7 +12,11 @@ import { HEAD_LAYER_ID } from '../../constants/layers';
 import type { DecorationGroup, DecorationLayer, HeadLayerTransform } from '../../types/role';
 import type { LayerReorderOptions } from '../../lib/editor/editorLayerDrag';
 import { GroupHeaderRow, HeadRow, LayerItemRow } from './LayerRows';
-import { buildLayerRowModels } from './layerListModels';
+import {
+  applyLayerSelection,
+  buildLayerRowModels,
+  createLayerSelectionState
+} from './layerListModels';
 import { SelectLayerDialog } from './SelectLayerDialog';
 import { useLayerListDrag } from './useLayerListDrag';
 import {
@@ -70,8 +74,8 @@ export function LayerList({
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const rowModels = useMemo(
-    () => buildLayerRowModels({ decorations, groups, headLayerIndex, selectedIds }),
-    [decorations, groups, headLayerIndex, selectedIds]
+    () => buildLayerRowModels({ decorations, groups, headLayerIndex }),
+    [decorations, groups, headLayerIndex]
   );
 
   const selectableLayerNumbers = useMemo(
@@ -138,7 +142,7 @@ export function LayerList({
     groups,
     onReorder
   });
-  const visibleItems = useMemo(
+  const visibleStructureItems = useMemo(
     () =>
       virtualItemsInViewport(
         virtualRows,
@@ -148,6 +152,16 @@ export function LayerList({
         VIRTUAL_DRAG_OVERSCAN_ROWS
       ),
     [scrollState.scrollTop, scrollState.viewportHeight, virtualGeometry, virtualRows]
+  );
+  const selectionState = useMemo(
+    () => createLayerSelectionState(selectedIds),
+    [selectedIds]
+  );
+  const visibleItems = useMemo(
+    () => visibleStructureItems.map((item) => item.row.type === 'spacer'
+      ? item
+      : { ...item, row: applyLayerSelection(item.row, selectionState) }),
+    [selectionState, visibleStructureItems]
   );
 
   const handleBlankListClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {

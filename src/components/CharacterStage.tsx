@@ -49,7 +49,7 @@ export function CharacterStage({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const stageBgRef = useRef<HTMLDivElement | null>(null);
   const [sceneVersion, setSceneVersion] = useState(0);
-  const sceneKey = actorSceneKey(role, bodyAnimationLabel);
+  const sceneKey = actorSceneKey(role);
   const { scheduleDeferredStageSync, cancelDeferredStageSync } = useDeferredStageSync();
   const stageRuntime = useStageRuntimeController({
     role,
@@ -105,6 +105,7 @@ export function CharacterStage({
     sceneVersion,
     appRef: stageRuntime.appRef,
     roleRef: stageRuntime.roleRef,
+    selectedIdsRef: stageRuntime.selectedIdsRef,
     sceneRef: stageRuntime.sceneRef,
     dragRef: stageRuntime.dragRef,
     brushDrawRef: stageRuntime.brushDrawRef,

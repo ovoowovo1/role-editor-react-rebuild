@@ -68,6 +68,7 @@ export function buildStageScene({
   brushFillOverlay.visible = false;
   brushFillOverlay.eventMode = 'none';
   brushFillOverlay.addChild(brushFillCommittedGraphic, brushFillDraftGraphic);
+  disguiseRoot.addChild(selectionDragController, brushFillOverlay);
 
   const updatePosition = () => {
     const host = hostRef.current;
@@ -94,9 +95,11 @@ export function buildStageScene({
     brushFillDraftGraphic,
     selectionDragVisualKey: '',
     selectionDragVisualsById: new Map(),
+    selectionDragVisualDisplayKeysById: new Map(),
     selectionDragTargetId: null,
     failedTextures,
     decoDisplays: new Map(),
+    decorationsById: new Map(),
     decorationInteractionEnabled: true,
     lastDisguiseChildOrder: [],
     updatePosition

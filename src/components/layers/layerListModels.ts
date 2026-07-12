@@ -20,6 +20,12 @@ export interface LayerRowModel {
   depth: number;
   selected: boolean;
   itemCount?: number;
+  descendantIds?: readonly string[];
+}
+
+export interface LayerSelectionState {
+  isLargeSelection: boolean;
+  selectedIds: Set<string> | null;
 }
 
 function groupRowId(groupId: string): string {
@@ -39,19 +45,13 @@ function clampHeadLayerIndex(headLayerIndex: number | undefined, decorationCount
 export function buildLayerRowModels({
   decorations,
   groups,
-  headLayerIndex,
-  selectedIds
+  headLayerIndex
 }: {
   decorations: DecorationLayer[];
   groups: DecorationGroup[];
   headLayerIndex: number;
-  selectedIds: string[];
 }): LayerRowModel[] {
   const normalizedHeadIndex = clampHeadLayerIndex(headLayerIndex, decorations.length);
-  const isLargeSelection = selectedIds.length > 500;
-  const selectedSet = isLargeSelection ? null : new Set(selectedIds);
-
-  const isSelected = (id: string) => selectedSet ? selectedSet.has(id) : id === HEAD_LAYER_ID || selectedIds.length > 0;
 
   const virtualLayers: VirtualLayerModel[] = [];
 
@@ -111,7 +111,7 @@ export function buildLayerRowModels({
         grouped,
         group,
         depth,
-        selected: isSelected(HEAD_LAYER_ID)
+        selected: false
       });
     } else if (layer.deco) {
       models.push({
@@ -123,7 +123,7 @@ export function buildLayerRowModels({
         grouped,
         group,
         depth,
-        selected: isSelected(layer.deco.id)
+        selected: false
       });
     }
   };
@@ -132,7 +132,6 @@ export function buildLayerRowModels({
     if (renderedGroupIds.has(group.id)) return;
     renderedGroupIds.add(group.id);
     const descendants = groupTree.descendantLayerIds(group.id);
-    const selected = descendants.length > 0 && (isLargeSelection || descendants.every((id) => isSelected(id)));
     models.push({
       key: group.id,
       rowId: groupRowId(group.id),
@@ -140,8 +139,9 @@ export function buildLayerRowModels({
       group,
       grouped: depth > 0,
       depth,
-      selected,
-      itemCount: descendants.length
+      selected: false,
+      itemCount: descendants.length,
+      descendantIds: descendants
     });
 
     if (group.collapsed) return;
@@ -187,4 +187,32 @@ export function buildLayerRowModels({
   });
 
   return models;
+}
+
+export function createLayerSelectionState(selectedIds: readonly string[]): LayerSelectionState {
+  const isLargeSelection = selectedIds.length > 500;
+  return {
+    isLargeSelection,
+    selectedIds: isLargeSelection ? null : new Set(selectedIds)
+  };
+}
+
+export function applyLayerSelection(
+  row: LayerRowModel,
+  selection: LayerSelectionState
+): LayerRowModel {
+  let selected = false;
+  if (row.type === 'group') {
+    const descendantIds = row.descendantIds ?? [];
+    selected = descendantIds.length > 0 && (
+      selection.isLargeSelection ||
+      descendantIds.every((id) => selection.selectedIds?.has(id))
+    );
+  } else if (row.type === 'head') {
+    selected = selection.isLargeSelection || Boolean(selection.selectedIds?.has(HEAD_LAYER_ID));
+  } else if (row.type === 'item' && row.deco) {
+    selected = selection.isLargeSelection || Boolean(selection.selectedIds?.has(row.deco.id));
+  }
+
+  return row.selected === selected ? row : { ...row, selected };
 }
