@@ -3,6 +3,7 @@ import { DEFAULT_POSITION_RANGE } from '../../constants/editor';
 import { createId, round } from '../math';
 
 const ALPHA_MSE_WEIGHT = 1.0;
+const INV_255 = 1 / 255;
 const ALPHA_THRESH_DEFAULT = 10;
 const DEFAULT_MAX_TILE_SIZE = 40;
 const DEFAULT_CELL_SIZE = 16;
@@ -260,7 +261,13 @@ interface SourceTile {
 interface TransformedImage {
   width: number;
   height: number;
-  data: Float32Array; // straight RGBA, 0..255
+  data: Uint8ClampedArray; // straight RGBA, 0..255
+  // Inclusive/exclusive non-transparent bounds for every row. Empty rows use
+  // start >= end. These let the hot loops skip transparent rotation padding.
+  alphaRowStart: Int32Array;
+  alphaRowEnd: Int32Array;
+  // Sum of alpha bytes (0..255), cached because it is invariant per variant.
+  alphaSum: number;
 }
 
 interface DecoDraft {
@@ -397,8 +404,8 @@ async function canvasToDataUrl(canvas: AutoCreateCanvas): Promise<string> {
   return '';
 }
 
-function get2d(canvas: AutoCreateCanvas): AutoCreateCanvas2D {
-  const context = canvas.getContext('2d', { willReadFrequently: true } as CanvasRenderingContext2DSettings);
+function get2d(canvas: AutoCreateCanvas, willReadFrequently = true): AutoCreateCanvas2D {
+  const context = canvas.getContext('2d', { willReadFrequently } as CanvasRenderingContext2DSettings);
   if (!context) throw new Error('Canvas 2D context is not available.');
   return context as AutoCreateCanvas2D;
 }
@@ -564,6 +571,27 @@ class SeededRandom {
     }
     return weights.length - 1;
   }
+
+  weightedIndexFromCumulative(cumulative: Float64Array): number {
+    if (!cumulative.length) return 0;
+    const total = cumulative[cumulative.length - 1];
+    if (!(total > 0)) return this.integer(0, cumulative.length);
+    const pick = this.next() * total;
+    for (let index = 0; index < cumulative.length; index += 1) {
+      if (pick <= cumulative[index]) return index;
+    }
+    return cumulative.length - 1;
+  }
+}
+
+function cumulativeWeights(weights: readonly number[]): Float64Array {
+  const cumulative = new Float64Array(weights.length);
+  let total = 0;
+  for (let index = 0; index < weights.length; index += 1) {
+    total += Math.max(0, weights[index]);
+    cumulative[index] = total;
+  }
+  return cumulative;
 }
 
 function bboxIntersects(a: BBox, b: BBox): boolean {
@@ -583,6 +611,153 @@ function pixelOffset(width: number, x: number, y: number): number {
   return (y * width + x) * 4;
 }
 
+class BinaryMaskIndex {
+  readonly rowStart: Int32Array;
+  readonly rowEnd: Int32Array;
+  private readonly stride: number;
+  private readonly integral: Uint32Array;
+
+  constructor(
+    private readonly mask: Uint8Array,
+    width: number,
+    height: number
+  ) {
+    this.stride = width + 1;
+    this.integral = new Uint32Array((width + 1) * (height + 1));
+    this.rowStart = new Int32Array(height);
+    this.rowEnd = new Int32Array(height);
+
+    for (let y = 0; y < height; y += 1) {
+      let rowSum = 0;
+      let first = width;
+      let last = 0;
+      const previousRow = y * this.stride;
+      const currentRow = (y + 1) * this.stride;
+      for (let x = 0; x < width; x += 1) {
+        const inside = mask[y * width + x] ? 1 : 0;
+        rowSum += inside;
+        this.integral[currentRow + x + 1] = this.integral[previousRow + x + 1] + rowSum;
+        if (inside) {
+          if (first === width) first = x;
+          last = x + 1;
+        }
+      }
+      this.rowStart[y] = first;
+      this.rowEnd[y] = last;
+    }
+  }
+
+  count(bbox: BBox): number {
+    const [left, top, right, bottom] = bbox;
+    const a = top * this.stride + left;
+    const b = top * this.stride + right;
+    const c = bottom * this.stride + left;
+    const d = bottom * this.stride + right;
+    return this.integral[d] - this.integral[b] - this.integral[c] + this.integral[a];
+  }
+
+  rowVisibleRange(y: number, left: number, right: number): [number, number] | null {
+    const start = Math.max(left, this.rowStart[y]);
+    const end = Math.min(right, this.rowEnd[y]);
+    return end > start ? [start, end] : null;
+  }
+
+  isSet(pixel: number): boolean {
+    return this.mask[pixel] !== 0;
+  }
+}
+
+class TileSpatialIndex {
+  private readonly gridWidth: number;
+  private readonly gridHeight: number;
+  private readonly cells: number[][];
+  private readonly tileCells: number[][] = [];
+  private marks: Uint32Array = new Uint32Array(16);
+  private serial = 1;
+
+  constructor(
+    width: number,
+    height: number,
+    private readonly cellSize: number
+  ) {
+    this.gridWidth = Math.max(1, Math.ceil(width / cellSize));
+    this.gridHeight = Math.max(1, Math.ceil(height / cellSize));
+    this.cells = Array.from({ length: this.gridWidth * this.gridHeight }, () => []);
+  }
+
+  clear(): void {
+    for (const cell of this.cells) cell.length = 0;
+    this.tileCells.length = 0;
+    this.marks.fill(0);
+    this.serial = 1;
+  }
+
+  update(tileIndex: number, bbox: BBox | null): void {
+    this.remove(tileIndex);
+    if (!bbox) return;
+
+    const cells = this.coveredCells(bbox);
+    this.tileCells[tileIndex] = cells;
+    for (const cellIndex of cells) this.cells[cellIndex].push(tileIndex);
+    this.ensureMarkCapacity(tileIndex + 1);
+  }
+
+  remove(tileIndex: number): void {
+    const occupied = this.tileCells[tileIndex];
+    if (!occupied) return;
+    for (const cellIndex of occupied) {
+      const entries = this.cells[cellIndex];
+      const at = entries.indexOf(tileIndex);
+      if (at >= 0) entries.splice(at, 1);
+    }
+    this.tileCells[tileIndex] = [];
+  }
+
+  query(bbox: BBox): number[] {
+    if (this.serial === 0xffffffff) {
+      this.marks.fill(0);
+      this.serial = 1;
+    } else {
+      this.serial += 1;
+    }
+    const serial = this.serial;
+    const result: number[] = [];
+
+    for (const cellIndex of this.coveredCells(bbox)) {
+      for (const tileIndex of this.cells[cellIndex]) {
+        this.ensureMarkCapacity(tileIndex + 1);
+        if (this.marks[tileIndex] === serial) continue;
+        this.marks[tileIndex] = serial;
+        result.push(tileIndex);
+      }
+    }
+
+    result.sort((a, b) => a - b);
+    return result;
+  }
+
+  private ensureMarkCapacity(required: number): void {
+    if (required <= this.marks.length) return;
+    let nextLength = this.marks.length;
+    while (nextLength < required) nextLength *= 2;
+    const next = new Uint32Array(nextLength);
+    next.set(this.marks);
+    this.marks = next;
+  }
+
+  private coveredCells(bbox: BBox): number[] {
+    const left = clamp(Math.floor(bbox[0] / this.cellSize), 0, this.gridWidth - 1);
+    const top = clamp(Math.floor(bbox[1] / this.cellSize), 0, this.gridHeight - 1);
+    const right = clamp(Math.floor(Math.max(bbox[0], bbox[2] - 1) / this.cellSize), 0, this.gridWidth - 1);
+    const bottom = clamp(Math.floor(Math.max(bbox[1], bbox[3] - 1) / this.cellSize), 0, this.gridHeight - 1);
+    const result: number[] = [];
+    for (let cy = top; cy <= bottom; cy += 1) {
+      for (let cx = left; cx <= right; cx += 1) result.push(cy * this.gridWidth + cx);
+    }
+    return result;
+  }
+}
+
 function premultiply(data: Uint8ClampedArray): Float32Array {
   const out = new Float32Array(data.length);
   for (let index = 0; index < data.length; index += 4) {
@@ -596,8 +771,13 @@ function premultiply(data: Uint8ClampedArray): Float32Array {
   return out;
 }
 
-function premultToStraightImageData(premult: Float32Array, width: number, height: number): ImageData {
-  const out = new Uint8ClampedArray(premult.length);
+function premultToStraightImageData(
+  premult: Float32Array,
+  width: number,
+  height: number,
+  output?: Uint8ClampedArray
+): ImageData {
+  const out = output && output.length === premult.length ? output : new Uint8ClampedArray(premult.length);
   for (let index = 0; index < premult.length; index += 4) {
     const a = premult[index + 3];
     if (a > 1.0e-6) {
@@ -613,7 +793,7 @@ function premultToStraightImageData(premult: Float32Array, width: number, height
       out[index + 3] = 0;
     }
   }
-  return new ImageData(out, width, height);
+  return new ImageData(out as Uint8ClampedArray<ArrayBuffer>, width, height);
 }
 
 async function loadTargetImage(file: File, settings: AutoCreateTwroleSettings): Promise<TargetImageData> {
@@ -818,6 +998,9 @@ class ErrorField {
   readonly cellW: Float64Array;
   readonly cellColor: Float32Array;
   readonly cellMaskCount: Int32Array;
+  private cellPixels: Int32Array[] = [];
+  private maskedPixels = new Int32Array(0);
+  private totalSseValue = 0;
 
   constructor(
     private readonly canvas: Float32Array,
@@ -850,39 +1033,42 @@ class ErrorField {
   }
 
   private buildStaticCellColor(): void {
-    for (let cy = 0; cy < this.gh; cy += 1) {
-      for (let cx = 0; cx < this.gw; cx += 1) {
-        const [left, top, right, bottom] = this.cellBounds(cy, cx);
-        let count = 0;
-        let r = 0;
-        let g = 0;
-        let b = 0;
-        for (let y = top; y < bottom; y += 1) {
-          for (let x = left; x < right; x += 1) {
-            const pixel = y * this.width + x;
-            if (!this.mask[pixel]) continue;
-            const offset = pixel * 4;
-            r += this.targetStraight[offset];
-            g += this.targetStraight[offset + 1];
-            b += this.targetStraight[offset + 2];
-            count += 1;
-          }
-        }
-        const cell = this.cellIndex(cy, cx);
-        this.cellMaskCount[cell] = count;
-        if (count > 0) {
-          const base = cell * 3;
-          this.cellColor[base] = r / count;
-          this.cellColor[base + 1] = g / count;
-          this.cellColor[base + 2] = b / count;
-        }
+    const buckets: number[][] = Array.from({ length: this.gw * this.gh }, () => []);
+    const masked: number[] = [];
+    const colorSums = new Float64Array(this.gw * this.gh * 3);
+
+    for (let y = 0; y < this.height; y += 1) {
+      const cellRow = Math.floor(y / this.cell) * this.gw;
+      for (let x = 0; x < this.width; x += 1) {
+        const pixel = y * this.width + x;
+        if (!this.mask[pixel]) continue;
+        const cell = cellRow + Math.floor(x / this.cell);
+        const base = cell * 3;
+        const offset = pixel * 4;
+        colorSums[base] += this.targetStraight[offset];
+        colorSums[base + 1] += this.targetStraight[offset + 1];
+        colorSums[base + 2] += this.targetStraight[offset + 2];
+        this.cellMaskCount[cell] += 1;
+        buckets[cell].push(pixel);
+        masked.push(pixel);
       }
     }
+
+    for (let cell = 0; cell < this.cellMaskCount.length; cell += 1) {
+      const count = this.cellMaskCount[cell];
+      if (count > 0) {
+        const base = cell * 3;
+        this.cellColor[base] = colorSums[base] / count;
+        this.cellColor[base + 1] = colorSums[base + 1] / count;
+        this.cellColor[base + 2] = colorSums[base + 2] / count;
+      }
+    }
+
+    this.cellPixels = buckets.map((pixels) => Int32Array.from(pixels));
+    this.maskedPixels = Int32Array.from(masked);
   }
 
-  private pixelError(x: number, y: number): number {
-    const pixel = y * this.width + x;
-    if (!this.mask[pixel]) return 0;
+  private pixelError(pixel: number): number {
     const offset = pixel * 4;
     const dr = this.canvas[offset] - this.target[offset];
     const dg = this.canvas[offset + 1] - this.target[offset + 1];
@@ -892,17 +1078,19 @@ class ErrorField {
   }
 
   recomputeAll(): void {
+    this.errorMap.fill(0);
     this.cellW.fill(0);
-    for (let y = 0; y < this.height; y += 1) {
-      for (let x = 0; x < this.width; x += 1) {
-        const pixel = y * this.width + x;
-        const err = this.pixelError(x, y);
-        this.errorMap[pixel] = err;
-        const cx = Math.floor(x / this.cell);
-        const cy = Math.floor(y / this.cell);
-        this.cellW[this.cellIndex(cy, cx)] += err;
-      }
+    let total = 0;
+    for (const pixel of this.maskedPixels) {
+      const y = Math.floor(pixel / this.width);
+      const x = pixel - y * this.width;
+      const err = Math.fround(this.pixelError(pixel));
+      this.errorMap[pixel] = err;
+      const cell = this.cellIndex(Math.floor(y / this.cell), Math.floor(x / this.cell));
+      this.cellW[cell] += err;
+      total += err;
     }
+    this.totalSseValue = total;
   }
 
   updateBBox(bbox: BBox): void {
@@ -910,38 +1098,27 @@ class ErrorField {
     if (!clipped) return;
     const [left, top, right, bottom] = clipped;
     for (let y = top; y < bottom; y += 1) {
+      const cellRow = Math.floor(y / this.cell) * this.gw;
       for (let x = left; x < right; x += 1) {
         const pixel = y * this.width + x;
-        this.errorMap[pixel] = this.pixelError(x, y);
-      }
-    }
-    const cx0 = Math.max(0, Math.floor(left / this.cell));
-    const cx1 = Math.min(this.gw - 1, Math.floor((right - 1) / this.cell));
-    const cy0 = Math.max(0, Math.floor(top / this.cell));
-    const cy1 = Math.min(this.gh - 1, Math.floor((bottom - 1) / this.cell));
-    for (let cy = cy0; cy <= cy1; cy += 1) {
-      for (let cx = cx0; cx <= cx1; cx += 1) {
-        const [cl, ct, cr, cb] = this.cellBounds(cy, cx);
-        let sum = 0;
-        for (let y = ct; y < cb; y += 1) {
-          for (let x = cl; x < cr; x += 1) {
-            sum += this.errorMap[y * this.width + x];
-          }
-        }
-        this.cellW[this.cellIndex(cy, cx)] = sum;
+        if (!this.mask[pixel]) continue;
+        const previous = this.errorMap[pixel];
+        const next = Math.fround(this.pixelError(pixel));
+        const delta = next - previous;
+        if (delta === 0) continue;
+        this.errorMap[pixel] = next;
+        this.cellW[cellRow + Math.floor(x / this.cell)] += delta;
+        this.totalSseValue += delta;
       }
     }
   }
 
   get totalSse(): number {
-    let total = 0;
-    for (const value of this.cellW) total += value;
-    return total;
+    return this.totalSseValue;
   }
 
   chooseFocus(rng: SeededRandom): { x: number; y: number; color: Vec3; cell: [number, number] } {
-    let total = 0;
-    for (const value of this.cellW) total += Math.max(0, value);
+    const total = this.totalSseValue;
 
     if (!(total > 1.0e-9) || !Number.isFinite(total)) {
       return this.randomMaskedPixel(rng);
@@ -956,16 +1133,8 @@ class ErrorField {
     cellIndex = clamp(cellIndex, 0, this.cellW.length - 1);
     const cy = Math.floor(cellIndex / this.gw);
     const cx = cellIndex % this.gw;
-    const [left, top, right, bottom] = this.cellBounds(cy, cx);
-    const candidates: number[] = [];
-
-    for (let y = top; y < bottom; y += 1) {
-      for (let x = left; x < right; x += 1) {
-        const pixel = y * this.width + x;
-        if (this.mask[pixel]) candidates.push(pixel);
-      }
-    }
-
+    const candidates = this.cellPixels[cellIndex];
+    const [left, top] = this.cellBounds(cy, cx);
     const pixel = candidates.length ? candidates[rng.integer(0, candidates.length)] : top * this.width + left;
     const x = pixel % this.width;
     const y = Math.floor(pixel / this.width);
@@ -978,11 +1147,10 @@ class ErrorField {
   }
 
   private randomMaskedPixel(rng: SeededRandom): { x: number; y: number; color: Vec3; cell: [number, number] } {
-    for (let attempt = 0; attempt < 2000; attempt += 1) {
-      const x = rng.integer(0, this.width);
-      const y = rng.integer(0, this.height);
-      const pixel = y * this.width + x;
-      if (!this.mask[pixel]) continue;
+    if (this.maskedPixels.length) {
+      const pixel = this.maskedPixels[rng.integer(0, this.maskedPixels.length)];
+      const y = Math.floor(pixel / this.width);
+      const x = pixel - y * this.width;
       const cx = Math.min(this.gw - 1, Math.floor(x / this.cell));
       const cy = Math.min(this.gh - 1, Math.floor(y / this.cell));
       const offset = pixel * 4;
@@ -1083,24 +1251,19 @@ class ExperienceMemory {
 
 class VariantCache {
   private readonly cache = new Map<string, TransformedImage>();
+  private resizeCanvas: AutoCreateCanvas | null = null;
+  private rotateCanvas: AutoCreateCanvas | null = null;
 
   constructor(private readonly maxItems: number) {}
 
-  private quantize(value: number, step: number): number {
-    return Math.round(value / step);
-  }
-
-  private key(sourceId: number, sxInternal: number, syInternal: number, rDeg: number): string {
-    return [
-      sourceId,
-      this.quantize(sxInternal, 0.0025),
-      this.quantize(syInternal, 0.0025),
-      this.quantize(rDeg, 0.25)
-    ].join('|');
-  }
-
   get(source: SourceTile, sxInternal: number, syInternal: number, rDeg: number): TransformedImage {
-    const key = this.key(source.idx, sxInternal, syInternal, rDeg);
+    const newW = Math.max(1, Math.round(source.thumbW * Math.max(1.0e-6, Math.abs(sxInternal))));
+    const newH = Math.max(1, Math.round(source.thumbH * Math.max(1.0e-6, Math.abs(syInternal))));
+    const rotation = Number.isFinite(rDeg) && Math.abs(rDeg) > 1.0e-9 ? rDeg : 0;
+    // The old quantized key could map transforms with different raster sizes to
+    // the same entry. Key by the actual raster inputs instead: rounded size,
+    // flip flags, and exact rotation. Scales that render identically still share.
+    const key = [source.idx, newW, newH, sxInternal < 0 ? 1 : 0, syInternal < 0 ? 1 : 0, String(rotation)].join('|');
     const cached = this.cache.get(key);
     if (cached) {
       this.cache.delete(key);
@@ -1108,7 +1271,7 @@ class VariantCache {
       return cached;
     }
 
-    const transformed = transformSource(source, sxInternal, syInternal, rDeg);
+    const transformed = this.transform(source, newW, newH, sxInternal < 0, syInternal < 0, rotation);
     this.cache.set(key, transformed);
     while (this.cache.size > Math.max(16, this.maxItems)) {
       const first = this.cache.keys().next().value as string | undefined;
@@ -1117,38 +1280,69 @@ class VariantCache {
     }
     return transformed;
   }
-}
 
-function transformSource(source: SourceTile, sxInternal: number, syInternal: number, rDeg: number): TransformedImage {
-  const scaleX = Math.max(1.0e-6, Math.abs(sxInternal));
-  const scaleY = Math.max(1.0e-6, Math.abs(syInternal));
-  const newW = Math.max(1, Math.round(source.thumbW * scaleX));
-  const newH = Math.max(1, Math.round(source.thumbH * scaleY));
-  const resized = createCanvas(newW, newH);
-  const resizeContext = get2d(resized);
-  resizeContext.save();
-  resizeContext.translate(sxInternal < 0 ? newW : 0, syInternal < 0 ? newH : 0);
-  resizeContext.scale(sxInternal < 0 ? -1 : 1, syInternal < 0 ? -1 : 1);
-  resizeContext.drawImage(source.canvas as CanvasImageSource, 0, 0, source.thumbW, source.thumbH, 0, 0, newW, newH);
-  resizeContext.restore();
-
-  let finalCanvas = resized;
-  if (Math.abs(rDeg) > 1.0e-9) {
-    const rad = (rDeg * Math.PI) / 180;
-    const sin = Math.abs(Math.sin(rad));
-    const cos = Math.abs(Math.cos(rad));
-    const rotW = Math.max(1, Math.ceil(newW * cos + newH * sin));
-    const rotH = Math.max(1, Math.ceil(newW * sin + newH * cos));
-    finalCanvas = createCanvas(rotW, rotH);
-    const rotateContext = get2d(finalCanvas);
-    rotateContext.translate(rotW / 2, rotH / 2);
-    rotateContext.rotate(rad);
-    rotateContext.drawImage(resized as CanvasImageSource, -newW / 2, -newH / 2);
+  private prepareCanvas(canvas: AutoCreateCanvas | null, width: number, height: number): AutoCreateCanvas {
+    const prepared = canvas ?? createCanvas(width, height);
+    if (prepared.width !== width) prepared.width = width;
+    if (prepared.height !== height) prepared.height = height;
+    const context = get2d(prepared);
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, width, height);
+    return prepared;
   }
 
-  const context = get2d(finalCanvas);
-  const data = context.getImageData(0, 0, finalCanvas.width, finalCanvas.height).data;
-  return { width: finalCanvas.width, height: finalCanvas.height, data: new Float32Array(data) };
+  private transform(source: SourceTile, newW: number, newH: number, flipX: boolean, flipY: boolean, rDeg: number): TransformedImage {
+    this.resizeCanvas = this.prepareCanvas(this.resizeCanvas, newW, newH);
+    const resizeContext = get2d(this.resizeCanvas);
+    resizeContext.save();
+    resizeContext.translate(flipX ? newW : 0, flipY ? newH : 0);
+    resizeContext.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+    resizeContext.drawImage(source.canvas as CanvasImageSource, 0, 0, source.thumbW, source.thumbH, 0, 0, newW, newH);
+    resizeContext.restore();
+
+    let finalCanvas = this.resizeCanvas;
+    let finalContext = resizeContext;
+    if (rDeg !== 0) {
+      const rad = (rDeg * Math.PI) / 180;
+      const sin = Math.abs(Math.sin(rad));
+      const cos = Math.abs(Math.cos(rad));
+      const rotW = Math.max(1, Math.ceil(newW * cos + newH * sin));
+      const rotH = Math.max(1, Math.ceil(newW * sin + newH * cos));
+      this.rotateCanvas = this.prepareCanvas(this.rotateCanvas, rotW, rotH);
+      const rotateContext = get2d(this.rotateCanvas);
+      rotateContext.save();
+      rotateContext.translate(rotW / 2, rotH / 2);
+      rotateContext.rotate(rad);
+      rotateContext.drawImage(this.resizeCanvas as CanvasImageSource, -newW / 2, -newH / 2);
+      rotateContext.restore();
+      finalCanvas = this.rotateCanvas;
+      finalContext = rotateContext;
+    }
+
+    const width = finalCanvas.width;
+    const height = finalCanvas.height;
+    const data = finalContext.getImageData(0, 0, width, height).data;
+    const alphaRowStart = new Int32Array(height);
+    const alphaRowEnd = new Int32Array(height);
+    let alphaSum = 0;
+
+    for (let y = 0; y < height; y += 1) {
+      let start = width;
+      let end = 0;
+      let offset = y * width * 4 + 3;
+      for (let x = 0; x < width; x += 1, offset += 4) {
+        const alpha = data[offset];
+        alphaSum += alpha;
+        if (alpha <= 0) continue;
+        if (start === width) start = x;
+        end = x + 1;
+      }
+      alphaRowStart[y] = start;
+      alphaRowEnd[y] = end;
+    }
+
+    return { width, height, data, alphaRowStart, alphaRowEnd, alphaSum };
+  }
 }
 
 function targetCenterCoords(px: number, py: number, width: number, height: number): { x: number; y: number } {
@@ -1255,7 +1449,17 @@ function sourceChoiceScores(sources: readonly SourceTile[], targetColor: Vec3, m
   });
 }
 
-function chooseSourceIds(sources: readonly SourceTile[], targetColor: Vec3, memory: ExperienceMemory, rng: SeededRandom, settings: AutoCreateTwroleSettings, targetStd?: Vec3, topkOverride?: number, explorationOverride?: number): number[] {
+function chooseSourceIds(
+  sources: readonly SourceTile[],
+  targetColor: Vec3,
+  memory: ExperienceMemory,
+  rng: SeededRandom,
+  settings: AutoCreateTwroleSettings,
+  targetStd?: Vec3,
+  topkOverride?: number,
+  explorationOverride?: number,
+  scoresOverride?: readonly number[]
+): number[] {
   const n = sources.length;
   if (n <= 0) return [];
   const topk = clamp(Math.round(topkOverride ?? settings.colorTopk), 1, n);
@@ -1265,12 +1469,10 @@ function chooseSourceIds(sources: readonly SourceTile[], targetColor: Vec3, memo
     return rng.shuffle(Array.from({ length: n }, (_, index) => index)).slice(0, topk);
   }
 
-  const scores = sourceChoiceScores(sources, targetColor, memory, settings, targetStd);
-  return scores
-    .map((score, index) => ({ score, index }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topk)
-    .map((item) => item.index);
+  const scores = scoresOverride ?? sourceChoiceScores(sources, targetColor, memory, settings, targetStd);
+  const indices = Array.from({ length: n }, (_, index) => index);
+  indices.sort((a, b) => scores[b] - scores[a] || a - b);
+  return indices.slice(0, topk);
 }
 
 function autoMaxRenderedPx(width: number, height: number): number {
@@ -1375,8 +1577,17 @@ class ColorLearningCollage {
   private readonly errors: ErrorField;
   private readonly cache: VariantCache;
   private readonly memory: ExperienceMemory;
+  private readonly maskIndex: BinaryMaskIndex;
+  private readonly spatialIndex: TileSpatialIndex;
   private readonly tiles: TileRecord[] = [];
   private readonly globalDen: number;
+  private patchScratch = new Float32Array(0);
+  private activeTileCount = 0;
+  private previewCanvas: AutoCreateCanvas | null = null;
+  private previewPixels: Uint8ClampedArray | null = null;
+  private previewRevision = -1;
+  private previewUrl = '';
+  private canvasRevision = 0;
 
   accepted = 0;
   rejected = 0;
@@ -1398,6 +1609,8 @@ class ColorLearningCollage {
     this.globalDen = maskCount * (3 + ALPHA_MSE_WEIGHT);
     this.errors = new ErrorField(this.canvas, targetPremult, targetStraight, mask, width, height, settings.errorCellSize);
     this.cache = new VariantCache(settings.variantCacheItems);
+    this.maskIndex = new BinaryMaskIndex(mask, width, height);
+    this.spatialIndex = new TileSpatialIndex(width, height, Math.max(16, Math.min(64, Math.round(settings.maxTileSize))));
     const experienceName = settings.experienceJson || DEFAULT_MEMORY_NAME;
     this.memory = new ExperienceMemory(`${AUTO_CREATE_EXPERIENCE_STORAGE_PREFIX}${experienceName}`, sources, settings.resetExperience);
   }
@@ -1407,7 +1620,7 @@ class ColorLearningCollage {
   }
 
   activeCount(): number {
-    return this.tiles.reduce((sum, tile) => sum + (tile.active ? 1 : 0), 0);
+    return this.activeTileCount;
   }
 
   restoreFromSnapshot(snapshot: AutoCreateTwroleSnapshot): void {
@@ -1442,6 +1655,11 @@ class ColorLearningCollage {
     }
 
     this.tiles.splice(0, this.tiles.length, ...restored);
+    this.activeTileCount = restored.length;
+    this.spatialIndex.clear();
+    for (let index = 0; index < restored.length; index += 1) {
+      this.spatialIndex.update(index, restored[index].bbox);
+    }
     this.accepted = Math.max(snapshot.accepted, restored.length);
     this.rejected = Math.max(0, Math.round(snapshot.rejected));
     this.pruned = Math.max(0, Math.round(snapshot.pruned));
@@ -1452,6 +1670,7 @@ class ColorLearningCollage {
       this.alphaOverFull(tile.bbox, this.tileRgba(tile));
     }
     this.errors.recomputeAll();
+    this.markCanvasChanged();
   }
 
   createSnapshot(
@@ -1521,35 +1740,51 @@ class ColorLearningCollage {
   }
 
   async previewDataUrl(): Promise<string> {
-    const imageData = premultToStraightImageData(this.canvas, this.width, this.height);
-    const canvas = createCanvas(this.width, this.height);
-    get2d(canvas).putImageData(imageData, 0, 0);
-    return canvasToDataUrl(canvas);
+    if (this.previewRevision === this.canvasRevision && this.previewUrl) return this.previewUrl;
+    this.previewPixels ??= new Uint8ClampedArray(this.canvas.length);
+    this.previewCanvas ??= createCanvas(this.width, this.height);
+    const imageData = premultToStraightImageData(this.canvas, this.width, this.height, this.previewPixels);
+    get2d(this.previewCanvas, false).putImageData(imageData, 0, 0);
+    this.previewUrl = await canvasToDataUrl(this.previewCanvas);
+    this.previewRevision = this.canvasRevision;
+    return this.previewUrl;
+  }
+
+  private markCanvasChanged(): void {
+    this.canvasRevision += 1;
   }
 
   private evaluateCandidate(candidate: Candidate): Candidate | null {
     const [left, top, right, bottom] = candidate.bbox;
     if (left < 0 || top < 0 || right > this.width || bottom > this.height) return null;
     if (candidate.rgba.width !== right - left || candidate.rgba.height !== bottom - top) return null;
+    if (this.maskIndex.count(candidate.bbox) <= 0) return null;
 
     let beforeSse = 0;
     let afterSse = 0;
-    let alphaSum = 0;
     let outsideAlpha = 0;
-    let hasMask = false;
+    const rgba = candidate.rgba;
+    const alphaSum = rgba.alphaSum;
+    if (alphaSum <= 0) return null;
+    const outsideLimit = this.settings.maxOutsideAlphaRatio * alphaSum;
 
-    for (let y = top; y < bottom; y += 1) {
-      for (let x = left; x < right; x += 1) {
-        const srcOffset = pixelOffset(candidate.rgba.width, x - left, y - top);
-        const srcA = candidate.rgba.data[srcOffset + 3] / 255;
-        alphaSum += srcA;
+    for (let localY = 0; localY < rgba.height; localY += 1) {
+      const spanStart = rgba.alphaRowStart[localY];
+      const spanEnd = rgba.alphaRowEnd[localY];
+      if (spanEnd <= spanStart) continue;
+      const y = top + localY;
+      for (let localX = spanStart; localX < spanEnd; localX += 1) {
+        const srcOffset = pixelOffset(rgba.width, localX, localY);
+        const alphaByte = rgba.data[srcOffset + 3];
+        if (alphaByte <= 0) continue;
+        const x = left + localX;
         const pixel = y * this.width + x;
-        const insideMask = this.mask[pixel] !== 0;
-        if (!insideMask) {
-          outsideAlpha += srcA;
+        if (!this.maskIndex.isSet(pixel)) {
+          outsideAlpha += alphaByte;
+          if (outsideAlpha > outsideLimit) return null;
           continue;
         }
-        hasMask = true;
+        const srcA = alphaByte / 255;
         const offset = pixel * 4;
         const beforeR = this.canvas[offset];
         const beforeG = this.canvas[offset + 1];
@@ -1562,9 +1797,9 @@ class ColorLearningCollage {
         beforeSse += dr * dr + dg * dg + db * db + ALPHA_MSE_WEIGHT * da * da;
 
         const inv = 1 - srcA;
-        const afterR = candidate.rgba.data[srcOffset] * srcA + beforeR * inv;
-        const afterG = candidate.rgba.data[srcOffset + 1] * srcA + beforeG * inv;
-        const afterB = candidate.rgba.data[srcOffset + 2] * srcA + beforeB * inv;
+        const afterR = rgba.data[srcOffset] * srcA + beforeR * inv;
+        const afterG = rgba.data[srcOffset + 1] * srcA + beforeG * inv;
+        const afterB = rgba.data[srcOffset + 2] * srcA + beforeB * inv;
         const beforeAf = beforeA / 255;
         const afterA = (srcA + beforeAf * inv) * 255;
         const ar = afterR - this.targetPremult[offset];
@@ -1575,8 +1810,7 @@ class ColorLearningCollage {
       }
     }
 
-    if (!hasMask || alphaSum <= 1.0e-6) return null;
-    if (outsideAlpha / Math.max(1.0e-9, alphaSum) > this.settings.maxOutsideAlphaRatio) return null;
+    if (outsideAlpha / alphaSum > this.settings.maxOutsideAlphaRatio) return null;
 
     candidate.sseBefore = beforeSse;
     candidate.sseAfter = afterSse;
@@ -1652,21 +1886,22 @@ class ColorLearningCollage {
     };
   }
 
-  private generateAddCandidates(progress: number): Candidate[] {
+  private generateBestAddCandidate(progress: number): Candidate | null {
     const focus = this.errors.chooseFocus(this.rng);
     const target = this.focusGradientColor(focus.x, focus.y);
-    const sourceIds = chooseSourceIds(this.sources, target.color, this.memory, this.rng, this.settings, target.std);
-    if (!sourceIds.length) return [];
-
     const allScores = sourceChoiceScores(this.sources, target.color, this.memory, this.settings, target.std);
+    const sourceIds = chooseSourceIds(this.sources, target.color, this.memory, this.rng, this.settings, target.std, undefined, undefined, allScores);
+    if (!sourceIds.length) return null;
+
     const poolScores = sourceIds.map((sourceId) => Math.max(1.0e-12, allScores[sourceId]));
-    const candidates: Candidate[] = [];
+    const cumulativePoolScores = cumulativeWeights(poolScores);
+    let best: Candidate | null = null;
     const batch = Math.max(1, Math.round(this.settings.candidateBatch));
     const jitter = Math.max(1, this.settings.errorCellSize * 0.35);
     const isGradient = target.complexity >= this.settings.gradientComplexityThreshold;
 
     for (let i = 0; i < batch; i += 1) {
-      const sourceId = sourceIds[this.rng.weightedIndex(poolScores)];
+      const sourceId = sourceIds[this.rng.weightedIndexFromCumulative(cumulativePoolScores)];
       let desiredPx: number | undefined;
       let maxRenderedPx = this.settings.maxRenderedPx;
       if (isGradient) {
@@ -1682,19 +1917,32 @@ class ColorLearningCollage {
       });
       if (!candidate) continue;
       const evaluated = this.evaluateCandidate(candidate);
-      if (evaluated) candidates.push(evaluated);
+      if (evaluated && (!best || evaluated.score > best.score)) best = evaluated;
     }
-    return candidates;
+    return best;
   }
 
   private alphaOverFull(bbox: BBox, rgba: TransformedImage): void {
-    const [left, top, right, bottom] = bbox;
-    for (let y = top; y < bottom; y += 1) {
-      for (let x = left; x < right; x += 1) {
-        const srcOffset = pixelOffset(rgba.width, x - left, y - top);
-        const srcA = rgba.data[srcOffset + 3] / 255;
-        if (srcA <= 0) continue;
+    const [left, top] = bbox;
+    for (let localY = 0; localY < rgba.height; localY += 1) {
+      const start = rgba.alphaRowStart[localY];
+      const end = rgba.alphaRowEnd[localY];
+      if (end <= start) continue;
+      const y = top + localY;
+      for (let localX = start; localX < end; localX += 1) {
+        const srcOffset = pixelOffset(rgba.width, localX, localY);
+        const alphaByte = rgba.data[srcOffset + 3];
+        if (alphaByte <= 0) continue;
+        const x = left + localX;
         const offset = pixelOffset(this.width, x, y);
+        if (alphaByte === 255) {
+          this.canvas[offset] = rgba.data[srcOffset];
+          this.canvas[offset + 1] = rgba.data[srcOffset + 1];
+          this.canvas[offset + 2] = rgba.data[srcOffset + 2];
+          this.canvas[offset + 3] = 255;
+          continue;
+        }
+        const srcA = alphaByte * INV_255;
         const inv = 1 - srcA;
         this.canvas[offset] = rgba.data[srcOffset] * srcA + this.canvas[offset] * inv;
         this.canvas[offset + 1] = rgba.data[srcOffset + 1] * srcA + this.canvas[offset + 1] * inv;
@@ -1720,29 +1968,32 @@ class ColorLearningCollage {
     };
   }
 
-  private acceptCandidate(candidate: Candidate): void {
+  private acceptCandidate(candidate: Candidate, memoryColor?: Vec3): void {
     this.alphaOverFull(candidate.bbox, candidate.rgba);
     this.errors.updateBBox(candidate.bbox);
+    const tileIndex = this.tiles.length;
     this.tiles.push(this.recordFromCandidate(candidate));
+    this.spatialIndex.update(tileIndex, candidate.bbox);
+    this.activeTileCount += 1;
+    this.markCanvasChanged();
     this.accepted += 1;
     const source = this.sources[candidate.sourceId];
-    const color = this.focusGradientColor(candidate.centerX, candidate.centerY).color;
+    const color = memoryColor ?? this.focusGradientColor(candidate.centerX, candidate.centerY).color;
     this.memory.noteTrial(source.code, color, true, candidate.globalGainMse);
   }
 
   tryAdd(step: number, totalSteps: number): boolean {
     if (this.settings.tileBudget > 0 && this.activeCount() >= this.settings.tileBudget) return false;
     const progress = step / Math.max(1, totalSteps);
-    const candidates = this.generateAddCandidates(progress);
-    if (!candidates.length) {
+    const best = this.generateBestAddCandidate(progress);
+    if (!best) {
       this.rejected += 1;
       return false;
     }
-    const best = candidates.reduce((current, candidate) => (candidate.score > current.score ? candidate : current), candidates[0]);
     const targetColor = this.focusGradientColor(best.centerX, best.centerY).color;
     const source = this.sources[best.sourceId];
     if (best.score > 0) {
-      this.acceptCandidate(best);
+      this.acceptCandidate(best, targetColor);
       return true;
     }
     this.memory.noteTrial(source.code, targetColor, false, best.globalGainMse);
@@ -1770,11 +2021,23 @@ class ColorLearningCollage {
     height: number
   ): void {
     for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        const srcOffset = pixelOffset(src.width, srcX + x, srcY + y);
-        const srcA = src.data[srcOffset + 3] / 255;
-        if (srcA <= 0) continue;
-        const dstOffset = pixelOffset(dstWidth, dstX + x, dstY + y);
+      const sourceY = srcY + y;
+      const start = Math.max(srcX, src.alphaRowStart[sourceY]);
+      const end = Math.min(srcX + width, src.alphaRowEnd[sourceY]);
+      if (end <= start) continue;
+      for (let sourceX = start; sourceX < end; sourceX += 1) {
+        const srcOffset = pixelOffset(src.width, sourceX, sourceY);
+        const alphaByte = src.data[srcOffset + 3];
+        if (alphaByte <= 0) continue;
+        const dstOffset = pixelOffset(dstWidth, dstX + sourceX - srcX, dstY + y);
+        if (alphaByte === 255) {
+          dst[dstOffset] = src.data[srcOffset];
+          dst[dstOffset + 1] = src.data[srcOffset + 1];
+          dst[dstOffset + 2] = src.data[srcOffset + 2];
+          dst[dstOffset + 3] = 255;
+          continue;
+        }
+        const srcA = alphaByte * INV_255;
         const inv = 1 - srcA;
         dst[dstOffset] = src.data[srcOffset] * srcA + dst[dstOffset] * inv;
         dst[dstOffset + 1] = src.data[srcOffset + 1] * srcA + dst[dstOffset + 1] * inv;
@@ -1784,19 +2047,42 @@ class ColorLearningCollage {
     }
   }
 
+  private acquirePatchBuffer(length: number): Float32Array {
+    if (this.patchScratch.length < length) {
+      let capacity = Math.max(16, this.patchScratch.length || 16);
+      while (capacity < length) capacity *= 2;
+      this.patchScratch = new Float32Array(capacity);
+    }
+    const patch = this.patchScratch.length === length ? this.patchScratch : this.patchScratch.subarray(0, length);
+    patch.fill(0);
+    return patch;
+  }
+
   private renderPatchFromTiles(bbox: BBox, excludeIndex?: number, replaceIndex?: number, replacement?: Candidate): Float32Array {
     const [left, top, right, bottom] = bbox;
     const patchWidth = right - left;
-    const out = new Float32Array(patchWidth * (bottom - top) * 4);
+    const out = this.acquirePatchBuffer(patchWidth * (bottom - top) * 4);
+    const tileIndices = this.spatialIndex.query(bbox);
+    if (
+      replaceIndex != null &&
+      replacement &&
+      bboxIntersects(replacement.bbox, bbox) &&
+      !tileIndices.includes(replaceIndex)
+    ) {
+      tileIndices.push(replaceIndex);
+      tileIndices.sort((a, b) => a - b);
+    }
 
-    for (let index = 0; index < this.tiles.length; index += 1) {
+    for (const index of tileIndices) {
       const tile = this.tiles[index];
-      if (!tile.active) continue;
+      if (!tile?.active) continue;
       if (excludeIndex != null && index === excludeIndex) continue;
 
-      const tileBox = replaceIndex != null && index === replaceIndex && replacement ? replacement.bbox : tile.bbox;
-      const rgba = replaceIndex != null && index === replaceIndex && replacement ? replacement.rgba : this.tileRgba(tile);
+      const useReplacement = replaceIndex != null && index === replaceIndex && replacement != null;
+      const tileBox = useReplacement ? replacement.bbox : tile.bbox;
       if (!bboxIntersects(tileBox, bbox)) continue;
+      // Do not touch the variant cache until the cheap bbox rejection passed.
+      const rgba = useReplacement ? replacement.rgba : this.tileRgba(tile);
 
       const il = Math.max(left, tileBox[0]);
       const it = Math.max(top, tileBox[1]);
@@ -1823,9 +2109,11 @@ class ColorLearningCollage {
     const [left, top, right, bottom] = bbox;
     let sse = 0;
     for (let y = top; y < bottom; y += 1) {
-      for (let x = left; x < right; x += 1) {
+      const range = this.maskIndex.rowVisibleRange(y, left, right);
+      if (!range) continue;
+      for (let x = range[0]; x < range[1]; x += 1) {
         const pixel = y * this.width + x;
-        if (!this.mask[pixel]) continue;
+        if (!this.maskIndex.isSet(pixel)) continue;
         const offset = pixel * 4;
         const dr = this.canvas[offset] - this.targetPremult[offset];
         const dg = this.canvas[offset + 1] - this.targetPremult[offset + 1];
@@ -1842,9 +2130,11 @@ class ColorLearningCollage {
     const patchWidth = right - left;
     let sse = 0;
     for (let y = top; y < bottom; y += 1) {
-      for (let x = left; x < right; x += 1) {
+      const range = this.maskIndex.rowVisibleRange(y, left, right);
+      if (!range) continue;
+      for (let x = range[0]; x < range[1]; x += 1) {
         const pixel = y * this.width + x;
-        if (!this.mask[pixel]) continue;
+        if (!this.maskIndex.isSet(pixel)) continue;
         const patchOffset = pixelOffset(patchWidth, x - left, y - top);
         const targetOffset = pixel * 4;
         const dr = patch[patchOffset] - this.targetPremult[targetOffset];
@@ -1861,14 +2151,9 @@ class ColorLearningCollage {
     const [left, top, right, bottom] = bbox;
     const patchWidth = right - left;
     for (let y = top; y < bottom; y += 1) {
-      for (let x = left; x < right; x += 1) {
-        const patchOffset = pixelOffset(patchWidth, x - left, y - top);
-        const canvasOffset = pixelOffset(this.width, x, y);
-        this.canvas[canvasOffset] = patch[patchOffset];
-        this.canvas[canvasOffset + 1] = patch[patchOffset + 1];
-        this.canvas[canvasOffset + 2] = patch[patchOffset + 2];
-        this.canvas[canvasOffset + 3] = patch[patchOffset + 3];
-      }
+      const patchOffset = pixelOffset(patchWidth, 0, y - top);
+      const canvasOffset = pixelOffset(this.width, left, y);
+      this.canvas.set(patch.subarray(patchOffset, patchOffset + patchWidth * 4), canvasOffset);
     }
   }
 
@@ -1884,6 +2169,8 @@ class ColorLearningCollage {
       const clipped = bboxClip(tile.bbox, this.width, this.height);
       if (!clipped) {
         tile.active = false;
+        this.spatialIndex.remove(index);
+        this.activeTileCount = Math.max(0, this.activeTileCount - 1);
         this.pruned += 1;
         return true;
       }
@@ -1894,7 +2181,10 @@ class ColorLearningCollage {
       if (deltaGlobal <= this.settings.tilePenaltyMse * this.settings.prunePenaltyFactor) {
         this.copyPatchToCanvas(afterPatch, clipped);
         tile.active = false;
+        this.spatialIndex.remove(index);
+        this.activeTileCount = Math.max(0, this.activeTileCount - 1);
         this.errors.updateBBox(clipped);
+        this.markCanvasChanged();
         this.pruned += 1;
         return true;
       }
@@ -1920,6 +2210,7 @@ class ColorLearningCollage {
     if (!clipped) return false;
 
     const target = this.focusGradientColor(old.centerX, old.centerY);
+    const allScores = sourceChoiceScores(this.sources, target.color, this.memory, this.settings, target.std);
     const sourceIds = chooseSourceIds(
       this.sources,
       target.color,
@@ -1928,19 +2219,20 @@ class ColorLearningCollage {
       this.settings,
       target.std,
       Math.max(4, Math.floor(this.settings.colorTopk / 2)),
-      Math.max(this.settings.exploration, 0.1)
+      Math.max(this.settings.exploration, 0.1),
+      allScores
     );
     if (!sourceIds.length) return false;
 
-    const allScores = sourceChoiceScores(this.sources, target.color, this.memory, this.settings, target.std);
     const poolScores = sourceIds.map((sourceId) => Math.max(1.0e-12, allScores[sourceId]));
+    const cumulativePoolScores = cumulativeWeights(poolScores);
     const desiredPx = Math.max(4, old.bbox[2] - old.bbox[0], old.bbox[3] - old.bbox[1]);
     const progress = step / Math.max(1, totalSteps);
     let best: Candidate | null = null;
     let bestAfterSse = Number.POSITIVE_INFINITY;
 
     for (let i = 0; i < Math.max(1, Math.round(this.settings.replaceCandidateBatch)); i += 1) {
-      const sourceId = sourceIds[this.rng.weightedIndex(poolScores)];
+      const sourceId = sourceIds[this.rng.weightedIndexFromCumulative(cumulativePoolScores)];
       const candidate = proposeCandidate(this.sources, sourceId, old.centerX, old.centerY, this.width, this.height, progress, this.rng, this.cache, this.settings, {
         desiredPx,
         maxRenderedPx: this.settings.maxRenderedPx,
@@ -1982,7 +2274,9 @@ class ColorLearningCollage {
     this.copyPatchToCanvas(afterPatch, union);
     this.tiles[tileIndex] = this.recordFromCandidate(best);
     this.tiles[tileIndex].gainMse = best.globalGainMse;
+    this.spatialIndex.update(tileIndex, best.bbox);
     this.errors.updateBBox(union);
+    this.markCanvasChanged();
     this.replaced += 1;
     this.memory.noteTrial(this.sources[best.sourceId].code, target.color, true, best.globalGainMse);
     return true;
