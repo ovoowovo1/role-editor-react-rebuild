@@ -57,8 +57,11 @@ const checkpoint: AutoCreateTwroleCheckpoint = {
     sourceHeight: 16,
     sourceCount: 1,
     sourceSignature: 'asset_1:deco_code',
+    settingsSignature: 'test-settings',
+    experienceState: '{"version":1,"source_stats":{},"color_stats":{}}',
     step: 1,
     totalSteps: 10,
+    finalPruneStep: 0,
     seed: 123,
     rngState: 456,
     rngSpareNormal: null,
@@ -75,6 +78,43 @@ const checkpoint: AutoCreateTwroleCheckpoint = {
 describe('autoCreateTwrole worker client', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('rejects locally when the signal is already aborted', async () => {
+    const postMessage = vi.fn();
+    const terminate = vi.fn();
+
+    class FakeWorker {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+
+      constructor(_url: URL, _options: WorkerOptions) {}
+
+      postMessage(message: unknown): void {
+        postMessage(message);
+      }
+
+      terminate(): void {
+        terminate();
+      }
+    }
+
+    vi.stubGlobal('Worker', FakeWorker);
+    vi.stubGlobal('OffscreenCanvas', class {});
+    vi.stubGlobal('createImageBitmap', vi.fn());
+    const controller = new AbortController();
+    controller.abort();
+
+    const run = runAutoCreateTwroleInWorker({
+      targetFile: {} as File,
+      decoOptions: [],
+      settings: { tiles: 10 },
+      signal: controller.signal
+    });
+
+    await expect(run).rejects.toMatchObject({ name: 'AbortError' });
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(terminate).toHaveBeenCalledOnce();
   });
 
   it('preserves stopped result and checkpoint from the worker', async () => {
@@ -123,6 +163,46 @@ describe('autoCreateTwrole worker client', () => {
       expect(error.checkpoint).toBe(checkpoint);
       return true;
     });
+    expect(onCheckpoint).toHaveBeenCalledWith(checkpoint);
+  });
+
+  it('does not publish the same terminal checkpoint twice', async () => {
+    class FakeWorker {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+
+      constructor(_url: URL, _options: WorkerOptions) {}
+
+      postMessage(message: { type: string; id: string }): void {
+        if (message.type !== 'abort') return;
+        queueMicrotask(() => {
+          this.onmessage?.({ data: { type: 'checkpoint', id: message.id, checkpoint } } as MessageEvent);
+          this.onmessage?.({
+            data: { type: 'stopped', id: message.id, result, checkpoint }
+          } as MessageEvent);
+        });
+      }
+
+      terminate(): void {}
+    }
+
+    vi.stubGlobal('Worker', FakeWorker);
+    vi.stubGlobal('OffscreenCanvas', class {});
+    vi.stubGlobal('createImageBitmap', vi.fn());
+    const controller = new AbortController();
+    const onCheckpoint = vi.fn();
+
+    const run = runAutoCreateTwroleInWorker({
+      targetFile: {} as File,
+      decoOptions: [],
+      settings: { tiles: 10 },
+      signal: controller.signal,
+      onCheckpoint
+    });
+    controller.abort();
+
+    await expect(run).rejects.toSatisfy((error: unknown) => isAutoCreateTwroleStoppedError(error));
+    expect(onCheckpoint).toHaveBeenCalledTimes(1);
     expect(onCheckpoint).toHaveBeenCalledWith(checkpoint);
   });
 });

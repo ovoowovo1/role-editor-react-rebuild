@@ -1,6 +1,9 @@
 import type { PartOption } from '../../types/role';
+import type { AutoCreateTwroleSettings } from '../../lib/conversion/auto-create-twrole/contracts';
 
 const numberFormat = new Intl.NumberFormat();
+
+export const AUTO_CREATE_PROCESS_PREVIEW_EXPORT_EVERY = 1000;
 
 export interface SourceTitleItem {
   title: string;
@@ -17,6 +20,22 @@ export function isImageFile(file: Pick<File, 'type' | 'name'>): boolean {
   return /\.(png|jpe?g|webp|bmp)$/i.test(file.name);
 }
 
+export function isAutoCreateEmptyTargetError(error: unknown): boolean {
+  return Boolean(
+    error
+      && typeof error === 'object'
+      && (error as { name?: unknown }).name === 'AutoCreateEmptyTargetError'
+  );
+}
+
+export function isAutoCreateNoPlacementAreaError(error: unknown): boolean {
+  return Boolean(
+    error
+      && typeof error === 'object'
+      && (error as { name?: unknown }).name === 'AutoCreateNoPlacementAreaError'
+  );
+}
+
 export function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -31,6 +50,23 @@ export function downloadBlob(blob: Blob, fileName: string): void {
 export function toSafeInteger(value: string, fallback: number): number {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function withAutoCreateLogEvery(
+  settings: AutoCreateTwroleSettings,
+  logEvery: number
+): AutoCreateTwroleSettings {
+  return { ...settings, logEvery };
+}
+
+export function withAutoCreateProcessPreview(
+  settings: AutoCreateTwroleSettings,
+  enabled: boolean
+): AutoCreateTwroleSettings {
+  return {
+    ...settings,
+    exportEvery: enabled ? AUTO_CREATE_PROCESS_PREVIEW_EXPORT_EVERY : 0
+  };
 }
 
 export function optionTitle(option: PartOption): string {

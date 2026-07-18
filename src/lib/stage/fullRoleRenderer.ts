@@ -1,24 +1,21 @@
-import { Application, Assets, Container, Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
-import type { BodyPartTab, DecorationLayer, PartOption, RoleDocument } from '../../types/role';
+import { Application, Assets, Container, Graphics, Sprite } from 'pixi.js';
+import type { BodyPartTab, PartOption, RoleDocument } from '../../types/role';
 import { ACTOR_BODY_SCALE } from '../runtime/actorClipAdapter';
 import { ActorClip } from '../runtime/actorClip';
-import { createActorGafClip, createGafClip, type GafMovieClip } from '../runtime/gafMovieClip';
-import { applyGafAtlasToSprite } from '../runtime/gafAtlasSprite';
+import { createActorGafClip, type GafMovieClip } from '../runtime/gafMovieClip';
 import { actorPartRuntime, getPartFrame, isRuntimeEmptyFrame, sanitizePartScale } from '../runtime/twlibPartRuntime';
-import { isMissingDecoAssetId } from '../serialization/roleSerializationLegacy';
 import { normalizeImportedRole } from '../serialization/roleSerializationImport';
 import { collectAtlasTextureUrlsForRole, partitionAtlasTextureUrls } from '../runtime/atlasTextureAvailability';
-import { clampedHeadLayerIndex, displayTransformPatchForDecoration, displayTransformPatchForHeadLayer } from './characterStageHelpers';
-import { getBodyPartOption, optionById } from '../../mock/options';
 import {
-  actorAtlasFrames,
-  decorationAtlasFrames,
-  gafSources
-} from '../../mock/gafManifest';
-import { actorRuntimeManifest, decorationRuntimeManifest } from '../runtime/gafRuntimeManifest';
+  clampedHeadLayerIndex,
+  displayTransformPatchForHeadLayer,
+  type DisplayTransformPatch
+} from './characterStageHelpers';
+import { createDecorationVisual } from './decorationVisual';
+import { getBodyPartOption } from '../../mock/options';
+import { actorAtlasFrames, gafSources } from '../../mock/gafManifest';
+import { actorRuntimeManifest } from '../runtime/gafRuntimeManifest';
 import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../runtime/actorBodyAnimation';
-
-const ALPHA_MASK_DECO_CODES: Set<string> = new Set();
 
 export type RenderBackground = 'transparent' | string;
 export type RenderPart = BodyPartTab;
@@ -116,52 +113,6 @@ function parseBackground(background: RenderBackground): BackgroundSpec {
   return { color: 0x000000, alpha: 0 };
 }
 
-function makeOptionSprite(option: PartOption | undefined, failedTextures: Set<string>): Sprite | null {
-  if (!option?.atlas) {
-    const fallback = option?.icon ?? optionById[Object.keys(optionById)[0]]?.icon;
-    return fallback ? Sprite.from(fallback) : null;
-  }
-  if (failedTextures.has(option.atlas.texture)) {
-    return null;
-  }
-  const atlasTexture = Texture.from(option.atlas.texture);
-  const texture = new Texture(
-    atlasTexture.baseTexture,
-    new Rectangle(option.atlas.x, option.atlas.y, option.atlas.width, option.atlas.height)
-  );
-  return new Sprite(texture);
-}
-
-function makeMissingDecoGraphic(size = 28): Graphics {
-  const half = size / 2;
-  const graphic = new Graphics();
-  graphic.beginFill(0xff66aa, 0.18);
-  graphic.lineStyle({ width: 1.5, color: 0xff66aa, alpha: 0.9 });
-  graphic.drawRect(-half, -half, size, size);
-  graphic.endFill();
-  graphic.lineStyle({ width: 1, color: 0xff66aa, alpha: 0.9 });
-  graphic.moveTo(-half, -half);
-  graphic.lineTo(half, half);
-  graphic.moveTo(half, -half);
-  graphic.lineTo(-half, half);
-  return graphic;
-}
-
-function applySpriteRegistration(
-  sprite: Sprite,
-  option: PartOption | undefined,
-  fallbackSize: number,
-  failedTextures: Set<string>
-) {
-  if (option?.atlas && !failedTextures.has(option.atlas.texture)) {
-    applyGafAtlasToSprite(sprite, option.atlas);
-    return;
-  }
-  sprite.anchor.set(0.5);
-  sprite.width = fallbackSize;
-  sprite.height = fallbackSize;
-}
-
 function getRolePartFrame(role: RoleDocument, category: BodyPartTab, option: PartOption | undefined): number {
   return role.partFrames?.[category] ?? getPartFrame(option) ?? actorPartRuntime[category].defaultFrame;
 }
@@ -170,7 +121,7 @@ function getRolePartScale(role: RoleDocument, category: BodyPartTab): number {
   return sanitizePartScale(role.partScales?.[category], 1);
 }
 
-function applyDisplayTransform(wrapper: Container, patch: ReturnType<typeof displayTransformPatchForDecoration>): void {
+function applyDisplayTransform(wrapper: Container, patch: DisplayTransformPatch): void {
   wrapper.position.set(patch.x, patch.y);
   wrapper.rotation = patch.rotationRadians;
   wrapper.scale.set(patch.scaleX, patch.scaleY);
@@ -209,38 +160,6 @@ function prepareDisguiseRoot(
   headLayerClip.visible = headLayerClip.visible && !debug.hideHeadLayer && !debug.hideParts.includes('head');
 
   return { disguiseRoot, headLayerClip };
-}
-
-function createDecorationVisual(deco: DecorationLayer, failedTextures: Set<string>): Container | null {
-  const option = optionById[deco.assetId];
-  const missing = !option || isMissingDecoAssetId(deco.assetId);
-  const wrapper = new Container();
-  const patch = displayTransformPatchForDecoration(deco);
-  applyDisplayTransform(wrapper, patch);
-  wrapper.eventMode = 'none';
-
-  if (missing) {
-    wrapper.addChild(makeMissingDecoGraphic(28));
-  } else if (decorationRuntimeManifest) {
-    const linkage = option.code || deco.code;
-    const fallback = option.atlas ? [option.atlas] : decorationAtlasFrames[linkage] ? [decorationAtlasFrames[linkage]] : [];
-    const clip = createGafClip(
-      failedTextures,
-      linkage,
-      decorationRuntimeManifest,
-      gafSources.decorationsTexture,
-      fallback,
-      { alphaMask: ALPHA_MASK_DECO_CODES.has(linkage), timelineScale: decorationRuntimeManifest.timelineScale }
-    );
-    wrapper.addChild(clip);
-  } else {
-    const sprite = makeOptionSprite(option, failedTextures);
-    if (!sprite) return null;
-    applySpriteRegistration(sprite, option, 64, failedTextures);
-    wrapper.addChild(sprite);
-  }
-
-  return wrapper;
 }
 
 function buildActorClipForRole(

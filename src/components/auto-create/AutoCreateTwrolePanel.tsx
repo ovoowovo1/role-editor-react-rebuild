@@ -2,14 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { t } from '../../i18n';
 import type { DecorationLayer, PartOption, RoleDocument } from '../../types/role';
 import {
-  createAutoCreateTwroleExportBlob,
   DEFAULT_AUTO_CREATE_TWROLE_SETTINGS,
   isAutoCreateTwroleStoppedError,
   type AutoCreateTwroleCheckpoint,
   type AutoCreateTwroleProgress,
   type AutoCreateTwroleResult,
   type AutoCreateTwroleSettings
-} from '../../lib/conversion/autoCreateTwrole';
+} from '../../lib/conversion/auto-create-twrole/contracts';
 import { canRunAutoCreateTwroleWorker, runAutoCreateTwroleInWorker } from '../../lib/conversion/autoCreateTwroleWorkerClient';
 import { settingsForScope, type InsertDraftSettings } from '../../lib/editor/editorInsertSettings';
 import { insertDecorationBatchIntoRole } from '../../lib/editor/editorImportMerge';
@@ -29,11 +28,21 @@ import {
   buildSourceTitleItems,
   downloadBlob,
   formatNumber,
+  isAutoCreateEmptyTargetError,
+  isAutoCreateNoPlacementAreaError,
   isImageFile,
   optionTitle,
   sortTitles,
-  toSafeInteger
+  toSafeInteger,
+  withAutoCreateLogEvery,
+  withAutoCreateProcessPreview
 } from './autoCreatePanelUtils';
+import {
+  AUTO_CREATE_CANONICAL_PREVIEW_PERFORMANCE,
+  renderAutoCreateWorkspacePreview,
+  shouldRenderAutoCreateWorkspacePreview,
+  WorkspacePreviewRequestGate
+} from './autoCreateWorkspacePreview';
 
 export interface AutoCreateTwrolePanelProps {
   decoOptions: PartOption[];
@@ -57,10 +66,18 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
   const [stopping, setStopping] = useState(false);
   const [inserted, setInserted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [workspacePreviewUrl, setWorkspacePreviewUrl] = useState<string | null>(null);
+  const [workspacePreviewWarning, setWorkspacePreviewWarning] = useState<string | null>(null);
   const workerAvailable = useMemo(() => canRunAutoCreateTwroleWorker(), []);
   const [sourceTitleSearch, setSourceTitleSearch] = useState('');
   const [excludedSourceTitles, setExcludedSourceTitles] = useState<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+  const roleRef = useRef(role);
+  const onStatusRef = useRef(onStatus);
+  const workspacePreviewGateRef = useRef<WorkspacePreviewRequestGate | null>(null);
+  roleRef.current = role;
+  onStatusRef.current = onStatus;
+  workspacePreviewGateRef.current ??= new WorkspacePreviewRequestGate();
 
   useEffect(() => {
     return () => {
@@ -68,6 +85,55 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
       if (targetPreviewUrl) URL.revokeObjectURL(targetPreviewUrl);
     };
   }, [targetPreviewUrl]);
+
+  useEffect(() => {
+    const gate = workspacePreviewGateRef.current!;
+    const requestRevision = gate.begin();
+    setWorkspacePreviewUrl(null);
+    setWorkspacePreviewWarning(null);
+    if (!shouldRenderAutoCreateWorkspacePreview(result, running)) {
+      return () => {
+        if (gate.isCurrent(requestRevision)) gate.invalidate();
+      };
+    }
+
+    const startMark = `${AUTO_CREATE_CANONICAL_PREVIEW_PERFORMANCE.startPrefix}${requestRevision}`;
+    const endMark = `${AUTO_CREATE_CANONICAL_PREVIEW_PERFORMANCE.endPrefix}${requestRevision}`;
+    const previewPerformance = globalThis.performance;
+    const canMeasurePreview = typeof previewPerformance?.mark === 'function'
+      && typeof previewPerformance?.measure === 'function';
+    if (canMeasurePreview) previewPerformance.mark(startMark);
+
+    void renderAutoCreateWorkspacePreview({ role: roleRef.current, result })
+      .then((preview) => {
+        if (!gate.isCurrent(requestRevision)) return;
+        setWorkspacePreviewUrl(preview.dataUrl);
+      })
+      .catch((previewError: unknown) => {
+        if (!gate.isCurrent(requestRevision)) return;
+        const detail = previewError instanceof Error ? previewError.message : String(previewError);
+        const message = t('autoCreate.warning.previewRenderFailed', { message: detail });
+        // Worker pixels are only a loading placeholder. Once the canonical
+        // Pixi render has failed, do not keep showing a preview that may differ
+        // from what insertion would display in the workspace.
+        setWorkspacePreviewWarning(message);
+        onStatusRef.current(message);
+      })
+      .finally(() => {
+        if (!canMeasurePreview) return;
+        try {
+          previewPerformance.mark(endMark);
+          previewPerformance.measure(AUTO_CREATE_CANONICAL_PREVIEW_PERFORMANCE.measure, startMark, endMark);
+        } catch {
+          // Diagnostics must never change preview behavior if entries were
+          // externally cleared while the asynchronous render was in flight.
+        }
+      });
+
+    return () => {
+      if (gate.isCurrent(requestRevision)) gate.invalidate();
+    };
+  }, [result, running]);
 
   const sourceTitleItems = useMemo(() => buildSourceTitleItems(decoOptions), [decoOptions]);
 
@@ -144,11 +210,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
         return { ...current, tileBudget: Math.max(0, nextValue) };
       }
       const nextLogEvery = Math.max(1, nextValue);
-      return {
-        ...current,
-        logEvery: nextLogEvery,
-        exportEvery: current.exportEvery > 0 ? nextLogEvery : 0
-      };
+      return withAutoCreateLogEvery(current, nextLogEvery);
     });
     setResult(null);
     setCheckpoint(null);
@@ -158,7 +220,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
   };
 
   const patchSavePreview = (checked: boolean) => {
-    setSettings((current) => ({ ...current, exportEvery: checked ? Math.max(1, current.logEvery) : 0 }));
+    setSettings((current) => withAutoCreateProcessPreview(current, checked));
   };
 
   const resetGeneratedOutput = () => {
@@ -269,7 +331,13 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
         setError(t('autoCreate.error.aborted'));
         onStatus(t('status.autoCreateStopped'));
       } else {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = isAutoCreateEmptyTargetError(err)
+          ? t('autoCreate.error.emptyTarget')
+          : isAutoCreateNoPlacementAreaError(err)
+            ? t('autoCreate.error.noPlacementArea')
+            : err instanceof Error
+              ? err.message
+              : String(err);
         setError(message);
         onStatus(t('status.autoCreateFailed', { message }));
       }
@@ -296,7 +364,10 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
 
   const downloadExportJson = () => {
     if (!result) return;
-    downloadBlob(createAutoCreateTwroleExportBlob(result), 'export2.json');
+    downloadBlob(
+      new Blob([JSON.stringify(result.exportJson, null, 2)], { type: 'application/json' }),
+      'export2.json'
+    );
   };
 
   const downloadTwrole = async () => {
@@ -449,7 +520,11 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
         {result ? (
           <div className="auto-create-preview">
             <div className="extra-section-title">{t('autoCreate.output')}</div>
-            <img src={result.previewDataUrl} alt="" />
+            {workspacePreviewWarning ? (
+              <div className="extra-message warning">{workspacePreviewWarning}</div>
+            ) : (
+              <img src={workspacePreviewUrl ?? result.previewDataUrl} alt="" />
+            )}
           </div>
         ) : null}
 

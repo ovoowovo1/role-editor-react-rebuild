@@ -9,6 +9,7 @@ import type {
 } from '../../types/gafRuntime';
 import type { GafAtlasFrame } from '../../types/role';
 import { applyGafAtlasToSprite } from './gafAtlasSprite';
+import { resolveGafFrameOneDisplayList } from './gafFrameDisplayList';
 
 const TYPE_TEXTURE = 'texture';
 const TYPE_TIMELINE = 'timeline';
@@ -27,6 +28,8 @@ export type GafMovieClipSpec =
       dedupeNamedParts?: boolean;
       nestedTimelineFrame?: NestedTimelineFrameMode;
       timelineScale?: number;
+      /** Render frame 1 through the renderer-neutral flattened display list. */
+      frameOneDisplayList?: boolean;
     };
 
 export interface CreateGafClipOptions {
@@ -36,6 +39,7 @@ export interface CreateGafClipOptions {
   dedupeNamedParts?: boolean;
   nestedTimelineFrame?: NestedTimelineFrameMode;
   timelineScale?: number;
+  frameOneDisplayList?: boolean;
 }
 
 function clamp01(a: number): number {
@@ -118,7 +122,8 @@ export function createGafClip(
         hideUnnamedTextureInstances: options.hideUnnamedTextureInstances,
         dedupeNamedParts: options.dedupeNamedParts,
         nestedTimelineFrame: options.nestedTimelineFrame,
-        timelineScale: options.timelineScale ?? manifest.timelineScale
+        timelineScale: options.timelineScale ?? manifest.timelineScale,
+        frameOneDisplayList: options.frameOneDisplayList
       });
     }
   }
@@ -158,6 +163,7 @@ export class GafMovieClip extends Container {
   private _dedupeNamedParts = false;
   private _nestedTimelineFrame: NestedTimelineFrameMode = 'current';
   private _timelineScale = 1;
+  private _frameOneDisplayList = false;
 
   private _currentFrame = 1;
   private _activeSequenceRange: GafSequenceSerialized | null = null;
@@ -181,6 +187,7 @@ export class GafMovieClip extends Container {
     this._dedupeNamedParts = !!spec.dedupeNamedParts;
     this._nestedTimelineFrame = spec.nestedTimelineFrame ?? 'current';
     this._timelineScale = spec.timelineScale ?? 1;
+    this._frameOneDisplayList = !!spec.frameOneDisplayList;
     this._timeline = spec.manifest.timelinesById[spec.timelineId] ?? null;
     if (!this._timeline) {
       console.warn(`[GafMovieClip] Unknown timeline "${spec.timelineId}"`);
@@ -326,6 +333,11 @@ export class GafMovieClip extends Container {
     const manifest = this._manifest;
     if (!tl || !manifest) return;
 
+    if (this._frameOneDisplayList && this._currentFrame === 1) {
+      this._renderResolvedFrameOne(manifest, tl.id);
+      return;
+    }
+
     const key = String(this._currentFrame);
     const raw = tl.frames[key] ?? [];
     const insts = [...raw].sort((a, b) => a.zIndex - b.zIndex);
@@ -387,6 +399,31 @@ export class GafMovieClip extends Container {
         this.addChild(nested);
         this._assignNamedChild(inst.objectId, nested);
       }
+    }
+  }
+
+  private _renderResolvedFrameOne(manifest: GafRuntimeManifest, timelineId: string): void {
+    if (this._failedTextures.has(this._textureUrl)) return;
+    const items = resolveGafFrameOneDisplayList(manifest, timelineId, {
+      timelineScale: this._timelineScale
+    });
+
+    for (const item of items) {
+      const element = manifest.elements[item.elementId];
+      if (!element) continue;
+      const sprite = this._makeTextureSprite(element);
+      if (!sprite) continue;
+      sprite.alpha = item.alpha;
+      if (this._alphaMask) sprite.filters = [getAlphaMaskColorFilter()];
+      applyMatrixToDisplayObject(sprite, new Matrix(
+        item.matrix.a,
+        item.matrix.b,
+        item.matrix.c,
+        item.matrix.d,
+        item.matrix.tx,
+        item.matrix.ty
+      ));
+      this.addChild(sprite);
     }
   }
 

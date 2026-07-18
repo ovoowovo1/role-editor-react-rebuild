@@ -1,41 +1,16 @@
 import {
-  isAutoCreateTwroleStoppedError,
+  isAutoCreateTwroleStoppedError
+} from '../lib/conversion/auto-create-twrole/contracts';
+import {
   runAutoCreateTwrole,
-  type AutoCreateTwroleCheckpoint,
-  type AutoCreateTwroleProgress,
-  type AutoCreateTwroleResult,
-  type AutoCreateTwroleSettings
-} from '../lib/conversion/autoCreateTwrole';
-import type { PartOption } from '../types/role';
-
-type WorkerStartMessage = {
-  type: 'start';
-  id: string;
-  targetFile: File;
-  decoOptions: PartOption[];
-  settings?: Partial<AutoCreateTwroleSettings>;
-  resumeSnapshot?: AutoCreateTwroleCheckpoint['snapshot'] | null;
-};
-
-type WorkerAbortMessage = {
-  type: 'abort';
-  id: string;
-};
-
-type WorkerRequestMessage = WorkerStartMessage | WorkerAbortMessage;
-
-type WorkerSerializedError = {
-  name?: string;
-  message?: string;
-  stack?: string;
-};
-
-type WorkerResponseMessage =
-  | { type: 'progress'; id: string; progress: AutoCreateTwroleProgress }
-  | { type: 'checkpoint'; id: string; checkpoint: AutoCreateTwroleCheckpoint }
-  | { type: 'done'; id: string; result: AutoCreateTwroleResult }
-  | { type: 'stopped'; id: string; result: AutoCreateTwroleResult; checkpoint: AutoCreateTwroleCheckpoint }
-  | { type: 'error'; id: string; error: WorkerSerializedError };
+  runAutoCreateTwroleWithDiagnostics
+} from '../lib/conversion/auto-create-twrole/runner';
+import { AutoCreateDiagnosticsCollector } from '../lib/conversion/auto-create-twrole/diagnostics';
+import type {
+  WorkerRequestMessage,
+  WorkerResponseMessage,
+  WorkerSerializedError
+} from '../lib/conversion/auto-create-twrole/workerProtocol';
 
 const scope = globalThis as unknown as {
   addEventListener(type: 'message', listener: (event: MessageEvent<WorkerRequestMessage>) => void): void;
@@ -63,30 +38,45 @@ scope.addEventListener('message', (event) => {
   if (message.type !== 'start') return;
 
   const controller = new AbortController();
+  const diagnostics = message.collectDiagnostics ? new AutoCreateDiagnosticsCollector() : null;
   activeRuns.set(message.id, controller);
 
-  void runAutoCreateTwrole({
+  const options = {
     targetFile: message.targetFile,
     decoOptions: message.decoOptions,
     settings: message.settings,
     resumeSnapshot: message.resumeSnapshot ?? null,
     signal: controller.signal,
     onProgress: (progress) => {
-      scope.postMessage({ type: 'progress', id: message.id, progress });
+      scope.postMessage({
+        type: 'progress',
+        id: message.id,
+        progress,
+        ...(diagnostics ? { diagnostics: diagnostics.snapshot() } : {})
+      });
     },
     onCheckpoint: (checkpoint) => {
+      // A terminal stop is sent once by the `stopped` response below. Posting
+      // the callback payload here as well structured-cloned the same large
+      // snapshot/result twice and caused duplicate React state updates.
+      if (checkpoint.progress.message === 'stopped') return;
       scope.postMessage({ type: 'checkpoint', id: message.id, checkpoint });
     }
-  })
+  } satisfies Parameters<typeof runAutoCreateTwrole>[0];
+  const run = diagnostics
+    ? runAutoCreateTwroleWithDiagnostics(options, diagnostics)
+    : runAutoCreateTwrole(options);
+
+  void run
     .then((result) => {
-      scope.postMessage({ type: 'done', id: message.id, result });
+      scope.postMessage({ type: 'done', id: message.id, result, diagnostics: diagnostics?.snapshot() });
     })
     .catch((error) => {
       if (isAutoCreateTwroleStoppedError(error)) {
-        scope.postMessage({ type: 'stopped', id: message.id, result: error.result, checkpoint: error.checkpoint });
+        scope.postMessage({ type: 'stopped', id: message.id, result: error.result, checkpoint: error.checkpoint, diagnostics: diagnostics?.snapshot() });
         return;
       }
-      scope.postMessage({ type: 'error', id: message.id, error: serializeError(error) });
+      scope.postMessage({ type: 'error', id: message.id, error: serializeError(error), diagnostics: diagnostics?.snapshot() });
     })
     .finally(() => {
       activeRuns.delete(message.id);

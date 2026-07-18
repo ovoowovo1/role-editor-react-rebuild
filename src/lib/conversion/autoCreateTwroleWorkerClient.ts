@@ -4,36 +4,14 @@ import {
   type AutoCreateTwroleProgress,
   type AutoCreateTwroleResult,
   type RunAutoCreateTwroleOptions
-} from './autoCreateTwrole';
-
-type WorkerStartMessage = {
-  type: 'start';
-  id: string;
-  targetFile: File;
-  decoOptions: RunAutoCreateTwroleOptions['decoOptions'];
-  settings: RunAutoCreateTwroleOptions['settings'];
-  resumeSnapshot?: RunAutoCreateTwroleOptions['resumeSnapshot'];
-};
-
-type WorkerAbortMessage = {
-  type: 'abort';
-  id: string;
-};
-
-type WorkerRequestMessage = WorkerStartMessage | WorkerAbortMessage;
-
-type WorkerSerializedError = {
-  name?: string;
-  message?: string;
-  stack?: string;
-};
-
-type WorkerResponseMessage =
-  | { type: 'progress'; id: string; progress: AutoCreateTwroleProgress }
-  | { type: 'checkpoint'; id: string; checkpoint: AutoCreateTwroleCheckpoint }
-  | { type: 'done'; id: string; result: AutoCreateTwroleResult }
-  | { type: 'stopped'; id: string; result: AutoCreateTwroleResult; checkpoint: AutoCreateTwroleCheckpoint }
-  | { type: 'error'; id: string; error: WorkerSerializedError };
+} from './auto-create-twrole/contracts';
+import type {
+  WorkerAbortMessage,
+  WorkerRequestMessage,
+  WorkerResponseMessage,
+  WorkerSerializedError,
+  WorkerStartMessage
+} from './auto-create-twrole/workerProtocol';
 
 const MIN_PROGRESS_INTERVAL_MS = 100;
 const WORKER_UNAVAILABLE_MESSAGE =
@@ -77,6 +55,7 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
   let lastProgressAt = 0;
   let pendingProgress: AutoCreateTwroleProgress | null = null;
   let progressTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastPublishedCheckpoint: AutoCreateTwroleCheckpoint | null = null;
 
   return new Promise<AutoCreateTwroleResult>((resolve, reject) => {
     const flushPendingProgress = () => {
@@ -139,7 +118,10 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
     };
 
     if (options.signal?.aborted) {
-      abort();
+      // No start message has been posted yet, so the Worker cannot associate an
+      // abort message with this run or send a terminal response. Reject locally
+      // and tear the unused Worker down instead of leaving the Promise pending.
+      finish(() => reject(makeAbortError()));
       return;
     }
 
@@ -156,6 +138,7 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
 
       if (message.type === 'checkpoint') {
         flushPendingProgress();
+        lastPublishedCheckpoint = message.checkpoint;
         options.onCheckpoint?.(message.checkpoint);
         return;
       }
@@ -168,7 +151,26 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
 
       if (message.type === 'stopped') {
         flushPendingProgress();
-        options.onCheckpoint?.(message.checkpoint);
+        const previous = lastPublishedCheckpoint;
+        const current = message.checkpoint;
+        const alreadyPublished = Boolean(
+          previous &&
+          previous.progress.stage === current.progress.stage &&
+          previous.progress.step === current.progress.step &&
+          previous.progress.total === current.progress.total &&
+          previous.snapshot.version === current.snapshot.version &&
+          previous.snapshot.step === current.snapshot.step &&
+          previous.snapshot.finalPruneStep === current.snapshot.finalPruneStep &&
+          previous.snapshot.rngState === current.snapshot.rngState &&
+          previous.snapshot.tiles.length === current.snapshot.tiles.length &&
+          previous.result.accepted === current.result.accepted &&
+          previous.result.rejected === current.result.rejected &&
+          previous.result.pruned === current.result.pruned &&
+          previous.result.replaced === current.result.replaced &&
+          previous.result.decorations.length === current.result.decorations.length &&
+          previous.result.mse === current.result.mse
+        );
+        if (!alreadyPublished) options.onCheckpoint?.(current);
         finish(() => reject(new AutoCreateTwroleStoppedError({ result: message.result, checkpoint: message.checkpoint })));
         return;
       }

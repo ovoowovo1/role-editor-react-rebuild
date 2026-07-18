@@ -10,6 +10,7 @@
   "type": "module",
   "scripts": {
     "generate:gaf": "node scripts/generateGafManifest.mjs",
+    "bench:auto-create": "node scripts/benchAutoCreate.mjs",
     "predev": "npm run generate:gaf",
     "prebuild": "npm run generate:gaf",
     "dev": "vite",
