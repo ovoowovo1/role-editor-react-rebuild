@@ -93,9 +93,14 @@ export function buildDecoDraft(source: SourceTile, centerX: number, centerY: num
   };
 }
 
-export function decorationFromDraft(draft: DecoDraft): DecorationLayer {
+/**
+ * Converts a canonical AutoCreate draft to an editor layer. AutoCreate runs
+ * pass a deterministic id so checkpoints can reproduce the complete result;
+ * other callers retain the historical time/random id fallback.
+ */
+export function decorationFromDraft(draft: DecoDraft, deterministicId?: string): DecorationLayer {
   return {
-    id: createId('deco'),
+    id: deterministicId ?? createId('deco'),
     code: draft.code,
     assetId: draft.assetId,
     name: draft.name,
@@ -208,7 +213,50 @@ export function autoMaxRenderedPx(width: number, height: number): number {
   return Math.max(32, Math.min(160, Math.round(Math.min(width, height) * 0.18)));
 }
 
-export function proposeCandidate(
+export interface CandidateProposalOptions {
+  desiredPx?: number;
+  maxRenderedPx?: number;
+  rotationProb?: number;
+  flipProb?: number;
+  centerJitterPx?: number;
+  acceptGeometry?: (bbox: BBox) => boolean;
+  proposalIndex?: number;
+  cheapUpperBound?: (bbox: BBox) => number;
+  exploration?: boolean;
+}
+
+/**
+ * A candidate whose transform and bounds are known, but whose RGBA pixels have
+ * not been rasterized yet.
+ */
+export interface CandidateDescriptor {
+  /** Index into the source array used to create this descriptor. */
+  sourceIndex: number;
+  /** Stable source identifier copied to the materialized Candidate. */
+  sourceId: number;
+  sxInternal: number;
+  syInternal: number;
+  rDeg: number;
+  centerX: number;
+  centerY: number;
+  bbox: BBox;
+  /** Stable generation order used for deterministic exact-score tie breaking. */
+  proposalIndex: number;
+  /** Conservative quality ceiling; never used as a final acceptance score. */
+  cheapUpperBound: number;
+  exploration: boolean;
+  featureVector?: Float32Array;
+  predictedValidityLogit?: number;
+  predictedMargin?: number;
+  predictedScore?: number;
+  /**
+   * Continuous rotations are intentionally kept out of the shared variant
+   * cache until a winning candidate is promoted.
+   */
+  cacheVariant: boolean;
+}
+
+export function proposeCandidateDescriptor(
   sources: readonly SourceTile[],
   sourceId: number,
   centerX: number,
@@ -217,20 +265,12 @@ export function proposeCandidate(
   targetHeight: number,
   progress: number,
   rng: SeededRandom,
-  cache: VariantCache,
   settings: AutoCreateTwroleSettings,
-  options: {
-    desiredPx?: number;
-    maxRenderedPx?: number;
-    rotationProb?: number;
-    flipProb?: number;
-    centerJitterPx?: number;
-    acceptGeometry?: (bbox: BBox) => boolean;
-  } = {},
-  diagnostics: AutoCreateDiagnosticsCollector | null = null,
-  reuse: Candidate | null = null
-): Candidate | null {
+  options: CandidateProposalOptions = {},
+  diagnostics: AutoCreateDiagnosticsCollector | null = null
+): CandidateDescriptor | null {
   diagnostics?.add('candidatesProposed');
+  diagnostics?.add('descriptorsProposed');
   const source = sources[sourceId];
   const maxPx = options.maxRenderedPx && options.maxRenderedPx > 0 ? options.maxRenderedPx : autoMaxRenderedPx(targetWidth, targetHeight);
   const minPx = Math.max(2, Math.round(settings.minRenderedPx));
@@ -322,19 +362,53 @@ export function proposeCandidate(
     return null;
   }
 
-  const rgba = cache.get(source, sxInternal, syInternal, rDeg, cacheVariant);
+  return {
+    sourceIndex: sourceId,
+    sourceId: source.idx,
+    sxInternal,
+    syInternal,
+    rDeg,
+    centerX: rasterCenterX,
+    centerY: rasterCenterY,
+    bbox,
+    proposalIndex: Math.max(0, Math.round(options.proposalIndex ?? 0)),
+    cheapUpperBound: options.cheapUpperBound?.(bbox) ?? Number.POSITIVE_INFINITY,
+    exploration: options.exploration === true,
+    cacheVariant
+  };
+}
+
+export function materializeCandidate(
+  sources: readonly SourceTile[],
+  descriptor: CandidateDescriptor,
+  cache: VariantCache,
+  diagnostics: AutoCreateDiagnosticsCollector | null = null,
+  reuse: Candidate | null = null
+): Candidate {
+  const source = sources[descriptor.sourceIndex];
+  diagnostics?.add('candidateMaterializations');
+  const materialize = () => cache.get(
+      source,
+      descriptor.sxInternal,
+      descriptor.syInternal,
+      descriptor.rDeg,
+      descriptor.cacheVariant
+    );
+  const rgba = diagnostics
+    ? diagnostics.measure('candidateMaterialization', materialize)
+    : materialize();
   if (reuse) {
-    reuse.sourceId = source.idx;
-    reuse.sxInternal = sxInternal;
-    reuse.syInternal = syInternal;
-    reuse.rDeg = rDeg;
-    reuse.centerX = rasterCenterX;
-    reuse.centerY = rasterCenterY;
+    reuse.sourceId = descriptor.sourceId;
+    reuse.sxInternal = descriptor.sxInternal;
+    reuse.syInternal = descriptor.syInternal;
+    reuse.rDeg = descriptor.rDeg;
+    reuse.centerX = descriptor.centerX;
+    reuse.centerY = descriptor.centerY;
     reuse.rgba = rgba;
-    reuse.bbox[0] = bbox[0];
-    reuse.bbox[1] = bbox[1];
-    reuse.bbox[2] = bbox[2];
-    reuse.bbox[3] = bbox[3];
+    reuse.bbox[0] = descriptor.bbox[0];
+    reuse.bbox[1] = descriptor.bbox[1];
+    reuse.bbox[2] = descriptor.bbox[2];
+    reuse.bbox[3] = descriptor.bbox[3];
     reuse.sseBefore = 0;
     reuse.sseAfter = 0;
     reuse.globalGainMse = -1.0e30;
@@ -344,17 +418,50 @@ export function proposeCandidate(
 
   diagnostics?.add('candidateObjectsAllocated');
   return {
-    sourceId: source.idx,
-    sxInternal,
-    syInternal,
-    rDeg,
-    centerX: rasterCenterX,
-    centerY: rasterCenterY,
+    sourceId: descriptor.sourceId,
+    sxInternal: descriptor.sxInternal,
+    syInternal: descriptor.syInternal,
+    rDeg: descriptor.rDeg,
+    centerX: descriptor.centerX,
+    centerY: descriptor.centerY,
     rgba,
-    bbox,
+    bbox: descriptor.bbox,
     sseBefore: 0,
     sseAfter: 0,
     globalGainMse: -1.0e30,
     score: -1.0e30
   };
+}
+
+export function proposeCandidate(
+  sources: readonly SourceTile[],
+  sourceId: number,
+  centerX: number,
+  centerY: number,
+  targetWidth: number,
+  targetHeight: number,
+  progress: number,
+  rng: SeededRandom,
+  cache: VariantCache,
+  settings: AutoCreateTwroleSettings,
+  options: CandidateProposalOptions = {},
+  diagnostics: AutoCreateDiagnosticsCollector | null = null,
+  reuse: Candidate | null = null
+): Candidate | null {
+  const descriptor = proposeCandidateDescriptor(
+    sources,
+    sourceId,
+    centerX,
+    centerY,
+    targetWidth,
+    targetHeight,
+    progress,
+    rng,
+    settings,
+    options,
+    diagnostics
+  );
+  return descriptor == null
+    ? null
+    : materializeCandidate(sources, descriptor, cache, diagnostics, reuse);
 }

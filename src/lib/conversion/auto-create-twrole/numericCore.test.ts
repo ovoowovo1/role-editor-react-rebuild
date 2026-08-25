@@ -213,7 +213,62 @@ describe('auto-create numeric core', () => {
     }
 
     expect(errors.focusSseUpperBound(bbox)).toBeGreaterThanOrEqual(exact);
+    expect(errors.focusSseRectUpperBound(bbox)).toBeGreaterThanOrEqual(exact);
+    expect(errors.focusSseRectUpperBound(bbox)).toBeLessThanOrEqual(
+      errors.focusSseUpperBound(bbox)
+    );
     expect(errors.focusSseUpperBound([-20, -20, -1, -1])).toBe(0);
+    expect(errors.focusSseRectUpperBound([-20, -20, -1, -1])).toBe(0);
+  });
+
+  it('restores exact incremental ErrorField aggregates after validating reconstructed pixels', () => {
+    const fixture = makeSyntheticRgbaFixture(
+      12,
+      4,
+      (x, y) => [20 + x * 11, 10 + y * 17, 30 + ((x + y) % 5) * 19, 255]
+    );
+    const canvas = new Float32Array(fixture.premult.length);
+    const incremental = new ErrorField(
+      canvas,
+      fixture.premult,
+      fixture.straight,
+      fixture.mask,
+      fixture.width,
+      fixture.height,
+      4
+    );
+    for (let iteration = 0; iteration < 500; iteration += 1) {
+      const x = iteration % fixture.width;
+      const y = Math.floor(iteration / fixture.width) % fixture.height;
+      const offset = (y * fixture.width + x) * 4;
+      canvas[offset] = Math.fround((iteration * 13) % 256);
+      canvas[offset + 1] = Math.fround((iteration * 29) % 256);
+      canvas[offset + 2] = Math.fround((iteration * 47) % 256);
+      canvas[offset + 3] = 255;
+      incremental.updateBBox([x, y, x + 1, y + 1]);
+    }
+    const serialized = incremental.snapshotState();
+    const reconstructed = new ErrorField(
+      Float32Array.from(canvas),
+      fixture.premult,
+      fixture.straight,
+      fixture.mask,
+      fixture.width,
+      fixture.height,
+      4
+    );
+
+    expect(reconstructed.restoreSnapshotState(serialized)).toBe(true);
+    expect(reconstructed.snapshotState()).toEqual(serialized);
+    const firstRng = new SeededRandom(0x12345678);
+    const secondRng = new SeededRandom(0x12345678);
+    expect(reconstructed.chooseFocus(firstRng)).toEqual(incremental.chooseFocus(secondRng));
+    expect(reconstructed.restoreSnapshotState({
+      ...serialized,
+      cellWeights: serialized.cellWeights.map((value, index) =>
+        index === 0 ? value + 1000 : value
+      )
+    })).toBe(false);
   });
 
   it('matches a reference weighted local RGB mean and standard deviation', () => {
@@ -224,7 +279,9 @@ describe('auto-create numeric core', () => {
     );
     const index = new TargetMomentIndex(fixture.straight, fixture.mask, fixture.width, fixture.height);
     const actual = index.stats(3, 2, 2);
+    const bboxActual = index.statsForBBox([1, 0, 6, 5]);
     expect(actual).not.toBeNull();
+    expect(bboxActual).toEqual(actual);
 
     const values: Array<{ color: [number, number, number]; weight: number }> = [];
     for (let y = 0; y < 5; y += 1) {

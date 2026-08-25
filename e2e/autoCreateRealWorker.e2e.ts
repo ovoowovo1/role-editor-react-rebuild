@@ -253,7 +253,7 @@ test('real Chromium Worker completes, checkpoints on stop, and resumes determini
   expect(lifecycle.uninterrupted.sourceCount).toBeGreaterThan(0);
   expect(lifecycle.stopped).toMatchObject({
     errorName: 'AutoCreateTwroleStoppedError',
-    checkpointVersion: 4,
+    checkpointVersion: 5,
     checkpointTotalSteps: 24,
     progressMessage: 'stopped'
   });
@@ -275,7 +275,7 @@ test('real Chromium Worker completes, checkpoints on stop, and resumes determini
   expect(normalizedHash).toBe('a881316f57f02d89d9d190f41138ff115b87ef4d74bccec3218132c6b5ff1ab4');
 });
 
-test('real Chromium Worker resumes v4 but safely restarts v1-v3 and malformed v4 snapshots', async ({ page }) => {
+test('real Chromium Worker resumes v5 but safely restarts v1-v4 and malformed v5 snapshots', async ({ page }) => {
   test.setTimeout(120_000);
 
   let dedicatedWorkers = 0;
@@ -313,10 +313,10 @@ test('real Chromium Worker resumes v4 but safely restarts v1-v3 and malformed v4
     const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((value) => {
         if (value) resolve(value);
-        else reject(new Error('Could not encode the v4 snapshot E2E target.'));
+        else reject(new Error('Could not encode the v5 snapshot E2E target.'));
       }, 'image/png');
     });
-    const targetFile = new File([blob], 'auto-create-v4-snapshot-e2e.png', {
+    const targetFile = new File([blob], 'auto-create-v5-snapshot-e2e.png', {
       type: 'image/png',
       lastModified: 0
     });
@@ -345,7 +345,7 @@ test('real Chromium Worker resumes v4 but safely restarts v1-v3 and malformed v4
       colorTopk: 8,
       finalPruneRounds: 1,
       variantCacheItems: 128,
-      experienceJson: 'auto-create-v4-snapshot-e2e.json',
+      experienceJson: 'auto-create-v5-snapshot-e2e.json',
       resetExperience: true
     };
 
@@ -363,7 +363,7 @@ test('real Chromium Worker resumes v4 but safely restarts v1-v3 and malformed v4
 
     const fresh = await runAutoCreateTwroleInWorker({ targetFile, decoOptions, settings });
     const stopController = new AbortController();
-    let validV4Checkpoint: { snapshot: NonNullable<Parameters<typeof runAutoCreateTwroleInWorker>[0]['resumeSnapshot']> } | null = null;
+    let validV5Checkpoint: { snapshot: NonNullable<Parameters<typeof runAutoCreateTwroleInWorker>[0]['resumeSnapshot']> } | null = null;
     try {
       await runAutoCreateTwroleInWorker({
         targetFile,
@@ -371,34 +371,34 @@ test('real Chromium Worker resumes v4 but safely restarts v1-v3 and malformed v4
         settings,
         signal: stopController.signal,
         onCheckpoint(checkpoint) {
-          if (validV4Checkpoint) return;
-          validV4Checkpoint = checkpoint;
+          if (validV5Checkpoint) return;
+          validV5Checkpoint = checkpoint;
           stopController.abort();
         }
       });
     } catch (stopped) {
-      validV4Checkpoint = validV4Checkpoint
-        ?? (stopped as { checkpoint?: typeof validV4Checkpoint })?.checkpoint
+      validV5Checkpoint = validV5Checkpoint
+        ?? (stopped as { checkpoint?: typeof validV5Checkpoint })?.checkpoint
         ?? null;
     }
-    if (!validV4Checkpoint) throw new Error('Could not create a valid v4 checkpoint for resume testing.');
+    if (!validV5Checkpoint) throw new Error('Could not create a valid v5 checkpoint for resume testing.');
 
     const resumedProgressMessages: string[] = [];
-    const resumedV4 = await runAutoCreateTwroleInWorker({
+    const resumedV5 = await runAutoCreateTwroleInWorker({
       targetFile,
       decoOptions,
       settings,
-      resumeSnapshot: validV4Checkpoint.snapshot,
+      resumeSnapshot: validV5Checkpoint.snapshot,
       onProgress(progress) {
         if (progress.message) resumedProgressMessages.push(progress.message);
       }
     });
 
     const legacyRuns = [];
-    for (const version of [1, 2, 3]) {
+    for (const version of [1, 2, 3, 4]) {
       const progressMessages: string[] = [];
       const legacySnapshot = {
-        ...validV4Checkpoint.snapshot,
+        ...validV5Checkpoint.snapshot,
         version
       } as NonNullable<Parameters<typeof runAutoCreateTwroleInWorker>[0]['resumeSnapshot']>;
       const result = await runAutoCreateTwroleInWorker({
@@ -413,24 +413,24 @@ test('real Chromium Worker resumes v4 but safely restarts v1-v3 and malformed v4
       legacyRuns.push({ version, result: normalize(result), progressMessages });
     }
 
-    const malformedV4Snapshot = {
-      ...validV4Checkpoint.snapshot,
+    const malformedV5Snapshot = {
+      ...validV5Checkpoint.snapshot,
       tiles: [null]
     } as unknown as NonNullable<Parameters<typeof runAutoCreateTwroleInWorker>[0]['resumeSnapshot']>;
-    const malformedV4ProgressMessages: string[] = [];
-    const fromMalformedV4 = await runAutoCreateTwroleInWorker({
+    const malformedV5ProgressMessages: string[] = [];
+    const fromMalformedV5 = await runAutoCreateTwroleInWorker({
       targetFile,
       decoOptions,
       settings,
-      resumeSnapshot: malformedV4Snapshot,
+      resumeSnapshot: malformedV5Snapshot,
       onProgress(progress) {
-        if (progress.message) malformedV4ProgressMessages.push(progress.message);
+        if (progress.message) malformedV5ProgressMessages.push(progress.message);
       }
     });
 
     const missingFinalPruneStepSnapshot = {
-      ...validV4Checkpoint.snapshot
-    } as Partial<typeof validV4Checkpoint.snapshot>;
+      ...validV5Checkpoint.snapshot
+    } as Partial<typeof validV5Checkpoint.snapshot>;
     delete missingFinalPruneStepSnapshot.finalPruneStep;
     const missingFinalPruneStepProgressMessages: string[] = [];
     const fromMissingFinalPruneStep = await runAutoCreateTwroleInWorker({
@@ -447,43 +447,43 @@ test('real Chromium Worker resumes v4 but safely restarts v1-v3 and malformed v4
       {
         kind: 'fractional-step',
         snapshot: {
-          ...validV4Checkpoint.snapshot,
-          step: validV4Checkpoint.snapshot.step + 0.5
+          ...validV5Checkpoint.snapshot,
+          step: validV5Checkpoint.snapshot.step + 0.5
         }
       },
       {
         kind: 'final-prune-before-run-finished',
         snapshot: {
-          ...validV4Checkpoint.snapshot,
-          step: Math.min(validV4Checkpoint.snapshot.step, validV4Checkpoint.snapshot.totalSteps - 1),
+          ...validV5Checkpoint.snapshot,
+          step: Math.min(validV5Checkpoint.snapshot.step, validV5Checkpoint.snapshot.totalSteps - 1),
           finalPruneStep: 1
         }
       },
       {
         kind: 'invalid-rng-state',
         snapshot: {
-          ...validV4Checkpoint.snapshot,
+          ...validV5Checkpoint.snapshot,
           rngState: 0
         }
       },
       {
         kind: 'inconsistent-counters',
         snapshot: {
-          ...validV4Checkpoint.snapshot,
-          accepted: validV4Checkpoint.snapshot.accepted + 1
+          ...validV5Checkpoint.snapshot,
+          accepted: validV5Checkpoint.snapshot.accepted + 1
         }
       },
       {
         kind: 'settings-signature-mismatch',
         snapshot: {
-          ...validV4Checkpoint.snapshot,
-          settingsSignature: `${validV4Checkpoint.snapshot.settingsSignature}:changed`
+          ...validV5Checkpoint.snapshot,
+          settingsSignature: `${validV5Checkpoint.snapshot.settingsSignature}:changed`
         }
       },
       {
         kind: 'malformed-experience-state',
         snapshot: {
-          ...validV4Checkpoint.snapshot,
+          ...validV5Checkpoint.snapshot,
           experienceState: '{bad'
         }
       }
@@ -509,30 +509,30 @@ test('real Chromium Worker resumes v4 but safely restarts v1-v3 and malformed v4
 
     return {
       fresh: normalize(fresh),
-      checkpointVersion: validV4Checkpoint.snapshot.version,
-      resumedV4: normalize(resumedV4),
+      checkpointVersion: validV5Checkpoint.snapshot.version,
+      resumedV5: normalize(resumedV5),
       legacyRuns,
-      fromMalformedV4: normalize(fromMalformedV4),
+      fromMalformedV5: normalize(fromMalformedV5),
       resumedProgressMessages,
-      malformedV4ProgressMessages,
+      malformedV5ProgressMessages,
       fromMissingFinalPruneStep: normalize(fromMissingFinalPruneStep),
       missingFinalPruneStepProgressMessages,
       invalidStateRuns,
-      warnings: fromMalformedV4.warnings
+      warnings: fromMalformedV5.warnings
     };
   });
 
   expect(dedicatedWorkers).toBeGreaterThanOrEqual(10);
-  expect(comparison.checkpointVersion).toBe(4);
+  expect(comparison.checkpointVersion).toBe(5);
   expect(comparison.resumedProgressMessages).toContain('resumed');
-  expect(comparison.resumedV4).toEqual(comparison.fresh);
+  expect(comparison.resumedV5).toEqual(comparison.fresh);
   for (const legacy of comparison.legacyRuns) {
     expect(legacy.progressMessages).not.toContain('resumed');
     expect(legacy.result).toEqual(comparison.fresh);
   }
-  expect(comparison.legacyRuns.map((legacy) => legacy.version)).toEqual([1, 2, 3]);
-  expect(comparison.malformedV4ProgressMessages).not.toContain('resumed');
-  expect(comparison.fromMalformedV4).toEqual(comparison.fresh);
+  expect(comparison.legacyRuns.map((legacy) => legacy.version)).toEqual([1, 2, 3, 4]);
+  expect(comparison.malformedV5ProgressMessages).not.toContain('resumed');
+  expect(comparison.fromMalformedV5).toEqual(comparison.fresh);
   expect(comparison.missingFinalPruneStepProgressMessages).not.toContain('resumed');
   expect(comparison.fromMissingFinalPruneStep).toEqual(comparison.fresh);
   expect(comparison.invalidStateRuns.map((run) => run.kind)).toEqual([
@@ -547,7 +547,7 @@ test('real Chromium Worker resumes v4 but safely restarts v1-v3 and malformed v4
     expect(invalid.progressMessages).not.toContain('resumed');
     expect(invalid.result).toEqual(comparison.fresh);
   }
-  expect(comparison.fromMalformedV4.sourceCount).toBe(1);
+  expect(comparison.fromMalformedV5.sourceCount).toBe(1);
   expect(comparison.warnings.some((warning) => warning.includes('Broken E2E source'))).toBe(true);
 });
 

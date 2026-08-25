@@ -56,7 +56,17 @@ test('keeps the empty Auto Create chart stable and renders the first MSE point',
                 rejected: 0,
                 pruned: 0,
                 replaced: 0,
-                warnings: []
+                warnings: [],
+                ranker: {
+                  requestedStrategy: 'legacy',
+                  effectiveStrategy: 'legacy',
+                  status: 'disabled',
+                  runtime: 'none',
+                  learningScope: 'skydow',
+                  featureSchema: 'auto-create-numeric-v1',
+                  rankingPolicy: 'strict-cascade-v1',
+                  modelRevision: null
+                }
               }
             }
           }));
@@ -91,7 +101,7 @@ test('keeps the empty Auto Create chart stable and renders the first MSE point',
   await expect(page.getByTestId('auto-create-mse-chart-empty')).toBeVisible();
   await expect(page.getByTestId('auto-create-mse-chart-canvas')).toHaveCount(0);
 
-  await page.locator('#extra-panel-autoCreate input[type="file"]').setInputFiles({
+  await page.locator('#extra-panel-autoCreate .auto-create-dropzone input[type="file"]').setInputFiles({
     name: 'auto-create-target.png',
     mimeType: 'image/png',
     buffer: ONE_PIXEL_PNG
@@ -176,7 +186,17 @@ test('renders one canonical Pixi preview only at done, stopped, and resumed term
           rejected: 0,
           pruned: 0,
           replaced: 0,
-          warnings: []
+          warnings: [],
+          ranker: {
+            requestedStrategy: 'legacy',
+            effectiveStrategy: 'legacy',
+            status: 'disabled',
+            runtime: 'none',
+            learningScope: 'skydow',
+            featureSchema: 'auto-create-numeric-v1',
+            rankingPolicy: 'strict-cascade-v1',
+            modelRevision: null
+          }
         };
       }
 
@@ -186,7 +206,7 @@ test('renders one canonical Pixi preview only at done, stopped, and resumed term
           result: this.result(progress.mse),
           progress,
           snapshot: {
-            version: 4,
+            version: 5,
             step,
             totalSteps: 4,
             rngState: step,
@@ -272,7 +292,7 @@ test('renders one canonical Pixi preview only at done, stopped, and resumed term
   await page.locator('[data-tab-mode="extra"]').click();
   await page.locator('#extra-tool-tab-autoCreate').click();
 
-  await page.locator('#extra-panel-autoCreate input[type="file"]').setInputFiles({
+  await page.locator('#extra-panel-autoCreate .auto-create-dropzone input[type="file"]').setInputFiles({
     name: 'auto-create-preview-target.png',
     mimeType: 'image/png',
     buffer: ONE_PIXEL_PNG

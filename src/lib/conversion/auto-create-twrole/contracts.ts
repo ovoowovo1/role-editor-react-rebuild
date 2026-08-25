@@ -1,5 +1,6 @@
 import { DEFAULT_POSITION_RANGE } from '../../../constants/editor';
 import type { DecorationLayer, PartOption } from '../../../types/role';
+import type { CandidateLearningExampleDraft } from './learning/types';
 
 export const ALPHA_MSE_WEIGHT = 1.0;
 export const INV_255 = 1 / 255;
@@ -19,10 +20,53 @@ export const DEFAULT_GRADIENT_STD_WEIGHT = 0.42;
 export const DEFAULT_GRADIENT_COMPLEXITY_THRESHOLD = 18.0;
 export const DEFAULT_GRADIENT_ORIGINAL_MAX_PX = 12;
 export const MEMORY_VERSION = 1;
-export const AUTO_CREATE_SNAPSHOT_VERSION = 4;
+export const AUTO_CREATE_SNAPSHOT_VERSION = 5;
 export const DEFAULT_ROLE_EXPORT_MAX_SIDE = DEFAULT_POSITION_RANGE * 2;
 export const DEFAULT_MEMORY_NAME = 'experience_color_memory.json';
 export const AUTO_CREATE_EXPERIENCE_STORAGE_PREFIX = 'auto-create-twrole:';
+export const AUTO_CREATE_FEATURE_SCHEMA_VERSION = 'auto-create-numeric-v1';
+export const AUTO_CREATE_RANKING_POLICY_VERSION = 'strict-cascade-v1';
+export const AUTO_CREATE_ERROR_FIELD_STATE_VERSION = 1;
+/**
+ * Release switch updated only from a passing Full report. Keeping this false
+ * lets production collect exact labels in shadow mode without silently
+ * enabling an unverified runtime. Benchmark cases override the setting.
+ */
+export const AUTO_CREATE_RANKER_ROLLOUT: Readonly<{
+  approved: boolean;
+  runtime: 'tfjs' | 'typed';
+}> = Object.freeze({
+  approved: false,
+  runtime: 'typed'
+});
+
+export type AutoCreateSearchStrategy =
+  | 'legacy'
+  | 'descriptor-control'
+  | 'strict-heuristic'
+  | 'strict-ml-tfjs'
+  | 'strict-ml-typed';
+
+export type AutoCreateRankerStatus =
+  | 'disabled'
+  | 'collecting'
+  | 'training'
+  | 'ready'
+  | 'fallback';
+
+export type AutoCreateRankerRuntime = 'none' | 'heuristic' | 'tfjs' | 'typed';
+
+export interface AutoCreateRankerRunInfo {
+  requestedStrategy: AutoCreateSearchStrategy;
+  effectiveStrategy: AutoCreateSearchStrategy;
+  status: AutoCreateRankerStatus;
+  runtime: AutoCreateRankerRuntime;
+  learningScope: string;
+  featureSchema: string;
+  rankingPolicy: string;
+  modelRevision: string | null;
+  fallbackReason?: string;
+}
 
 export interface AutoCreateTwroleSettings {
   // These names mirror the Python worker CLI. The React panel only exposes the
@@ -38,6 +82,17 @@ export interface AutoCreateTwroleSettings {
   errorCellSize: number;
   candidateBatch: number;
   replaceCandidateBatch: number;
+  searchStrategy: AutoCreateSearchStrategy;
+  rankerEnabled: boolean;
+  rankerRolloutApproved: boolean;
+  addDescriptorPool: number;
+  replaceDescriptorPool: number;
+  addRankerTopK: number;
+  addRankerExploration: number;
+  addRankerWidenBatch: number;
+  replaceRankerTopK: number;
+  replaceRankerExploration: number;
+  replaceRankerWidenBatch: number;
   colorTopk: number;
   colorSigma: number;
   exploration: number;
@@ -80,6 +135,17 @@ export const DEFAULT_AUTO_CREATE_TWROLE_SETTINGS: AutoCreateTwroleSettings = {
   errorCellSize: DEFAULT_CELL_SIZE,
   candidateBatch: DEFAULT_CANDIDATE_BATCH,
   replaceCandidateBatch: 32,
+  searchStrategy: `strict-ml-${AUTO_CREATE_RANKER_ROLLOUT.runtime}`,
+  rankerEnabled: true,
+  rankerRolloutApproved: AUTO_CREATE_RANKER_ROLLOUT.approved,
+  addDescriptorPool: 384,
+  replaceDescriptorPool: 128,
+  addRankerTopK: 16,
+  addRankerExploration: 8,
+  addRankerWidenBatch: 16,
+  replaceRankerTopK: 8,
+  replaceRankerExploration: 4,
+  replaceRankerWidenBatch: 8,
   colorTopk: DEFAULT_COLOR_TOPK,
   colorSigma: 54,
   exploration: 0.12,
@@ -108,7 +174,7 @@ export const DEFAULT_AUTO_CREATE_TWROLE_SETTINGS: AutoCreateTwroleSettings = {
   resetExperience: false
 };
 
-const SNAPSHOT_SETTINGS_POLICY_VERSION = 1;
+const SNAPSHOT_SETTINGS_POLICY_VERSION = 3;
 const SNAPSHOT_ALGORITHM_SETTING_KEYS = [
   'tiles',
   'tileBudget',
@@ -117,6 +183,17 @@ const SNAPSHOT_ALGORITHM_SETTING_KEYS = [
   'errorCellSize',
   'candidateBatch',
   'replaceCandidateBatch',
+  'searchStrategy',
+  'rankerEnabled',
+  'rankerRolloutApproved',
+  'addDescriptorPool',
+  'replaceDescriptorPool',
+  'addRankerTopK',
+  'addRankerExploration',
+  'addRankerWidenBatch',
+  'replaceRankerTopK',
+  'replaceRankerExploration',
+  'replaceRankerWidenBatch',
   'colorTopk',
   'colorSigma',
   'exploration',
@@ -204,6 +281,7 @@ export interface AutoCreateTwroleResult {
   pruned: number;
   replaced: number;
   warnings: string[];
+  ranker: AutoCreateRankerRunInfo;
 }
 
 export interface AutoCreateTwroleSnapshotTile {
@@ -220,6 +298,23 @@ export interface AutoCreateTwroleSnapshotTile {
   gainMse: number;
 }
 
+export interface AutoCreateRankingStateSnapshot {
+  maskedPixelCount: number;
+  canvasSum: [number, number, number];
+  residualSum: [number, number, number];
+  residualSquared: [number, number, number];
+}
+
+export interface AutoCreateErrorFieldStateSnapshot {
+  version: number;
+  cellSize: number;
+  gridWidth: number;
+  gridHeight: number;
+  totalSse: number;
+  focusSse: number;
+  cellWeights: number[];
+}
+
 export interface AutoCreateTwroleSnapshot {
   version: number;
   targetWidth: number;
@@ -228,15 +323,34 @@ export interface AutoCreateTwroleSnapshot {
   sourceHeight: number;
   sourceCount: number;
   sourceSignature: string;
-  /** v4 identity of the exact target RGBA, containment and focus policy. */
-  targetSignature?: string;
-  /** v4 identity of every setting that can alter the remaining search. */
+  /** v5 identity of the exact target RGBA, containment and focus policy. */
+  targetSignature: string;
+  /** v5 identity of every setting that can alter the remaining search. */
   settingsSignature: string;
+  /** v5 freezes the candidate ranker identity across stop/resume. */
+  learningScope: string;
+  /**
+   * Stable identity of the original run, including its model, effective
+   * strategy and initial ExperienceMemory state. It remains unchanged if a
+   * live ranker falls back or the run is resumed.
+   */
+  learningRunHash: string;
+  rankerRevision: string | null;
+  rankerFeatureSchema: string;
+  rankingPolicySignature: string;
   /** Serialized adaptive source/color statistics required for deterministic resume. */
   experienceState: string;
+  /**
+   * Exact incremental feature aggregates. Persisting their accumulation state
+   * prevents stop/resume from changing Float32 feature rows through a
+   * different floating-point summation order.
+   */
+  rankingState: AutoCreateRankingStateSnapshot;
+  /** Exact incremental ErrorField aggregates used by focus selection/bounds. */
+  errorFieldState: AutoCreateErrorFieldStateSnapshot;
   step: number;
   totalSteps: number;
-  /** Number of final-prune rounds already completed; required for v4 deterministic resume. */
+  /** Number of final-prune rounds already completed; required for v5 deterministic resume. */
   finalPruneStep: number;
   seed: number;
   rngState: number;
@@ -281,8 +395,15 @@ export interface RunAutoCreateTwroleOptions {
   targetFile: File;
   decoOptions: PartOption[];
   settings?: Partial<AutoCreateTwroleSettings>;
+  /** Stable per-camp namespace used by IndexedDB examples and models. */
+  learningScope?: string;
   resumeSnapshot?: AutoCreateTwroleSnapshot | null;
   signal?: AbortSignal;
   onProgress?: (progress: AutoCreateTwroleProgress) => void;
   onCheckpoint?: (checkpoint: AutoCreateTwroleCheckpoint) => void;
+  onLearningBatch?: (
+    camp: string,
+    examples: readonly CandidateLearningExampleDraft[]
+  ) => void;
+  onLearningExperience?: (camp: string, serializedState: string) => void;
 }

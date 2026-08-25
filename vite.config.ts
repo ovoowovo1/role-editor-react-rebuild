@@ -5,6 +5,20 @@ const colorBlockApiProxyTarget = process.env.COLOR_BLOCK_API_PROXY_TARGET ?? 'ht
 
 export default defineConfig({
   plugins: [react()],
+  worker: {
+    // Module workers preserve the dynamic TFJS boundary. TypedArray generation
+    // runs never fetch the large training/inference vendor chunk.
+    format: 'es',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (/[\\/]node_modules[\\/]@tensorflow[\\/]/.test(id)) {
+            return 'tfjs-worker-vendor';
+          }
+        }
+      }
+    }
+  },
   build: {
     chunkSizeWarningLimit: 5000,
     rollupOptions: {

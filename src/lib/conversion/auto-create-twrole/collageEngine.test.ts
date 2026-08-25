@@ -1,28 +1,52 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeDecorationLayer, makePartOption } from '../../../test/roleFixtures';
-import { ColorLearningCollage, replacePartialSseCannotBeat } from './collageEngine';
+import {
+  ColorLearningCollage,
+  candidateUpperBoundCannotBeat,
+  remainingUpperBoundsCannotBeat,
+  replacePartialSseCannotBeat,
+  type AutoCreateLearningRunIdentity
+} from './collageEngine';
 import {
   ALPHA_MSE_WEIGHT,
   AUTO_CREATE_SNAPSHOT_VERSION,
   DEFAULT_AUTO_CREATE_TWROLE_SETTINGS,
   INV_255,
   autoCreateSnapshotSettingsSignature,
+  type AutoCreateRankerRunInfo,
   type AutoCreateTwroleSettings,
   type AutoCreateTwroleSnapshot
 } from './contracts';
+import type { CandidateDescriptor } from './candidateSearch';
 import { AutoCreateDiagnosticsCollector } from './diagnostics';
 import type { Candidate, SourceTile, TileRecord, TransformedImage } from './internalTypes';
+import type { DenseRankerPredictor } from './learning/denseRanker';
+import { FEATURE_NAMES } from './learning/featureSchema';
 import { SeededRandom, TileSpatialIndex } from './numericCore';
 
-const { proposeCandidateMock } = vi.hoisted(() => ({
-  proposeCandidateMock: vi.fn()
+const {
+  proposeCandidateMock,
+  proposeCandidateDescriptorMock,
+  materializeCandidateMock
+} = vi.hoisted(() => ({
+  proposeCandidateMock: vi.fn(),
+  proposeCandidateDescriptorMock: vi.fn(),
+  materializeCandidateMock: vi.fn()
 }));
 
 vi.mock('./candidateSearch', async (importOriginal) => {
   const original = await importOriginal<typeof import('./candidateSearch')>();
   return {
     ...original,
-    proposeCandidate: proposeCandidateMock
+    proposeCandidate: proposeCandidateMock,
+    proposeCandidateDescriptor: (...args: Parameters<typeof original.proposeCandidateDescriptor>) =>
+      proposeCandidateDescriptorMock.getMockImplementation()
+        ? proposeCandidateDescriptorMock(...args)
+        : original.proposeCandidateDescriptor(...args),
+    materializeCandidate: (...args: Parameters<typeof original.materializeCandidate>) =>
+      materializeCandidateMock.getMockImplementation()
+        ? materializeCandidateMock(...args)
+        : original.materializeCandidate(...args)
   };
 });
 
@@ -62,7 +86,11 @@ function engine({
   mask = new Uint8Array(width).fill(1),
   containmentMask = new Uint8Array(width).fill(1),
   settings = {},
-  diagnostics = null
+  diagnostics = null,
+  rankerInfo,
+  ranker = null,
+  learningIdentity = null,
+  decorationRunHash = null
 }: {
   width?: number;
   target?: Uint8ClampedArray;
@@ -70,6 +98,10 @@ function engine({
   containmentMask?: Uint8Array;
   settings?: Partial<AutoCreateTwroleSettings>;
   diagnostics?: AutoCreateDiagnosticsCollector | null;
+  rankerInfo?: AutoCreateRankerRunInfo;
+  ranker?: DenseRankerPredictor | null;
+  learningIdentity?: AutoCreateLearningRunIdentity | null;
+  decorationRunHash?: string | null;
 } = {}): ColorLearningCollage {
   if (width === 1 && target.every((value) => value === 0)) target.set([255, 0, 0, 255]);
   return new ColorLearningCollage(
@@ -90,7 +122,11 @@ function engine({
       resetExperience: true,
       ...settings
     },
-    diagnostics
+    diagnostics,
+    rankerInfo,
+    ranker,
+    learningIdentity,
+    decorationRunHash
   );
 }
 
@@ -159,6 +195,25 @@ function redCandidate(): Candidate {
   };
 }
 
+function opaqueRedLevelCandidate(red: number, x = 0, alpha = 255): Candidate {
+  const clamped = Math.max(0, Math.min(255, Math.round(red)));
+  const clampedAlpha = Math.max(1, Math.min(255, Math.round(alpha)));
+  return {
+    ...redCandidate(),
+    centerX: x + 0.5,
+    rgba: {
+      width: 1,
+      height: 1,
+      data: new Uint8ClampedArray([clamped, 0, 0, clampedAlpha]),
+      alphaBounds: [0, 0, 1, 1],
+      alphaRowStart: new Int32Array([0]),
+      alphaRowEnd: new Int32Array([1]),
+      alphaSum: clampedAlpha
+    },
+    bbox: [x, 0, x + 1, 1]
+  };
+}
+
 function paddedRedCandidate(): Candidate {
   const rgba: TransformedImage = {
     width: 3,
@@ -189,7 +244,43 @@ function paddedRedCandidate(): Candidate {
   };
 }
 
+function descriptor(
+  proposalIndex: number,
+  cheapUpperBound = 1,
+  bbox: CandidateDescriptor['bbox'] = [0, 0, 1, 1]
+): CandidateDescriptor {
+  return {
+    sourceIndex: 0,
+    sourceId: 0,
+    sxInternal: 1,
+    syInternal: 1,
+    rDeg: 0,
+    centerX: (bbox[0] + bbox[2]) / 2,
+    centerY: (bbox[1] + bbox[3]) / 2,
+    bbox,
+    proposalIndex,
+    cheapUpperBound,
+    exploration: false,
+    cacheVariant: true
+  };
+}
+
+function readyRankerInfo(modelRevision = 'model-rev'): AutoCreateRankerRunInfo {
+  return {
+    requestedStrategy: 'strict-ml-typed',
+    effectiveStrategy: 'strict-ml-typed',
+    status: 'ready',
+    runtime: 'typed',
+    learningScope: 'test',
+    featureSchema: 'auto-create-numeric-v1',
+    rankingPolicy: 'strict-cascade-v1',
+    modelRevision
+  };
+}
+
 function snapshot(tiles: AutoCreateTwroleSnapshot['tiles']): AutoCreateTwroleSnapshot {
+  const redPixels = tiles.length;
+  const errorSse = redPixels * 2 * 255 * 255;
   return {
     version: AUTO_CREATE_SNAPSHOT_VERSION,
     targetWidth: 2,
@@ -198,12 +289,33 @@ function snapshot(tiles: AutoCreateTwroleSnapshot['tiles']): AutoCreateTwroleSna
     sourceHeight: 1,
     sourceCount: 1,
     sourceSignature: 'test',
+    targetSignature: 'test-target',
     settingsSignature: autoCreateSnapshotSettingsSignature(DEFAULT_AUTO_CREATE_TWROLE_SETTINGS),
+    learningScope: 'test',
+    learningRunHash: 'test-run',
+    rankerRevision: null,
+    rankerFeatureSchema: 'auto-create-numeric-v1',
+    rankingPolicySignature: 'strict-cascade-v1',
     experienceState: JSON.stringify({
       version: 1,
       source_stats: { source: { trials: 0, accepted: 0, gain_sum: 0, ema_gain: 0 } },
       color_stats: {}
     }),
+    rankingState: {
+      maskedPixelCount: 2,
+      canvasSum: [redPixels * 255, 0, 0],
+      residualSum: [-redPixels * 255, 0, 0],
+      residualSquared: [redPixels * 255 * 255, 0, 0]
+    },
+    errorFieldState: {
+      version: 1,
+      cellSize: 16,
+      gridWidth: 1,
+      gridHeight: 1,
+      totalSse: errorSse,
+      focusSse: errorSse,
+      cellWeights: [errorSse]
+    },
     step: 1,
     totalSteps: 2,
     finalPruneStep: 0,
@@ -223,6 +335,8 @@ function snapshot(tiles: AutoCreateTwroleSnapshot['tiles']): AutoCreateTwroleSna
 describe('auto-create collage ordering and reversible edits', () => {
   beforeEach(() => {
     proposeCandidateMock.mockReset();
+    proposeCandidateDescriptorMock.mockReset();
+    materializeCandidateMock.mockReset();
   });
 
   it('does not early-reject a Replace candidate on a rounded threshold alone', () => {
@@ -238,6 +352,351 @@ describe('auto-create collage ordering and reversible edits', () => {
       denominator,
       incumbentGain
     )).toBe(false);
+  });
+
+  it('preserves smaller proposal-index ties when applying strict upper bounds', () => {
+    expect(candidateUpperBoundCannotBeat(10, 3, 10, 7)).toBe(false);
+    expect(candidateUpperBoundCannotBeat(10, 7, 10, 7)).toBe(true);
+    expect(candidateUpperBoundCannotBeat(9.999, 1, 10, 7)).toBe(true);
+    expect(remainingUpperBoundsCannotBeat(
+      [descriptor(9, 10), descriptor(3, 10)],
+      0,
+      10,
+      7
+    )).toBe(false);
+    expect(remainingUpperBoundsCannotBeat(
+      [descriptor(9, 10), descriptor(8, 9)],
+      0,
+      10,
+      7
+    )).toBe(true);
+  });
+
+  it('freezes a failed live ranker to legacy in subsequent snapshots', () => {
+    const rankerInfo = readyRankerInfo('revision-before-failure');
+    const ranker: DenseRankerPredictor = {
+      revision: 'revision-before-failure',
+      runtime: 'typed',
+      predict: () => {
+        throw new Error('broken inference');
+      }
+    };
+    const collage = engine({
+      settings: { candidateBatch: 1 },
+      rankerInfo,
+      ranker,
+      learningIdentity: { runHash: 'stable-run', targetSignature: 'target' }
+    });
+    const ranked = (collage as unknown as {
+      rankCandidateDescriptors: (
+        values: CandidateDescriptor[],
+        mode: 'add',
+        target: { color: [number, number, number]; std: [number, number, number]; complexity: number },
+        progress: number
+      ) => CandidateDescriptor[];
+    }).rankCandidateDescriptors(
+      [descriptor(0), descriptor(1)],
+      'add',
+      { color: [255, 0, 0], std: [0, 0, 0], complexity: 0 },
+      0
+    );
+
+    expect(ranked.map((value) => value.proposalIndex)).toEqual([0]);
+    expect(rankerInfo).toMatchObject({
+      effectiveStrategy: 'legacy',
+      status: 'fallback',
+      runtime: 'none',
+      modelRevision: null,
+      fallbackReason: 'inference-failed:broken inference'
+    });
+    expect(collage.createSnapshot(
+      0,
+      1,
+      0,
+      123,
+      { width: 1, height: 1, sourceWidth: 1, sourceHeight: 1 },
+      'target',
+      []
+    )).toMatchObject({
+      learningRunHash: 'stable-run',
+      rankerRevision: null
+    });
+  });
+
+  it('collects shadow labels while rollout is pending but respects the disabled switch', () => {
+    const shadowProbe = (status: 'disabled' | 'fallback') => {
+      const collage = engine({
+        rankerInfo: {
+          requestedStrategy: 'strict-ml-typed',
+          effectiveStrategy: 'legacy',
+          status,
+          runtime: 'none',
+          learningScope: 'test',
+          featureSchema: 'auto-create-numeric-v1',
+          rankingPolicy: 'strict-cascade-v1',
+          modelRevision: null,
+          fallbackReason: status === 'fallback' ? 'rollout-not-approved' : undefined
+        }
+      });
+      return (collage as unknown as {
+        shouldCollectShadowExamples: (mode: 'add' | 'replace') => boolean;
+      }).shouldCollectShadowExamples('add');
+    };
+
+    expect(shadowProbe('fallback')).toBe(true);
+    expect(shadowProbe('disabled')).toBe(false);
+  });
+
+  it('falls back when a ranker returns a malformed output matrix', () => {
+    const rankerInfo = readyRankerInfo('short-output');
+    const collage = engine({
+      settings: { candidateBatch: 1 },
+      rankerInfo,
+      ranker: {
+        revision: 'short-output',
+        runtime: 'typed',
+        predict: () => new Float32Array(1)
+      }
+    });
+    (collage as unknown as {
+      rankCandidateDescriptors: (
+        values: CandidateDescriptor[],
+        mode: 'add',
+        target: { color: [number, number, number]; std: [number, number, number]; complexity: number },
+        progress: number
+      ) => CandidateDescriptor[];
+    }).rankCandidateDescriptors(
+      [descriptor(0), descriptor(1)],
+      'add',
+      { color: [255, 0, 0], std: [0, 0, 0], complexity: 0 },
+      0
+    );
+    expect(rankerInfo).toMatchObject({
+      effectiveStrategy: 'legacy',
+      modelRevision: null,
+      fallbackReason: 'inference-failed:ranker returned 1 outputs; expected 4'
+    });
+  });
+
+  it('fills descriptor features with local target and shared current-state statistics', () => {
+    let captured: Float32Array | null = null;
+    const ranker: DenseRankerPredictor = {
+      revision: 'feature-model',
+      runtime: 'typed',
+      predict(features, rowCount = 0) {
+        captured = Float32Array.from(features);
+        return new Float32Array(rowCount * 2);
+      }
+    };
+    const target = new Uint8ClampedArray([
+      255, 0, 0, 255,
+      0, 0, 255, 255
+    ]);
+    const collage = engine({
+      width: 2,
+      target,
+      rankerInfo: readyRankerInfo('feature-model'),
+      ranker
+    });
+    const internals = collage as unknown as EngineInternals & {
+      copyPatchToCanvas: (patch: Float32Array, bbox: [number, number, number, number]) => void;
+    };
+    internals.copyPatchToCanvas(new Float32Array([
+      10, 20, 30, 255,
+      30, 40, 50, 255
+    ]), [0, 0, 2, 1]);
+    (collage as unknown as {
+      rankCandidateDescriptors: (
+        values: CandidateDescriptor[],
+        mode: 'add',
+        target: { color: [number, number, number]; std: [number, number, number]; complexity: number },
+        progress: number
+      ) => CandidateDescriptor[];
+    }).rankCandidateDescriptors(
+      [descriptor(0, 1, [0, 0, 2, 1])],
+      'add',
+      { color: [1, 2, 3], std: [0, 0, 0], complexity: 0 },
+      0.5
+    );
+
+    const feature = (name: typeof FEATURE_NAMES[number]) => {
+      const values = captured as unknown as Float32Array;
+      return values[FEATURE_NAMES.indexOf(name)];
+    };
+    expect(captured).not.toBeNull();
+    expect(feature('target_mean_r')).toBeCloseTo(0.5, 5);
+    expect(feature('target_mean_b')).toBeCloseTo(0.5, 5);
+    expect(feature('target_std_r')).toBeCloseTo(0.5, 5);
+    expect(feature('canvas_mean_r')).toBeCloseTo(20 / 255, 5);
+    expect(feature('canvas_mean_g')).toBeCloseTo(30 / 255, 5);
+    expect(feature('residual_mean_r')).toBeCloseTo(107.5 / 255, 5);
+    expect(feature('residual_mean_g')).toBeCloseTo(-30 / 255, 5);
+    expect(feature('residual_std_b')).toBeCloseTo(117.5 / 255, 5);
+  });
+
+  it('reproduces deterministic layer ids after restoring accepted/replaced serials', () => {
+    const identity = { runHash: 'deterministic-run', targetSignature: 'target' };
+    const uninterrupted = engine({
+      learningIdentity: identity,
+      decorationRunHash: 'deterministic-run'
+    });
+    const acceptUninterrupted = (uninterrupted as unknown as {
+      acceptCandidate: (candidate: Candidate) => void;
+    }).acceptCandidate.bind(uninterrupted);
+    acceptUninterrupted(redCandidate());
+    acceptUninterrupted(redCandidate());
+
+    const stopped = engine({
+      learningIdentity: identity,
+      decorationRunHash: 'deterministic-run'
+    });
+    (stopped as unknown as {
+      acceptCandidate: (candidate: Candidate) => void;
+    }).acceptCandidate(redCandidate());
+    const checkpoint = stopped.createSnapshot(
+      1,
+      2,
+      0,
+      123,
+      { width: 1, height: 1, sourceWidth: 1, sourceHeight: 1 },
+      'target',
+      []
+    );
+
+    const resumed = engine({
+      learningIdentity: identity,
+      decorationRunHash: 'deterministic-run'
+    });
+    (resumed as unknown as EngineInternals & { cache: { get: () => TransformedImage } }).cache.get =
+      vi.fn(() => opaqueRed());
+    expect(resumed.restoreFromSnapshot(checkpoint)).toBe(true);
+    (resumed as unknown as {
+      acceptCandidate: (candidate: Candidate) => void;
+    }).acceptCandidate(redCandidate());
+
+    expect(resumed.exportDecorations()).toEqual(uninterrupted.exportDecorations());
+    expect(resumed.exportDecorations().map((item) => item.id)).toEqual([
+      'deco_auto_deterministic-run_1',
+      'deco_auto_deterministic-run_0'
+    ]);
+  });
+
+  it('continues bitwise-equivalently after many incremental applies and replacements', () => {
+    const width = 8;
+    const target = new Uint8ClampedArray(width * 4);
+    for (let x = 0; x < width; x += 1) {
+      target.set([255, 0, 0, 255], x * 4);
+    }
+    const settings: Partial<AutoCreateTwroleSettings> = {
+      candidateBatch: 1,
+      replaceCandidateBatch: 1,
+      tilePenaltyMse: 0,
+      replaceMinGainMse: 0,
+      errorCellSize: 4
+    };
+    const identity = { runHash: 'incremental-learning', targetSignature: 'target' };
+    const uninterrupted = engine({
+      width,
+      target,
+      settings,
+      learningIdentity: identity,
+      decorationRunHash: 'incremental-decoration'
+    });
+    (uninterrupted as unknown as {
+      acceptCandidate: (candidate: Candidate) => void;
+    }).acceptCandidate(opaqueRedLevelCandidate(0, 0, 128));
+
+    for (let red = 1; red <= 120; red += 1) {
+      proposeCandidateMock.mockImplementation(() => opaqueRedLevelCandidate(red, 0, 128));
+      expect(uninterrupted.tryReplaceOnce(red, 200)).toBe(true);
+    }
+    const checkpoint = uninterrupted.createSnapshot(
+      120,
+      200,
+      0,
+      123,
+      { width, height: 1, sourceWidth: width, sourceHeight: 1 },
+      'target',
+      []
+    );
+
+    const resumed = engine({
+      width,
+      target,
+      settings,
+      learningIdentity: identity,
+      decorationRunHash: 'incremental-decoration'
+    });
+    (resumed as unknown as EngineInternals & { cache: { get: () => TransformedImage } }).cache.get =
+      vi.fn(() => opaqueRedLevelCandidate(120, 0, 128).rgba);
+    expect(resumed.restoreFromSnapshot(checkpoint)).toBe(true);
+    (resumed as unknown as { rng: SeededRandom }).rng.restore(
+      checkpoint.rngState,
+      checkpoint.rngSpareNormal
+    );
+    expect((resumed as unknown as {
+      errors: { snapshotState: () => AutoCreateTwroleSnapshot['errorFieldState'] };
+    }).errors.snapshotState()).toEqual(checkpoint.errorFieldState);
+
+    proposeCandidateMock.mockImplementation((
+      _sources: unknown,
+      _sourceId: number,
+      centerX: number
+    ) => opaqueRedLevelCandidate(255, Math.max(0, Math.min(width - 1, Math.floor(centerX)))));
+    expect(uninterrupted.tryAdd(121, 200)).toBe(true);
+    expect(resumed.tryAdd(121, 200)).toBe(true);
+
+    expect(resumed.exportDecorations()).toEqual(uninterrupted.exportDecorations());
+    expect(resumed.exportLegacyDeco()).toEqual(uninterrupted.exportLegacyDeco());
+    expect(resumed.currentMse()).toBe(uninterrupted.currentMse());
+    expect({
+      accepted: resumed.accepted,
+      rejected: resumed.rejected,
+      pruned: resumed.pruned,
+      replaced: resumed.replaced
+    }).toEqual({
+      accepted: uninterrupted.accepted,
+      rejected: uninterrupted.rejected,
+      pruned: uninterrupted.pruned,
+      replaced: uninterrupted.replaced
+    });
+  });
+
+  it('accepts bounded residual-square cancellation and restores its exact serialized value', () => {
+    const source = engine({
+      learningIdentity: { runHash: 'roundoff-learning', targetSignature: 'target' },
+      decorationRunHash: 'roundoff-decoration'
+    });
+    (source as unknown as {
+      acceptCandidate: (candidate: Candidate) => void;
+    }).acceptCandidate(redCandidate());
+    const checkpoint = source.createSnapshot(
+      1,
+      2,
+      0,
+      123,
+      { width: 1, height: 1, sourceWidth: 1, sourceHeight: 1 },
+      'target',
+      []
+    );
+    checkpoint.rankingState.residualSquared[0] = -0.001;
+
+    const resumed = engine({
+      learningIdentity: { runHash: 'roundoff-learning', targetSignature: 'target' },
+      decorationRunHash: 'roundoff-decoration'
+    });
+    (resumed as unknown as EngineInternals & { cache: { get: () => TransformedImage } }).cache.get =
+      vi.fn(() => opaqueRed());
+    expect(resumed.restoreFromSnapshot(checkpoint)).toBe(true);
+    expect(resumed.createSnapshot(
+      1,
+      2,
+      0,
+      123,
+      { width: 1, height: 1, sourceWidth: 1, sourceHeight: 1 },
+      'target',
+      []
+    ).rankingState.residualSquared[0]).toBe(-0.001);
   });
 
   it('exports editor layers top-first while keeping legacy draw order bottom-first', () => {
@@ -339,6 +798,46 @@ describe('auto-create collage ordering and reversible edits', () => {
     expect(collage.tryReplaceOnce(1, 1)).toBe(true);
     expect(collage.exportDecorations()[0].x).toBe(-0.5);
     expect(diagnostics.snapshot().counters.replaceAfterSseEarlyRejected).toBe(1);
+    expect(diagnostics.snapshot().counters.candidatesEvaluated).toBe(2);
+    expect(diagnostics.snapshot().counters.replaceCandidatesEvaluated).toBe(2);
+  });
+
+  it('counts descriptor Replace candidates at the same exact-evaluator boundary', () => {
+    proposeCandidateDescriptorMock.mockImplementation((
+      ...args: Parameters<typeof import('./candidateSearch').proposeCandidateDescriptor>
+    ) => {
+      const options = args[9];
+      return descriptor(options?.proposalIndex ?? 0, 100);
+    });
+    materializeCandidateMock.mockImplementation(() => redCandidate());
+    const diagnostics = new AutoCreateDiagnosticsCollector();
+    const collage = engine({
+      diagnostics,
+      settings: {
+        searchStrategy: 'descriptor-control',
+        replaceCandidateBatch: 2
+      },
+      rankerInfo: {
+        requestedStrategy: 'descriptor-control',
+        effectiveStrategy: 'descriptor-control',
+        status: 'ready',
+        runtime: 'none',
+        learningScope: 'test',
+        featureSchema: 'auto-create-numeric-v1',
+        rankingPolicy: 'strict-cascade-v1',
+        modelRevision: null
+      }
+    });
+    const internals = collage as unknown as EngineInternals;
+    const old = tile('blue-old');
+    internals.tiles.push(old);
+    internals.activeTileCount = 1;
+    internals.canvas.set([0, 0, 255, 255]);
+    internals.spatialIndex.update(0, old.bbox);
+
+    expect(collage.tryReplaceOnce(1, 1)).toBe(true);
+    expect(diagnostics.snapshot().counters.candidatesEvaluated).toBe(2);
+    expect(diagnostics.snapshot().counters.replaceCandidatesEvaluated).toBe(2);
   });
 
   it('compares Replace candidates by global gain when their unions differ', () => {
@@ -618,8 +1117,24 @@ describe('auto-create collage ordering and reversible edits', () => {
     const restoredTile = canonicalSnapshotTile('padded', 0.5, [-1, 0, 2, 1]);
     restoredTile.decoration.x = 0;
     restoredTile.legacy.x = 0;
+    const paddedSnapshot = snapshot([restoredTile]);
+    paddedSnapshot.rankingState = {
+      maskedPixelCount: 1,
+      canvasSum: [255, 0, 0],
+      residualSum: [0, 0, 0],
+      residualSquared: [0, 0, 0]
+    };
+    paddedSnapshot.errorFieldState = {
+      version: 1,
+      cellSize: 16,
+      gridWidth: 1,
+      gridHeight: 1,
+      totalSse: 0,
+      focusSse: 0,
+      cellWeights: [0]
+    };
 
-    expect(collage.restoreFromSnapshot(snapshot([restoredTile]))).toBe(true);
+    expect(collage.restoreFromSnapshot(paddedSnapshot)).toBe(true);
     expect(collage.activeCount()).toBe(1);
     expect(collage.currentMse()).toBe(0);
   });

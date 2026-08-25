@@ -1,6 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { makePartOption } from '../../../test/roleFixtures';
-import { buildDecoDraft, chooseSourceIds, proposeCandidate, sourceChoiceScores } from './candidateSearch';
+import {
+  buildDecoDraft,
+  chooseSourceIds,
+  decorationFromDraft,
+  materializeCandidate,
+  proposeCandidate,
+  proposeCandidateDescriptor,
+  sourceChoiceScores
+} from './candidateSearch';
 import { DEFAULT_AUTO_CREATE_TWROLE_SETTINGS } from './contracts';
 import { AutoCreateDiagnosticsCollector } from './diagnostics';
 import { ExperienceMemory } from './experienceMemory';
@@ -122,6 +130,8 @@ describe('auto-create candidate search', () => {
         r: 1.570796
       }
     });
+    expect(decorationFromDraft(draft, 'deco_auto_test_0').id).toBe('deco_auto_test_0');
+    expect(decorationFromDraft(draft).id).toMatch(/^deco_/);
   });
 
   it('reuses a supplied Candidate and only counts real object allocations', () => {
@@ -156,6 +166,76 @@ describe('auto-create candidate search', () => {
     );
 
     expect(second).toBe(first);
+    expect(diagnostics.snapshot().counters.candidateObjectsAllocated).toBe(1);
+  });
+
+  it('defers rasterization until a descriptor is materialized', () => {
+    const tile = source(0);
+    const transformed: TransformedImage = {
+      width: 10,
+      height: 5,
+      data: new Uint8ClampedArray(10 * 5 * 4),
+      alphaBounds: [0, 0, 10, 5],
+      alphaRowStart: new Int32Array(5),
+      alphaRowEnd: new Int32Array(5),
+      alphaSum: 255
+    };
+    const get = vi.fn(() => transformed);
+    const cache = { get } as unknown as VariantCache;
+    const next = vi.fn()
+      .mockReturnValueOnce(1) // horizontal flip
+      .mockReturnValueOnce(1) // vertical flip
+      .mockReturnValueOnce(0) // take the rotation branch
+      .mockReturnValueOnce(0.9); // use a continuous rotation
+    const rng = {
+      normal: vi.fn(() => 0),
+      next,
+      uniform: vi.fn(() => 37)
+    } as unknown as SeededRandom;
+    const diagnostics = new AutoCreateDiagnosticsCollector();
+
+    const descriptor = proposeCandidateDescriptor(
+      [tile],
+      0,
+      100,
+      100,
+      200,
+      200,
+      0.5,
+      rng,
+      { ...DEFAULT_AUTO_CREATE_TWROLE_SETTINGS, rotationProb: 1, flipProb: 0 },
+      { desiredPx: 10, maxRenderedPx: 20 },
+      diagnostics
+    );
+
+    expect(descriptor).not.toBeNull();
+    expect(descriptor?.cacheVariant).toBe(false);
+    expect(get).not.toHaveBeenCalled();
+    expect(diagnostics.snapshot().counters).toMatchObject({
+      candidatesProposed: 1,
+      candidateObjectsAllocated: 0
+    });
+
+    const candidate = materializeCandidate([tile], descriptor!, cache, diagnostics);
+
+    expect(candidate).toMatchObject({
+      sourceId: tile.idx,
+      sxInternal: descriptor?.sxInternal,
+      syInternal: descriptor?.syInternal,
+      rDeg: descriptor?.rDeg,
+      centerX: descriptor?.centerX,
+      centerY: descriptor?.centerY,
+      bbox: descriptor?.bbox,
+      rgba: transformed
+    });
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith(
+      tile,
+      descriptor?.sxInternal,
+      descriptor?.syInternal,
+      descriptor?.rDeg,
+      false
+    );
     expect(diagnostics.snapshot().counters.candidateObjectsAllocated).toBe(1);
   });
 

@@ -3,11 +3,13 @@ import type { PartOption } from '../../types/role';
 import { DEFAULT_AUTO_CREATE_TWROLE_SETTINGS } from '../../lib/conversion/auto-create-twrole/contracts';
 import {
   AUTO_CREATE_PROCESS_PREVIEW_EXPORT_EVERY,
+  AUTO_CREATE_RANKER_LAB_QUERY_PARAM,
   buildSourceTitleItems,
   formatNumber,
   isAutoCreateEmptyTargetError,
   isAutoCreateNoPlacementAreaError,
   isImageFile,
+  isAutoCreateRankerLabAvailable,
   optionTitle,
   sortTitles,
   toSafeInteger,
@@ -54,6 +56,28 @@ describe('AutoCreate panel utilities', () => {
     expect(isImageFile({ type: 'image/avif', name: 'asset.bin' })).toBe(true);
     expect(isImageFile({ type: '', name: 'asset.WEBP' })).toBe(true);
     expect(isImageFile({ type: 'application/json', name: 'asset.json' })).toBe(false);
+  });
+
+  it('only exposes the ranker lab on an explicitly opted-in loopback URL', () => {
+    expect(AUTO_CREATE_RANKER_LAB_QUERY_PARAM).toBe('autoCreateRankerLab');
+    for (const hostname of ['localhost', '127.0.0.1', '[::1]', '::1']) {
+      expect(isAutoCreateRankerLabAvailable({
+        hostname,
+        search: '?autoCreateRankerLab=1'
+      })).toBe(true);
+    }
+    expect(isAutoCreateRankerLabAvailable({
+      hostname: 'localhost',
+      search: ''
+    })).toBe(false);
+    expect(isAutoCreateRankerLabAvailable({
+      hostname: 'localhost',
+      search: '?autoCreateRankerLab=0'
+    })).toBe(false);
+    expect(isAutoCreateRankerLabAvailable({
+      hostname: 'editor.example.com',
+      search: '?autoCreateRankerLab=1'
+    })).toBe(false);
   });
 
   it('recognizes the empty-target worker error by its structured name', () => {

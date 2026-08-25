@@ -1,11 +1,15 @@
 import {
   AUTO_CREATE_SNAPSHOT_VERSION,
+  AUTO_CREATE_ERROR_FIELD_STATE_VERSION,
+  AUTO_CREATE_FEATURE_SCHEMA_VERSION,
+  AUTO_CREATE_RANKING_POLICY_VERSION,
   AutoCreateTwroleStoppedError,
   DEFAULT_AUTO_CREATE_TWROLE_SETTINGS,
   autoCreateSnapshotSettingsSignature,
   type AutoCreateTwroleCheckpoint,
   type AutoCreateTwroleProgress,
   type AutoCreateTwroleProgressStage,
+  type AutoCreateRankerRunInfo,
   type AutoCreateTwroleResult,
   type AutoCreateTwroleSettings,
   type RunAutoCreateTwroleOptions
@@ -21,9 +25,103 @@ import {
   targetSignatureForImage
 } from './sourcePipeline';
 import { AutoCreateDiagnosticsCollector } from './diagnostics';
+import {
+  loadLearningExperienceState,
+  loadRankerRuntime
+} from './learning/modelRuntime';
+
+function stableRunHash(parts: readonly string[]): string {
+  let hash = 0x811c9dc5;
+  const value = parts.join('\u001f');
+  for (let index = 0; index < value.length; index += 1) {
+    hash = Math.imul(hash ^ value.charCodeAt(index), 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+export function autoCreateLearningRunHash(input: {
+  learningScope: string;
+  targetSignature: string;
+  sourceSignature: string;
+  settingsSignature: string;
+  seed: number;
+  effectiveStrategy: AutoCreateRankerRunInfo['effectiveStrategy'];
+  modelRevision: string | null;
+  initialExperienceState: string;
+}): string {
+  return stableRunHash([
+    input.learningScope,
+    input.targetSignature,
+    input.sourceSignature,
+    input.settingsSignature,
+    String(input.seed),
+    input.effectiveStrategy,
+    input.modelRevision ?? 'no-model',
+    stableRunHash([input.initialExperienceState])
+  ]);
+}
+
+export function autoCreateDecorationRunHash(input: {
+  targetSignature: string;
+  sourceSignature: string;
+  seed: number;
+}): string {
+  return stableRunHash([
+    input.targetSignature,
+    input.sourceSignature,
+    String(input.seed)
+  ]);
+}
+
+export function assertResumeRankerAvailable(
+  snapshotRevision: string | null | undefined,
+  loaded: { modelRevision: string | null; predictor: unknown; status: string }
+): void {
+  if (
+    typeof snapshotRevision === 'string'
+    && (
+      loaded.modelRevision !== snapshotRevision
+      || !loaded.predictor
+      || loaded.status !== 'ready'
+    )
+  ) {
+    throw new Error(
+      `Cannot resume AutoCreateTwrole: frozen ranker revision "${snapshotRevision}" is unavailable or invalid.`
+    );
+  }
+}
 
 function hasValidSnapshotState(snapshot: NonNullable<RunAutoCreateTwroleOptions['resumeSnapshot']>): boolean {
   const counters = [snapshot.accepted, snapshot.rejected, snapshot.pruned, snapshot.replaced];
+  const rankingState = snapshot.rankingState;
+  const errorFieldState = snapshot.errorFieldState;
+  const validRankingState = Boolean(
+    rankingState
+    && typeof rankingState === 'object'
+    && Number.isInteger(rankingState.maskedPixelCount)
+    && rankingState.maskedPixelCount >= 0
+    && [rankingState.canvasSum, rankingState.residualSum, rankingState.residualSquared].every(
+      (vector) => Array.isArray(vector)
+        && vector.length === 3
+        && vector.every((value) => Number.isFinite(value))
+    )
+  );
+  const validErrorFieldState = Boolean(
+    errorFieldState
+    && typeof errorFieldState === 'object'
+    && errorFieldState.version === AUTO_CREATE_ERROR_FIELD_STATE_VERSION
+    && Number.isInteger(errorFieldState.cellSize)
+    && errorFieldState.cellSize > 0
+    && Number.isInteger(errorFieldState.gridWidth)
+    && errorFieldState.gridWidth > 0
+    && Number.isInteger(errorFieldState.gridHeight)
+    && errorFieldState.gridHeight > 0
+    && Number.isFinite(errorFieldState.totalSse)
+    && Number.isFinite(errorFieldState.focusSse)
+    && Array.isArray(errorFieldState.cellWeights)
+    && errorFieldState.cellWeights.length === errorFieldState.gridWidth * errorFieldState.gridHeight
+    && errorFieldState.cellWeights.every((value) => Number.isFinite(value))
+  );
   return (
     Number.isInteger(snapshot.step) &&
     Number.isInteger(snapshot.totalSteps) &&
@@ -39,8 +137,17 @@ function hasValidSnapshotState(snapshot: NonNullable<RunAutoCreateTwroleOptions[
     snapshot.finalPruneStep >= 0 &&
     typeof snapshot.settingsSignature === 'string' &&
     snapshot.settingsSignature.length > 0 &&
+    typeof snapshot.learningScope === 'string' &&
+    snapshot.learningScope.length > 0 &&
+    typeof snapshot.learningRunHash === 'string' &&
+    snapshot.learningRunHash.length > 0 &&
+    (snapshot.rankerRevision === null || typeof snapshot.rankerRevision === 'string') &&
+    snapshot.rankerFeatureSchema === AUTO_CREATE_FEATURE_SCHEMA_VERSION &&
+    snapshot.rankingPolicySignature === AUTO_CREATE_RANKING_POLICY_VERSION &&
     typeof snapshot.experienceState === 'string' &&
     snapshot.experienceState.length > 0 &&
+    validRankingState &&
+    validErrorFieldState &&
     Array.isArray(snapshot.tiles) &&
     snapshot.accepted - snapshot.pruned === snapshot.tiles.length &&
     Array.isArray(snapshot.warnings) &&
@@ -78,12 +185,124 @@ async function runAutoCreateTwroleInternal({
   targetFile,
   decoOptions,
   settings: rawSettings,
+  learningScope: rawLearningScope,
   resumeSnapshot,
   signal,
   onProgress,
-  onCheckpoint
+  onCheckpoint,
+  onLearningBatch,
+  onLearningExperience
 }: RunAutoCreateTwroleOptions, diagnostics: AutoCreateDiagnosticsCollector | null): Promise<AutoCreateTwroleResult> {
   const settings: AutoCreateTwroleSettings = { ...DEFAULT_AUTO_CREATE_TWROLE_SETTINGS, ...rawSettings };
+  const learningScope = rawLearningScope?.trim() || 'default';
+  let loadedRanker = settings.rankerEnabled
+    ? diagnostics
+      ? await diagnostics.measureAsync(
+          'rankerLoad',
+          () => loadRankerRuntime(
+            learningScope,
+            settings.searchStrategy,
+            resumeSnapshot?.rankerRevision
+          )
+        )
+      : await loadRankerRuntime(
+          learningScope,
+          settings.searchStrategy,
+          resumeSnapshot?.rankerRevision
+        )
+    : {
+        predictor: null,
+        readyModes: [] as const,
+        modelRevision: null,
+        status: 'disabled' as const,
+        fallbackReason: 'ranking-disabled'
+      };
+  const buildRankerInfo = (): AutoCreateRankerRunInfo => {
+    if (!settings.rankerEnabled || settings.searchStrategy === 'legacy') {
+      return {
+        requestedStrategy: settings.searchStrategy,
+        effectiveStrategy: 'legacy',
+        status: 'disabled',
+        runtime: 'none',
+        learningScope,
+        featureSchema: AUTO_CREATE_FEATURE_SCHEMA_VERSION,
+        rankingPolicy: AUTO_CREATE_RANKING_POLICY_VERSION,
+        modelRevision: null
+      };
+    }
+    if (settings.searchStrategy === 'descriptor-control') {
+      return {
+        requestedStrategy: settings.searchStrategy,
+        effectiveStrategy: 'descriptor-control',
+        status: 'ready',
+        runtime: 'none',
+        learningScope,
+        featureSchema: AUTO_CREATE_FEATURE_SCHEMA_VERSION,
+        rankingPolicy: AUTO_CREATE_RANKING_POLICY_VERSION,
+        modelRevision: null
+      };
+    }
+    if (settings.searchStrategy === 'strict-heuristic') {
+      return {
+        requestedStrategy: settings.searchStrategy,
+        effectiveStrategy: 'strict-heuristic',
+        status: 'ready',
+        runtime: 'heuristic',
+        learningScope,
+        featureSchema: AUTO_CREATE_FEATURE_SCHEMA_VERSION,
+        rankingPolicy: AUTO_CREATE_RANKING_POLICY_VERSION,
+        modelRevision: null
+      };
+    }
+    if (
+      loadedRanker.predictor
+      && loadedRanker.status === 'ready'
+      && !settings.rankerRolloutApproved
+    ) {
+      return {
+        requestedStrategy: settings.searchStrategy,
+        effectiveStrategy: 'legacy',
+        status: 'fallback',
+        runtime: 'none',
+        learningScope,
+        featureSchema: AUTO_CREATE_FEATURE_SCHEMA_VERSION,
+        rankingPolicy: AUTO_CREATE_RANKING_POLICY_VERSION,
+        modelRevision: null,
+        fallbackReason: 'rollout-not-approved'
+      };
+    }
+    if (loadedRanker.predictor && loadedRanker.status === 'ready') {
+      return {
+        requestedStrategy: settings.searchStrategy,
+        effectiveStrategy: settings.searchStrategy,
+        status: 'ready',
+        runtime: loadedRanker.predictor.runtime,
+        learningScope,
+        featureSchema: AUTO_CREATE_FEATURE_SCHEMA_VERSION,
+        rankingPolicy: AUTO_CREATE_RANKING_POLICY_VERSION,
+        modelRevision: loadedRanker.modelRevision
+      };
+    }
+    return {
+      requestedStrategy: settings.searchStrategy,
+      effectiveStrategy: 'legacy',
+      status: loadedRanker.status === 'disabled'
+        ? 'disabled'
+        : loadedRanker.status === 'fallback'
+          ? 'fallback'
+          : 'collecting',
+      runtime: 'none',
+      learningScope,
+      featureSchema: AUTO_CREATE_FEATURE_SCHEMA_VERSION,
+      rankingPolicy: AUTO_CREATE_RANKING_POLICY_VERSION,
+      modelRevision: null,
+      fallbackReason: loadedRanker.fallbackReason ?? 'model-not-ready'
+    };
+  };
+  let rankerInfo = buildRankerInfo();
+  const initialExperienceState = settings.resetExperience
+    ? null
+    : await loadLearningExperienceState(learningScope);
   throwIfAborted(signal);
 
   const target = diagnostics
@@ -119,7 +338,7 @@ async function runAutoCreateTwroleInternal({
   const sourceSignature = sourceSignatureForTiles(sourceLoad.sources);
   const targetSignature = targetSignatureForImage(target);
   const settingsSignature = autoCreateSnapshotSettingsSignature(settings);
-  const canResume = Boolean(
+  const snapshotMatchesStaticRun = Boolean(
     resumeSnapshot &&
       hasValidSnapshotState(resumeSnapshot) &&
       resumeSnapshot.version === AUTO_CREATE_SNAPSHOT_VERSION &&
@@ -131,16 +350,53 @@ async function runAutoCreateTwroleInternal({
       resumeSnapshot.sourceSignature === sourceSignature &&
       resumeSnapshot.targetSignature === targetSignature &&
       resumeSnapshot.settingsSignature === settingsSignature &&
+      resumeSnapshot.learningScope === learningScope &&
       resumeSnapshot.totalSteps === totalSteps &&
       resumeSnapshot.step >= 0 &&
       resumeSnapshot.step <= totalSteps &&
       resumeSnapshot.finalPruneStep <= Math.max(0, Math.round(settings.finalPruneRounds)) &&
       (resumeSnapshot.finalPruneStep === 0 || resumeSnapshot.step === totalSteps)
   );
+  if (
+    resumeSnapshot
+    && !snapshotMatchesStaticRun
+    && settings.rankerEnabled
+    && settings.searchStrategy.startsWith('strict-ml-')
+  ) {
+    loadedRanker = diagnostics
+      ? await diagnostics.measureAsync(
+          'rankerLoad',
+          () => loadRankerRuntime(learningScope, settings.searchStrategy)
+        )
+      : await loadRankerRuntime(learningScope, settings.searchStrategy);
+    rankerInfo = buildRankerInfo();
+  }
+  if (snapshotMatchesStaticRun && resumeSnapshot) {
+    assertResumeRankerAvailable(resumeSnapshot.rankerRevision, loadedRanker);
+  }
+  if (rankerInfo.effectiveStrategy === 'legacy' && settings.searchStrategy !== 'legacy') {
+    diagnostics?.add('rankerFallbacks');
+  }
+  const canResume = Boolean(
+    snapshotMatchesStaticRun
+    && resumeSnapshot
+    && resumeSnapshot.rankerRevision === rankerInfo.modelRevision
+    && resumeSnapshot.rankerFeatureSchema === rankerInfo.featureSchema
+    && resumeSnapshot.rankingPolicySignature === rankerInfo.rankingPolicy
+  );
 
   const fallbackSeed = settings.seed > 0 ? settings.seed : Math.floor(Date.now() % 2147483647);
   let seed = canResume && resumeSnapshot ? resumeSnapshot.seed : fallbackSeed;
   let rng = new SeededRandom(seed);
+  let decorationRunHash = autoCreateDecorationRunHash({
+    targetSignature,
+    sourceSignature,
+    seed
+  });
+  const learningIdentity = {
+    runHash: canResume && resumeSnapshot ? resumeSnapshot.learningRunHash : '',
+    targetSignature
+  };
   const createCollage = (collageRng: SeededRandom) => new ColorLearningCollage(
     sourceLoad.sources,
     target.straight,
@@ -151,13 +407,36 @@ async function runAutoCreateTwroleInternal({
     target.height,
     collageRng,
     settings,
-    diagnostics
+    diagnostics,
+    rankerInfo,
+    loadedRanker.predictor,
+    learningIdentity,
+    decorationRunHash,
+    initialExperienceState,
+    loadedRanker.readyModes
   );
   const instantiateCollage = (collageRng: SeededRandom) => diagnostics
     ? diagnostics.measure('engineInit', () => createCollage(collageRng))
     : createCollage(collageRng);
   let collage = instantiateCollage(rng);
+  if (!learningIdentity.runHash) {
+    learningIdentity.runHash = autoCreateLearningRunHash({
+      learningScope,
+      targetSignature,
+      sourceSignature,
+      settingsSignature,
+      seed,
+      effectiveStrategy: rankerInfo.effectiveStrategy,
+      modelRevision: rankerInfo.modelRevision,
+      initialExperienceState: collage.experienceSnapshotState()
+    });
+  }
   let didResume = false;
+
+  const flushLearningExamples = () => {
+    const examples = collage.drainLearningExamples();
+    if (examples.length > 0) onLearningBatch?.(learningScope, examples);
+  };
 
   if (canResume && resumeSnapshot) {
     if (collage.restoreFromSnapshot(resumeSnapshot)) {
@@ -168,6 +447,21 @@ async function runAutoCreateTwroleInternal({
       // validation, discard the complete checkpoint and start from a clean RNG.
       seed = fallbackSeed;
       rng = new SeededRandom(seed);
+      decorationRunHash = autoCreateDecorationRunHash({
+        targetSignature,
+        sourceSignature,
+        seed
+      });
+      learningIdentity.runHash = autoCreateLearningRunHash({
+        learningScope,
+        targetSignature,
+        sourceSignature,
+        settingsSignature,
+        seed,
+        effectiveStrategy: rankerInfo.effectiveStrategy,
+        modelRevision: rankerInfo.modelRevision,
+        initialExperienceState: collage.experienceSnapshotState()
+      });
       collage = instantiateCollage(rng);
     }
   }
@@ -189,7 +483,8 @@ async function runAutoCreateTwroleInternal({
       rejected: collage.rejected,
       pruned: collage.pruned,
       replaced: collage.replaced,
-      warnings: sourceLoad.warnings
+      warnings: sourceLoad.warnings,
+      ranker: { ...rankerInfo }
     };
   };
   const createResult = async (): Promise<AutoCreateTwroleResult> => {
@@ -231,6 +526,8 @@ async function runAutoCreateTwroleInternal({
       : await buildCheckpoint();
     diagnostics?.add('checkpointsBuilt');
     onCheckpoint?.(checkpoint);
+    flushLearningExamples();
+    onLearningExperience?.(learningScope, collage.experienceSnapshotState());
     return checkpoint;
   };
   const publishStoppedCheckpointWithResult = (
@@ -259,6 +556,8 @@ async function runAutoCreateTwroleInternal({
       : buildCheckpoint();
     diagnostics?.add('checkpointsBuilt');
     onCheckpoint?.(checkpoint);
+    flushLearningExamples();
+    onLearningExperience?.(learningScope, collage.experienceSnapshotState());
     return checkpoint;
   };
 
@@ -297,6 +596,7 @@ async function runAutoCreateTwroleInternal({
       if (step % Math.max(250, Math.round(settings.fullErrorRecomputeEvery)) === 0) {
         collage.recomputeErrors();
       }
+      if (collage.learningExampleCount() >= 256) flushLearningExamples();
 
       if (step === 1 || step % logEvery === 0 || step === totalSteps) {
         onProgress?.(createProgress(collage, 'run', step, totalSteps, didWork ? 'accepted/refined' : 'searched'));
@@ -361,6 +661,8 @@ async function runAutoCreateTwroleInternal({
 
   collage.recomputeErrors();
   collage.saveMemory();
+  flushLearningExamples();
+  onLearningExperience?.(learningScope, collage.experienceSnapshotState());
   onProgress?.(createProgress(collage, 'final', finalRounds, finalRounds || 1, 'done'));
 
   const result = await createResult();

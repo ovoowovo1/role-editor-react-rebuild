@@ -81,7 +81,7 @@ describe('auto-create target containment mask', () => {
     expect(target.premult[target.premult.length - 1]).toBe(1);
   });
 
-  it('binds v4 checkpoints to the exact target RGBA, not only its dimensions', () => {
+  it('binds v5 checkpoints to the exact target RGBA, not only its dimensions', () => {
     const first = {
       width: 1,
       height: 1,

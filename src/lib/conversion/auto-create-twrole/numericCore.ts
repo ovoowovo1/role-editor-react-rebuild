@@ -1,4 +1,8 @@
-import { ALPHA_MSE_WEIGHT } from './contracts';
+import {
+  ALPHA_MSE_WEIGHT,
+  AUTO_CREATE_ERROR_FIELD_STATE_VERSION,
+  type AutoCreateErrorFieldStateSnapshot
+} from './contracts';
 import type { BBox, Vec3 } from './internalTypes';
 import { clamp } from './platform';
 
@@ -350,6 +354,22 @@ export class TargetMomentIndex {
     const right = Math.min(this.width, x + rad + 1);
     const top = Math.max(0, y - rad);
     const bottom = Math.min(this.height, y + rad + 1);
+    return this.statsForRect(left, top, right, bottom);
+  }
+
+  /** Exact weighted target moments for a clipped descriptor rectangle. */
+  statsForBBox(bbox: BBox): TargetLocalStats | null {
+    const clipped = bboxClip(bbox, this.width, this.height);
+    if (!clipped) return null;
+    return this.statsForRect(...clipped);
+  }
+
+  private statsForRect(
+    left: number,
+    top: number,
+    right: number,
+    bottom: number
+  ): TargetLocalStats | null {
     const weight = this.sum(this.weight, left, top, right, bottom);
     if (weight <= 1.0e-6) return null;
 
@@ -521,6 +541,80 @@ export class ErrorField {
     return this.focusSseValue;
   }
 
+  snapshotState(): AutoCreateErrorFieldStateSnapshot {
+    return {
+      version: AUTO_CREATE_ERROR_FIELD_STATE_VERSION,
+      cellSize: this.cell,
+      gridWidth: this.gw,
+      gridHeight: this.gh,
+      totalSse: this.totalSseValue,
+      focusSse: this.focusSseValue,
+      cellWeights: Array.from(this.cellW)
+    };
+  }
+
+  /**
+   * Validates serialized incremental sums against the already reconstructed
+   * per-pixel error map, then restores the exact serialized accumulation
+   * order. `recomputeAll()` must have run for the current canvas first.
+   */
+  restoreSnapshotState(snapshot: AutoCreateErrorFieldStateSnapshot): boolean {
+    if (
+      !snapshot
+      || typeof snapshot !== 'object'
+      || snapshot.version !== AUTO_CREATE_ERROR_FIELD_STATE_VERSION
+      || snapshot.cellSize !== this.cell
+      || snapshot.gridWidth !== this.gw
+      || snapshot.gridHeight !== this.gh
+      || !Number.isFinite(snapshot.totalSse)
+      || !Number.isFinite(snapshot.focusSse)
+      || !Array.isArray(snapshot.cellWeights)
+      || snapshot.cellWeights.length !== this.cellW.length
+      || snapshot.cellWeights.some((value) => !Number.isFinite(value))
+    ) return false;
+
+    const maximumPixelError = (3 + ALPHA_MSE_WEIGHT) * 255 * 255;
+    const close = (left: number, right: number, pixelCount: number) => {
+      const physicalScale = Math.max(1, pixelCount) * maximumPixelError;
+      const tolerance = Math.max(0.05, physicalScale * 2.0e-10);
+      return Math.abs(left - right) <= tolerance;
+    };
+    for (let cell = 0; cell < this.cellW.length; cell += 1) {
+      const serialized = snapshot.cellWeights[cell];
+      const count = this.cellMaskCount[cell];
+      const physicalScale = count * maximumPixelError;
+      const tolerance = Math.max(0.05, Math.max(1, physicalScale) * 2.0e-10);
+      if (
+        serialized < -tolerance
+        || serialized > physicalScale + tolerance
+        || !close(serialized, this.cellW[cell], count)
+      ) return false;
+    }
+    if (
+      !close(snapshot.totalSse, this.totalSseValue, this.maskedPixels.length)
+      || !close(snapshot.focusSse, this.focusSseValue, this.focusPixels.length)
+    ) return false;
+    const totalTolerance = Math.max(
+      0.05,
+      Math.max(1, this.maskedPixels.length * maximumPixelError) * 2.0e-10
+    );
+    const focusTolerance = Math.max(
+      0.05,
+      Math.max(1, this.focusPixels.length * maximumPixelError) * 2.0e-10
+    );
+    if (
+      snapshot.totalSse < -totalTolerance
+      || snapshot.totalSse > this.maskedPixels.length * maximumPixelError + totalTolerance
+      || snapshot.focusSse < -focusTolerance
+      || snapshot.focusSse > this.focusPixels.length * maximumPixelError + focusTolerance
+    ) return false;
+
+    this.cellW.set(snapshot.cellWeights);
+    this.totalSseValue = snapshot.totalSse;
+    this.focusSseValue = snapshot.focusSse;
+    return true;
+  }
+
   /**
    * Strictly conservative error bound for a candidate geometry. Whole edge
    * cells are included, so this stays O(number of cells) without understating
@@ -546,6 +640,28 @@ export class ErrorField {
       }
     }
     return upper;
+  }
+
+  /**
+   * Tighter conservative rectangle bound used after cheap descriptor creation.
+   * This scans only the candidate rectangle and still avoids variant
+   * rasterization, alpha blending and after-SSE evaluation.
+   */
+  focusSseRectUpperBound(bbox: BBox): number {
+    const clipped = bboxClip(bbox, this.width, this.height);
+    if (!clipped) return 0;
+    const [left, top, right, bottom] = clipped;
+    let upper = 0;
+    let focusedPixels = 0;
+    for (let y = top; y < bottom; y += 1) {
+      let pixel = y * this.width + left;
+      for (let x = left; x < right; x += 1, pixel += 1) {
+        if (!this.focusMask[pixel]) continue;
+        upper += Math.max(0, this.errorMap[pixel]);
+        focusedPixels += 1;
+      }
+    }
+    return upper + focusedPixels * 0.02;
   }
 
   chooseFocus(rng: SeededRandom): { x: number; y: number; color: Vec3; cell: [number, number] } {

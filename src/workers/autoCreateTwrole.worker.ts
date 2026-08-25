@@ -45,6 +45,7 @@ scope.addEventListener('message', (event) => {
     targetFile: message.targetFile,
     decoOptions: message.decoOptions,
     settings: message.settings,
+    learningScope: message.learningScope,
     resumeSnapshot: message.resumeSnapshot ?? null,
     signal: controller.signal,
     onProgress: (progress) => {
@@ -61,6 +62,17 @@ scope.addEventListener('message', (event) => {
       // snapshot/result twice and caused duplicate React state updates.
       if (checkpoint.progress.message === 'stopped') return;
       scope.postMessage({ type: 'checkpoint', id: message.id, checkpoint });
+    },
+    onLearningBatch: (camp, examples) => {
+      scope.postMessage({ type: 'learning-batch', id: message.id, camp, examples: [...examples] });
+    },
+    onLearningExperience: (camp, serializedState) => {
+      scope.postMessage({
+        type: 'learning-experience',
+        id: message.id,
+        camp,
+        serializedState
+      });
     }
   } satisfies Parameters<typeof runAutoCreateTwrole>[0];
   const run = diagnostics

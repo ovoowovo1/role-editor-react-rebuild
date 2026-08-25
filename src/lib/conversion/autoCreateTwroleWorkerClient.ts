@@ -12,6 +12,13 @@ import type {
   WorkerSerializedError,
   WorkerStartMessage
 } from './auto-create-twrole/workerProtocol';
+import { createIndexedDbLearningStore } from './auto-create-twrole/learning/indexedDbStore';
+import { requestAutoCreateBackgroundTraining } from './auto-create-twrole/learning/trainerClient';
+import {
+  ADD_TRAINING_MIN_EXACT,
+  REPLACE_TRAINING_MIN_EXACT,
+  TRAINING_MIN_TARGET_SIGNATURES
+} from './auto-create-twrole/learning/trainerProtocol';
 
 const MIN_PROGRESS_INTERVAL_MS = 100;
 const WORKER_UNAVAILABLE_MESSAGE =
@@ -56,6 +63,9 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
   let pendingProgress: AutoCreateTwroleProgress | null = null;
   let progressTimer: ReturnType<typeof setTimeout> | null = null;
   let lastPublishedCheckpoint: AutoCreateTwroleCheckpoint | null = null;
+  const learningStore = typeof indexedDB === 'undefined' ? null : createIndexedDbLearningStore();
+  let learningWrite = Promise.resolve();
+  const trainingEligibleCamps = new Set<string>();
 
   return new Promise<AutoCreateTwroleResult>((resolve, reject) => {
     const flushPendingProgress = () => {
@@ -77,6 +87,21 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
         progressTimer = null;
       }
       worker.terminate();
+    };
+
+    const continueLearningInBackground = () => {
+      if (!learningStore) return;
+      void learningWrite
+        .then(async () => {
+          learningStore.close();
+          await Promise.all(
+            [...trainingEligibleCamps].map((camp) => requestAutoCreateBackgroundTraining(camp))
+          );
+        })
+        .catch((learningError) => {
+          learningStore.close();
+          console.warn('[AutoCreateTwrole] Learning persistence/training failed; generation output is unchanged.', learningError);
+        });
     };
 
     const finish = (callback: () => void) => {
@@ -136,6 +161,35 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
         return;
       }
 
+      if (message.type === 'learning-batch') {
+        options.onLearningBatch?.(message.camp, message.examples);
+        if (learningStore && message.examples.length > 0) {
+          learningWrite = learningWrite.then(async () => {
+            const appended = await learningStore.appendExamples(message.camp, message.examples);
+            const status = appended.status;
+            const addReady = status.exactModeCounts.add >= ADD_TRAINING_MIN_EXACT
+              && status.targetSignatureCounts.add >= TRAINING_MIN_TARGET_SIGNATURES;
+            const replaceReady = status.exactModeCounts.replace >= REPLACE_TRAINING_MIN_EXACT
+              && status.targetSignatureCounts.replace >= TRAINING_MIN_TARGET_SIGNATURES;
+            if (addReady || replaceReady) trainingEligibleCamps.add(message.camp);
+          });
+        }
+        return;
+      }
+
+      if (message.type === 'learning-experience') {
+        if (learningStore) {
+          learningWrite = learningWrite.then(async () => {
+            await learningStore.putExperience(
+              message.camp,
+              message.serializedState,
+              1
+            );
+          });
+        }
+        return;
+      }
+
       if (message.type === 'checkpoint') {
         flushPendingProgress();
         lastPublishedCheckpoint = message.checkpoint;
@@ -145,6 +199,7 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
 
       if (message.type === 'done') {
         flushPendingProgress();
+        continueLearningInBackground();
         finish(() => resolve(message.result));
         return;
       }
@@ -171,11 +226,17 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
           previous.result.mse === current.result.mse
         );
         if (!alreadyPublished) options.onCheckpoint?.(current);
+        continueLearningInBackground();
         finish(() => reject(new AutoCreateTwroleStoppedError({ result: message.result, checkpoint: message.checkpoint })));
         return;
       }
 
       if (message.type === 'error') {
+        if (learningStore) {
+          void learningWrite
+            .catch(() => undefined)
+            .finally(() => learningStore.close());
+        }
         finish(() => reject(deserializeWorkerError(message.error)));
       }
     };
@@ -190,6 +251,7 @@ function runAutoCreateTwroleWorkerOnly(options: RunAutoCreateTwroleOptions): Pro
       targetFile: options.targetFile,
       decoOptions: options.decoOptions,
       settings: options.settings,
+      learningScope: options.learningScope,
       resumeSnapshot: options.resumeSnapshot ?? null
     };
     worker.postMessage(startMessage satisfies WorkerRequestMessage);

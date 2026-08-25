@@ -2,11 +2,15 @@ export type AutoCreateDiagnosticPhase =
   | 'targetLoad'
   | 'sourceLoad'
   | 'engineInit'
+  | 'rankerLoad'
   | 'run'
   | 'finalPrune'
   | 'resultBuild'
   | 'workerPreview'
   | 'checkpoint'
+  | 'candidateDescriptor'
+  | 'candidateRanking'
+  | 'candidateMaterialization'
   | 'variantTransform'
   | 'candidateEvaluation'
   | 'candidateApply'
@@ -14,9 +18,15 @@ export type AutoCreateDiagnosticPhase =
 
 export type AutoCreateDiagnosticCounter =
   | 'candidatesProposed'
+  | 'descriptorsProposed'
+  | 'descriptorsRanked'
+  | 'descriptorsExplorationSelected'
+  | 'descriptorsUpperBoundPruned'
+  | 'candidateMaterializations'
   | 'candidatesGeometryRejected'
   | 'candidatesGeometryScoreRejected'
   | 'candidatesEvaluated'
+  | 'replaceCandidatesEvaluated'
   | 'candidatePixelsEvaluated'
   | 'containmentFastAccepted'
   | 'containmentFallbacks'
@@ -26,6 +36,11 @@ export type AutoCreateDiagnosticCounter =
   | 'candidateAfterSseEarlyRejected'
   | 'replaceAfterSseEarlyRejected'
   | 'candidateObjectsAllocated'
+  | 'rankerBatches'
+  | 'rankerCandidates'
+  | 'rankerFallbacks'
+  | 'learningExamplesQueued'
+  | 'learningExamplesCensored'
   | 'variantCacheHits'
   | 'variantCacheMisses'
   | 'variantCacheEvictions'
@@ -47,11 +62,15 @@ const PHASES: AutoCreateDiagnosticPhase[] = [
   'targetLoad',
   'sourceLoad',
   'engineInit',
+  'rankerLoad',
   'run',
   'finalPrune',
   'resultBuild',
   'workerPreview',
   'checkpoint',
+  'candidateDescriptor',
+  'candidateRanking',
+  'candidateMaterialization',
   'variantTransform',
   'candidateEvaluation',
   'candidateApply',
@@ -60,9 +79,15 @@ const PHASES: AutoCreateDiagnosticPhase[] = [
 
 const COUNTERS: AutoCreateDiagnosticCounter[] = [
   'candidatesProposed',
+  'descriptorsProposed',
+  'descriptorsRanked',
+  'descriptorsExplorationSelected',
+  'descriptorsUpperBoundPruned',
+  'candidateMaterializations',
   'candidatesGeometryRejected',
   'candidatesGeometryScoreRejected',
   'candidatesEvaluated',
+  'replaceCandidatesEvaluated',
   'candidatePixelsEvaluated',
   'containmentFastAccepted',
   'containmentFallbacks',
@@ -72,6 +97,11 @@ const COUNTERS: AutoCreateDiagnosticCounter[] = [
   'candidateAfterSseEarlyRejected',
   'replaceAfterSseEarlyRejected',
   'candidateObjectsAllocated',
+  'rankerBatches',
+  'rankerCandidates',
+  'rankerFallbacks',
+  'learningExamplesQueued',
+  'learningExamplesCensored',
   'variantCacheHits',
   'variantCacheMisses',
   'variantCacheEvictions',

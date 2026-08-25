@@ -32,7 +32,17 @@ const result: AutoCreateTwroleResult = {
   rejected: 0,
   pruned: 0,
   replaced: 0,
-  warnings: []
+  warnings: [],
+  ranker: {
+    requestedStrategy: 'legacy',
+    effectiveStrategy: 'legacy',
+    status: 'disabled',
+    runtime: 'none',
+    learningScope: 'test',
+    featureSchema: 'auto-create-numeric-v1',
+    rankingPolicy: 'strict-cascade-v1',
+    modelRevision: null
+  }
 };
 
 const checkpoint: AutoCreateTwroleCheckpoint = {
@@ -57,8 +67,29 @@ const checkpoint: AutoCreateTwroleCheckpoint = {
     sourceHeight: 16,
     sourceCount: 1,
     sourceSignature: 'asset_1:deco_code',
+    targetSignature: 'target',
     settingsSignature: 'test-settings',
+    learningScope: 'test',
+    learningRunHash: 'test-run',
+    rankerRevision: null,
+    rankerFeatureSchema: 'auto-create-numeric-v1',
+    rankingPolicySignature: 'strict-cascade-v1',
     experienceState: '{"version":1,"source_stats":{},"color_stats":{}}',
+    rankingState: {
+      maskedPixelCount: 1,
+      canvasSum: [0, 0, 0],
+      residualSum: [0, 0, 0],
+      residualSquared: [0, 0, 0]
+    },
+    errorFieldState: {
+      version: 1,
+      cellSize: 16,
+      gridWidth: 1,
+      gridHeight: 1,
+      totalSse: 0,
+      focusSse: 0,
+      cellWeights: [0]
+    },
     step: 1,
     totalSteps: 10,
     finalPruneStep: 0,

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { t } from '../../i18n';
 import type { DecorationLayer, PartOption, RoleDocument } from '../../types/role';
 import {
+  AUTO_CREATE_RANKER_ROLLOUT,
   DEFAULT_AUTO_CREATE_TWROLE_SETTINGS,
   isAutoCreateTwroleStoppedError,
   type AutoCreateTwroleCheckpoint,
@@ -10,6 +11,16 @@ import {
   type AutoCreateTwroleSettings
 } from '../../lib/conversion/auto-create-twrole/contracts';
 import { canRunAutoCreateTwroleWorker, runAutoCreateTwroleInWorker } from '../../lib/conversion/autoCreateTwroleWorkerClient';
+import {
+  clearAutoCreateLearningCamp,
+  getAutoCreateTrainerStatus,
+  setAutoCreateLearningEnabled,
+  type AutoCreateTrainerStatusResult
+} from '../../lib/conversion/auto-create-twrole/learning/trainerClient';
+import {
+  exportPortableLearningDataset,
+  importPortableRankerModel
+} from '../../lib/conversion/auto-create-twrole/learning';
 import { settingsForScope, type InsertDraftSettings } from '../../lib/editor/editorInsertSettings';
 import { insertDecorationBatchIntoRole } from '../../lib/editor/editorImportMerge';
 import { createTwroleBlobWithThumb } from '../../lib/serialization/legacyTwroleExport';
@@ -30,6 +41,7 @@ import {
   formatNumber,
   isAutoCreateEmptyTargetError,
   isAutoCreateNoPlacementAreaError,
+  isAutoCreateRankerLabAvailable,
   isImageFile,
   optionTitle,
   sortTitles,
@@ -68,16 +80,67 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
   const [error, setError] = useState<string | null>(null);
   const [workspacePreviewUrl, setWorkspacePreviewUrl] = useState<string | null>(null);
   const [workspacePreviewWarning, setWorkspacePreviewWarning] = useState<string | null>(null);
+  const [learningStatus, setLearningStatus] = useState<AutoCreateTrainerStatusResult | null>(null);
+  const [learningBusy, setLearningBusy] = useState(false);
+  const [portableBusy, setPortableBusy] = useState<'export' | 'import' | null>(null);
+  const [portableProgress, setPortableProgress] = useState('');
+  const [learningPollRevision, setLearningPollRevision] = useState(0);
   const workerAvailable = useMemo(() => canRunAutoCreateTwroleWorker(), []);
+  const rankerLabAvailable = useMemo(
+    () => typeof window !== 'undefined' && isAutoCreateRankerLabAvailable(window.location),
+    []
+  );
   const [sourceTitleSearch, setSourceTitleSearch] = useState('');
   const [excludedSourceTitles, setExcludedSourceTitles] = useState<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+  const portableAbortRef = useRef<AbortController | null>(null);
+  const portableModelInputRef = useRef<HTMLInputElement | null>(null);
   const roleRef = useRef(role);
   const onStatusRef = useRef(onStatus);
   const workspacePreviewGateRef = useRef<WorkspacePreviewRequestGate | null>(null);
+  const previousLearningCampRef = useRef(role.camp);
   roleRef.current = role;
   onStatusRef.current = onStatus;
   workspacePreviewGateRef.current ??= new WorkspacePreviewRequestGate();
+
+  const refreshLearningStatus = useCallback(async () => {
+    if (!workerAvailable) return null;
+    try {
+      const next = await getAutoCreateTrainerStatus(role.camp);
+      setLearningStatus(next);
+      return next;
+    } catch {
+      // Learning is optional. A status/read failure must not disable generation.
+      setLearningStatus(null);
+      return null;
+    }
+  }, [role.camp, workerAvailable]);
+
+  useEffect(() => {
+    void refreshLearningStatus();
+  }, [refreshLearningStatus]);
+
+  useEffect(() => {
+    if (!workerAvailable || learningPollRevision === 0) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+    const poll = async () => {
+      const next = await refreshLearningStatus();
+      if (cancelled) return;
+      attempts += 1;
+      const pending = next?.status.enabled
+        && (next.status.phase === 'collecting' || next.status.phase === 'training');
+      if (pending && attempts < 60) {
+        timer = setTimeout(() => { void poll(); }, 2_000);
+      }
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [learningPollRevision, refreshLearningStatus, workerAvailable]);
 
   useEffect(() => {
     return () => {
@@ -232,6 +295,135 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
     setMseHistory([]);
   };
 
+  const rankerLabReady = Boolean(
+    learningStatus?.status.enabled
+    && learningStatus.status.activeModelRevision
+    && learningStatus.activeTrainedModes.length > 0
+  );
+  const rankerLabEnabled = Boolean(
+    rankerLabAvailable
+    && rankerLabReady
+    && settings.rankerRolloutApproved
+  );
+
+  useEffect(() => {
+    if (previousLearningCampRef.current === role.camp) return;
+    previousLearningCampRef.current = role.camp;
+    setSettings((current) => ({
+      ...current,
+      rankerRolloutApproved: AUTO_CREATE_RANKER_ROLLOUT.approved
+    }));
+    resetGeneratedOutput();
+  }, [role.camp]);
+
+  const toggleRankerLab = (enabled: boolean) => {
+    setSettings((current) => ({
+      ...current,
+      rankerRolloutApproved: AUTO_CREATE_RANKER_ROLLOUT.approved
+        || (enabled && rankerLabAvailable && rankerLabReady)
+    }));
+    resetGeneratedOutput();
+  };
+
+  const toggleLearning = async (enabled: boolean) => {
+    setLearningBusy(true);
+    setSettings((current) => ({ ...current, rankerEnabled: enabled }));
+    resetGeneratedOutput();
+    try {
+      await setAutoCreateLearningEnabled(role.camp, enabled);
+      await refreshLearningStatus();
+    } catch (learningError) {
+      const message = learningError instanceof Error ? learningError.message : String(learningError);
+      setError(message);
+    } finally {
+      setLearningBusy(false);
+    }
+  };
+
+  const clearLearning = async () => {
+    setLearningBusy(true);
+    setError(null);
+    resetGeneratedOutput();
+    try {
+      const cleared = await clearAutoCreateLearningCamp(role.camp, true);
+      await refreshLearningStatus();
+      if (cleared.modelCleanupErrors.length > 0) {
+        setError(t('autoCreate.learning.clearWarning', {
+          message: cleared.modelCleanupErrors.join('; ')
+        }));
+      }
+    } catch (learningError) {
+      const message = learningError instanceof Error ? learningError.message : String(learningError);
+      setError(message);
+    } finally {
+      setLearningBusy(false);
+    }
+  };
+
+  const exportLearningDataset = async () => {
+    const picker = (window as typeof window & {
+      showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
+    }).showDirectoryPicker;
+    if (!picker) {
+      setError(t('autoCreate.learning.portableUnsupported'));
+      return;
+    }
+    setError(null);
+    setPortableBusy('export');
+    setPortableProgress('');
+    const controller = new AbortController();
+    portableAbortRef.current = controller;
+    try {
+      const directory = await picker();
+      const manifest = await exportPortableLearningDataset({
+        camp: role.camp,
+        directory,
+        signal: controller.signal,
+        onProgress: (next) => {
+          setPortableProgress(t('autoCreate.learning.exportProgress', {
+            scanned: next.scanned,
+            exported: next.exported,
+            shards: next.shards
+          }));
+        }
+      });
+      setPortableProgress(t('autoCreate.learning.exportDone', {
+        count: manifest.exportedTrainableCount,
+        shards: manifest.shards.length
+      }));
+    } catch (portableError) {
+      if ((portableError as DOMException)?.name !== 'AbortError') {
+        setError(portableError instanceof Error ? portableError.message : String(portableError));
+      }
+    } finally {
+      portableAbortRef.current = null;
+      setPortableBusy(null);
+    }
+  };
+
+  const importPortableModelFile = async (selected: File | null) => {
+    if (!selected) return;
+    setError(null);
+    setPortableBusy('import');
+    setPortableProgress('');
+    try {
+      const manifest = await importPortableRankerModel(
+        JSON.parse(await selected.text()) as unknown,
+        role.camp
+      );
+      await refreshLearningStatus();
+      resetGeneratedOutput();
+      setPortableProgress(t('autoCreate.learning.importDone', {
+        revision: manifest.revision
+      }));
+    } catch (portableError) {
+      setError(portableError instanceof Error ? portableError.message : String(portableError));
+    } finally {
+      setPortableBusy(null);
+      if (portableModelInputRef.current) portableModelInputRef.current.value = '';
+    }
+  };
+
   const toggleSourceTitle = (title: string, useTitle: boolean) => {
     setExcludedSourceTitles((current) => {
       const next = new Set(current);
@@ -302,10 +494,15 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
     );
 
     try {
+      const runSettings: AutoCreateTwroleSettings = {
+        ...settings,
+        rankerRolloutApproved: AUTO_CREATE_RANKER_ROLLOUT.approved || rankerLabEnabled
+      };
       const next = await runAutoCreateTwroleInWorker({
         targetFile: file,
         decoOptions: filteredDecoOptions,
-        settings,
+        settings: runSettings,
+        learningScope: role.camp,
         resumeSnapshot,
         signal: controller.signal,
         onProgress: recordProgress,
@@ -318,6 +515,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
       });
       setResult(next);
       setCheckpoint(null);
+      setLearningPollRevision((current) => current + 1);
       onStatus(t('status.autoCreateConverted', { count: next.decorations.length }));
     } catch (err) {
       if (isAutoCreateTwroleStoppedError(err)) {
@@ -326,6 +524,7 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
         recordProgress(err.checkpoint.progress);
         setInserted(false);
         setError(null);
+        setLearningPollRevision((current) => current + 1);
         onStatus(t('status.autoCreateStopped'));
       } else if ((err as DOMException)?.name === 'AbortError') {
         setError(t('autoCreate.error.aborted'));
@@ -425,6 +624,111 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
             />
             <span>{t('autoCreate.savePreview')}</span>
           </label>
+        </div>
+
+        <div className="extra-section">
+          <div className="extra-section-title">{t('autoCreate.section.learning')}</div>
+          <label className="auto-create-checkbox">
+            <input
+              type="checkbox"
+              checked={learningStatus?.status.enabled ?? settings.rankerEnabled}
+              disabled={running || learningBusy}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                void toggleLearning(event.currentTarget.checked);
+              }}
+            />
+            <span>{t('autoCreate.learning.enabled')}</span>
+          </label>
+          {rankerLabAvailable && !AUTO_CREATE_RANKER_ROLLOUT.approved ? (
+            <>
+              <label className="auto-create-checkbox">
+                <input
+                  type="checkbox"
+                  data-testid="auto-create-ranker-lab-toggle"
+                  checked={rankerLabEnabled}
+                  disabled={running || learningBusy || !rankerLabReady}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                    toggleRankerLab(event.currentTarget.checked);
+                  }}
+                />
+                <span>{t('autoCreate.learning.rankerLab')}</span>
+              </label>
+              {rankerLabEnabled ? (
+                <div
+                  className="extra-message warning"
+                  data-testid="auto-create-ranker-lab-warning"
+                >
+                  {t('autoCreate.learning.rankerLabWarning', {
+                    revision: learningStatus?.status.activeModelRevision ?? '-',
+                    modes: learningStatus?.activeTrainedModes.join(', ') || '-'
+                  })}
+                </div>
+              ) : null}
+              <div className="auto-create-actions">
+                <button
+                  type="button"
+                  className="primary-button subtle"
+                  data-testid="auto-create-export-training"
+                  disabled={running || learningBusy || portableBusy !== null}
+                  onClick={() => { void exportLearningDataset(); }}
+                >
+                  {t('autoCreate.learning.exportPortable')}
+                </button>
+                <button
+                  type="button"
+                  className="primary-button subtle"
+                  data-testid="auto-create-import-model"
+                  disabled={running || learningBusy || portableBusy !== null}
+                  onClick={() => portableModelInputRef.current?.click()}
+                >
+                  {t('autoCreate.learning.importPortable')}
+                </button>
+                {portableBusy === 'export' ? (
+                  <button
+                    type="button"
+                    className="primary-button subtle"
+                    onClick={() => portableAbortRef.current?.abort()}
+                  >
+                    {t('autoCreate.learning.cancelExport')}
+                  </button>
+                ) : null}
+              </div>
+              <input
+                ref={portableModelInputRef}
+                type="file"
+                accept="application/json,.json"
+                hidden
+                data-testid="auto-create-import-model-input"
+                onChange={(event) => {
+                  void importPortableModelFile(event.currentTarget.files?.[0] ?? null);
+                }}
+              />
+              {portableProgress ? <div className="extra-message">{portableProgress}</div> : null}
+            </>
+          ) : null}
+          <div className="extra-message">
+            {t('autoCreate.learning.summary', {
+              phase: result?.ranker?.status ?? learningStatus?.status.phase ?? 'collecting',
+              add: learningStatus?.activeTrainedModes.includes('add') ? 'ready' : 'collecting',
+              replace: learningStatus?.activeTrainedModes.includes('replace') ? 'ready' : 'collecting',
+              revision: result?.ranker?.modelRevision
+                ?? learningStatus?.status.activeModelRevision
+                ?? '-'
+            })}
+          </div>
+          {result?.ranker?.fallbackReason ? (
+            <div className="extra-message warning">
+              {t('autoCreate.learning.fallback', { reason: result.ranker.fallbackReason })}
+            </div>
+          ) : null}
+          <button
+            type="button"
+            className="primary-button subtle"
+            disabled={running || learningBusy}
+            onClick={() => { void clearLearning(); }}
+          >
+            {learningBusy ? t('autoCreate.learning.working') : t('autoCreate.learning.clear')}
+          </button>
         </div>
 
         {!workerAvailable ? (

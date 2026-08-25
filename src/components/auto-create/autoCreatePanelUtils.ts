@@ -4,6 +4,7 @@ import type { AutoCreateTwroleSettings } from '../../lib/conversion/auto-create-
 const numberFormat = new Intl.NumberFormat();
 
 export const AUTO_CREATE_PROCESS_PREVIEW_EXPORT_EVERY = 1000;
+export const AUTO_CREATE_RANKER_LAB_QUERY_PARAM = 'autoCreateRankerLab';
 
 export interface SourceTitleItem {
   title: string;
@@ -18,6 +19,19 @@ export function formatNumber(value: number, fractionDigits = 0): string {
 export function isImageFile(file: Pick<File, 'type' | 'name'>): boolean {
   if (file.type?.startsWith('image/')) return true;
   return /\.(png|jpe?g|webp|bmp)$/i.test(file.name);
+}
+
+export function isAutoCreateRankerLabAvailable(
+  location: Pick<Location, 'hostname' | 'search'>
+): boolean {
+  const hostname = location.hostname.trim().toLocaleLowerCase('en-US');
+  const loopback = hostname === 'localhost'
+    || hostname === '127.0.0.1'
+    || hostname === '[::1]'
+    || hostname === '::1';
+  if (!loopback) return false;
+  return new URLSearchParams(location.search)
+    .get(AUTO_CREATE_RANKER_LAB_QUERY_PARAM) === '1';
 }
 
 export function isAutoCreateEmptyTargetError(error: unknown): boolean {
