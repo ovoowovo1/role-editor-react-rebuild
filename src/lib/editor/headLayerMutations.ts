@@ -219,7 +219,6 @@ function groupSelectionTarget(role: RoleDocument, selectedIds: string[]): GroupS
   const itemIds: string[] = [];
   for (const id of orderedLayerIds(role, selectedIds)) {
     if (!selected.has(id) || id === HEAD_LAYER_ID) continue;
-    if (!role.decorations.some((item) => item.id === id)) continue;
     const currentParentId = directParentByLayerId.has(id) ? directParentByLayerId.get(id) ?? null : null;
     if (parentGroupId === undefined) {
       parentGroupId = currentParentId;
@@ -242,8 +241,34 @@ function groupSelectionTarget(role: RoleDocument, selectedIds: string[]): GroupS
   return { itemIds, parentGroupId };
 }
 
-export function hasGroupableSelectedLayerIds(role: RoleDocument, selectedIds: string[]): boolean {
-  return groupSelectionTarget(role, selectedIds) !== null;
+export function hasGroupableSelectedLayerIds(
+  groups: DecorationGroup[],
+  selectedDecorationIds: readonly string[],
+  headLayerSelected: boolean
+): boolean {
+  if (headLayerSelected || selectedDecorationIds.length < 2) return false;
+
+  const selected = new Set(selectedDecorationIds);
+  if (selected.size < 2) return false;
+
+  const directParentByLayerId = new Map<string, string | null>();
+  for (const group of groups) {
+    for (const member of membersForGroup(group)) {
+      if (member.type === 'layer') directParentByLayerId.set(member.id, group.id);
+    }
+  }
+
+  let parentGroupId: string | null | undefined;
+  for (const id of selected) {
+    const currentParentId = directParentByLayerId.get(id) ?? null;
+    if (parentGroupId === undefined) {
+      parentGroupId = currentParentId;
+    } else if (parentGroupId !== currentParentId) {
+      return false;
+    }
+  }
+
+  return parentGroupId !== undefined;
 }
 
 export function createGroupFromLayerSelection(role: RoleDocument, selectedIds: string[]): RoleDocument | null {

@@ -17,7 +17,7 @@ export function useRoleTransformCommands({
   baseSelectedDecorations,
   selectedIdsRef,
   updateRole,
-  withImmediateHistory,
+  commitRoleUpdate,
   withTransformHistory
 }: {
   role: RoleDocument;
@@ -27,7 +27,7 @@ export function useRoleTransformCommands({
   baseSelectedDecorations: DecorationLayer[];
   selectedIdsRef: MutableRefObject<string[]>;
   updateRole: UpdateRole;
-  withImmediateHistory(action: () => void, restoreIds?: string[]): void;
+  commitRoleUpdate(updater: (current: RoleDocument) => RoleDocument, afterSelectionIds?: string[]): void;
   withTransformHistory(action: () => void, restoreIds?: string[]): void;
 }) {
   const {
@@ -64,15 +64,15 @@ export function useRoleTransformCommands({
     (id: string, patch: Partial<DecorationLayer>, commit?: boolean) => {
       const selectionBefore = selectionIdsForCommand(stableSelectedIds, selectedIdsRef.current);
 
-      const runUpdate = () => {
+      const runUpdate = (current: RoleDocument) => {
         const selectedIds = selectionIdsForCommand(selectionBefore, selectedIdsRef.current);
-        updateRole((current) => patchDecorationForSelectionDrag(current, id, patch, selectedIds), commit);
+        return patchDecorationForSelectionDrag(current, id, patch, selectedIds);
       };
 
-      if (commit) withImmediateHistory(runUpdate, selectionBefore);
-      else runUpdate();
+      if (commit) commitRoleUpdate(runUpdate, selectionBefore);
+      else updateRole(runUpdate, false);
     },
-    [selectedIdsRef, stableSelectedIds, updateRole, withImmediateHistory]
+    [commitRoleUpdate, selectedIdsRef, stableSelectedIds, updateRole]
   );
 
   const updateSelectedTransform = useCallback(

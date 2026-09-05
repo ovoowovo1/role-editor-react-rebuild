@@ -6,7 +6,10 @@ import {
   applyDecorationTransformTarget,
   applyTranslateDelta,
   captureDecorationTransforms,
-  makeSnapshotEntry,
+  applyRoleHistoryPatch,
+  createHistoryIdPool,
+  createRoleHistoryPatch,
+  makeRoleHistoryEntry,
   pushLocalFutureEntry,
   pushLocalHistoryEntry,
   removeSelectedDecos,
@@ -111,13 +114,107 @@ describe('editor transform history', () => {
     let past: LocalHistoryEntry[] = [];
     let future: LocalHistoryEntry[] = [];
     for (let index = 0; index < LOCAL_HISTORY_LIMIT + 5; index += 1) {
-      past = pushLocalHistoryEntry(past, makeSnapshotEntry(role({ name: `past-${index}` })));
-      future = pushLocalFutureEntry(future, makeSnapshotEntry(role({ name: `future-${index}` })));
+      past = pushLocalHistoryEntry(past, makeRoleHistoryEntry(role({ name: `past-${index}` }), role())!);
+      future = pushLocalFutureEntry(future, makeRoleHistoryEntry(role({ name: `future-${index}` }), role())!);
     }
 
     expect(past).toHaveLength(LOCAL_HISTORY_LIMIT);
     expect(future).toHaveLength(LOCAL_HISTORY_LIMIT);
-    expect(past[0].kind === 'snapshot' && past[0].role.name).toBe('past-5');
-    expect(future[0].kind === 'snapshot' && future[0].role.name).toBe(`future-${LOCAL_HISTORY_LIMIT + 4}`);
+    expect(past[0].kind === 'patch' && past[0].patch.name?.before).toBe('past-5');
+    expect(future[0].kind === 'patch' && future[0].patch.name?.before).toBe(`future-${LOCAL_HISTORY_LIMIT + 4}`);
+  });
+
+  it('stores visibility changes as compact typed arrays without a full role snapshot', () => {
+    const before = role({ decorations: [layer('a'), layer('b'), layer('c')] });
+    const after = role({
+      decorations: [layer('a', { visible: false }), layer('b'), layer('c', { visible: false })]
+    });
+    const patch = createRoleHistoryPatch(before, after, createHistoryIdPool());
+
+    expect(patch).not.toBeNull();
+    expect(patch).not.toHaveProperty('role');
+    expect(patch?.decorations.fields).toEqual([]);
+    expect(patch?.decorations.presence).toEqual([]);
+    expect(patch?.decorations.visibility?.indices).toEqual(new Uint32Array([0, 2]));
+    expect(patch?.decorations.visibility?.before).toEqual(new Uint8Array([1, 1]));
+    expect(patch?.decorations.visibility?.after).toEqual(new Uint8Array([0, 0]));
+  });
+
+  it('round-trips visibility, head, scalar, structural, and group changes through a patch', () => {
+    const before = role({
+      name: 'before',
+      headLayerIndex: 1,
+      headLayer: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, visible: true, opacity: 1 },
+      decorations: [layer('a'), layer('b')],
+      groups: [group('parent', [{ type: 'layer', id: 'a' }, { type: 'layer', id: 'b' }])]
+    });
+    const after = role({
+      name: 'after',
+      headLayerIndex: 0,
+      headLayer: { x: 3, y: 0, scaleX: 1, scaleY: 1, rotation: 0, visible: false, opacity: 1 },
+      decorations: [layer('b', { x: 8 }), layer('c', { visible: false })],
+      groups: [group('parent', [{ type: 'layer', id: 'b' }]), group('child', [{ type: 'layer', id: 'c' }])]
+    });
+    const patch = createRoleHistoryPatch(before, after, createHistoryIdPool());
+
+    expect(patch).not.toBeNull();
+    const restoredBefore = applyRoleHistoryPatch(after, patch!, 'before');
+    const restoredAfter = applyRoleHistoryPatch(restoredBefore, patch!, 'after');
+    expect(restoredBefore).toEqual(before);
+    expect(restoredAfter).toEqual(after);
+  });
+
+  it('does not create a patch for updatedAt-only changes', () => {
+    const before = role({ updatedAt: 'before' });
+    const after = role({ updatedAt: 'after' });
+
+    expect(createRoleHistoryPatch(before, after)).toBeNull();
+  });
+
+  it('shares patch selection arrays when entries move between local stacks', () => {
+    const selectionIds = ['a', 'b'];
+    const entry = makeRoleHistoryEntry(role(), role({ name: 'next' }), selectionIds, selectionIds)!;
+    const pushed = pushLocalHistoryEntry([], entry)[0];
+
+    expect(pushed.kind).toBe('patch');
+    if (pushed.kind === 'patch') expect(pushed.selectionIds).toBe(selectionIds);
+  });
+
+  it('keeps 10,000-layer visibility history compact across 200 entries', () => {
+    const layerCount = 10_000;
+    const historyCount = 200;
+    const pool = createHistoryIdPool();
+    let before = role({
+      decorations: Array.from({ length: layerCount }, (_, index) => layer(`layer-${index}`))
+    });
+    const patches = [];
+
+    for (let historyIndex = 0; historyIndex < historyCount; historyIndex += 1) {
+      const visible = historyIndex % 2 === 1;
+      const after = {
+        ...before,
+        decorations: before.decorations.map((item) => ({ ...item, visible })),
+        updatedAt: `history-${historyIndex}`
+      };
+      const patch = createRoleHistoryPatch(before, after, pool);
+      expect(patch).not.toBeNull();
+      patches.push(patch!);
+      before = after;
+    }
+
+    expect(pool.ids).toHaveLength(layerCount);
+    expect(new Set(patches.map((patch) => patch.idPool)).size).toBe(1);
+    expect(patches.every((patch) => patch.decorations.fields.length === 0)).toBe(true);
+    expect(patches.every((patch) => patch.decorations.presence.length === 0)).toBe(true);
+    expect(patches.every((patch) => patch.decorations.visibility?.indices.length === layerCount)).toBe(true);
+    expect(patches.every((patch) => !('role' in patch))).toBe(true);
+
+    const compactVisibilityBytes = patches.reduce(
+      (total, patch) => total + (patch.decorations.visibility?.indices.byteLength ?? 0) +
+        (patch.decorations.visibility?.before.byteLength ?? 0) +
+        (patch.decorations.visibility?.after.byteLength ?? 0),
+      0
+    );
+    expect(compactVisibilityBytes).toBe(layerCount * historyCount * (Uint32Array.BYTES_PER_ELEMENT + 2));
   });
 });

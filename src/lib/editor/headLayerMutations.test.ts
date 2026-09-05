@@ -3,6 +3,7 @@ import { GROUP_ROW_PREFIX, HEAD_LAYER_ID, HEAD_ROW_ID, ITEM_ROW_PREFIX } from '.
 import type { DecorationGroup, DecorationLayer, RoleDocument } from '../../types/role';
 import {
   createGroupFromLayerSelection,
+  hasGroupableSelectedLayerIds,
   groupContainsHeadLayer,
   reorderIncludingHead,
   setGroupVisibilityIncludingHead,
@@ -73,6 +74,77 @@ describe('head layer mutations', () => {
       { type: 'layer', id: 'a' },
       { type: 'layer', id: 'b' }
     ]);
+  });
+
+  it('checks groupability from validated selection ids and group topology', () => {
+    const groups = [
+      group('first', [
+        { type: 'layer', id: 'a' },
+        { type: 'layer', id: 'b' }
+      ]),
+      group('second', [
+        { type: 'layer', id: 'c' },
+        { type: 'layer', id: 'd' }
+      ])
+    ];
+
+    expect(hasGroupableSelectedLayerIds(groups, ['a', 'b'], false)).toBe(true);
+    expect(hasGroupableSelectedLayerIds(groups, ['a', 'c'], false)).toBe(false);
+    expect(hasGroupableSelectedLayerIds(groups, ['a', 'b'], true)).toBe(false);
+    expect(hasGroupableSelectedLayerIds(groups, ['a'], false)).toBe(false);
+    expect(hasGroupableSelectedLayerIds(groups, ['a', 'a'], false)).toBe(false);
+  });
+
+  it('allows grouping layers with the same nested direct parent', () => {
+    const groups = [
+      group('parent', [
+        { type: 'group', id: 'child' },
+        { type: 'layer', id: 'c' }
+      ]),
+      group('child', [
+        { type: 'layer', id: 'a' },
+        { type: 'layer', id: 'b' }
+      ])
+    ];
+
+    expect(hasGroupableSelectedLayerIds(groups, ['a', 'b'], false)).toBe(true);
+    expect(hasGroupableSelectedLayerIds(groups, ['a', 'c'], false)).toBe(false);
+  });
+
+  it('creates a nested group while preserving the parent member order', () => {
+    const current = role({
+      decorations: [layer('a'), layer('b'), layer('c'), layer('d')],
+      groups: [
+        group('parent', [{ type: 'group', id: 'child' }]),
+        group('child', [
+          { type: 'layer', id: 'a' },
+          { type: 'layer', id: 'b' },
+          { type: 'layer', id: 'c' },
+          { type: 'layer', id: 'd' }
+        ])
+      ]
+    });
+
+    const next = createGroupFromLayerSelection(current, ['c', 'b']);
+    const child = next?.groups.find((item) => item.id === 'child');
+    const nested = next?.groups.find((item) => item.id !== 'parent' && item.id !== 'child');
+
+    expect(nested?.itemIds).toEqual(['b', 'c']);
+    expect(child?.members).toEqual([
+      { type: 'layer', id: 'a' },
+      { type: 'group', id: nested?.id },
+      { type: 'layer', id: 'd' }
+    ]);
+  });
+
+  it.each([5_000, 10_000])('handles a large validated selection of %i layers', (count) => {
+    const selectedIds = Array.from({ length: count }, (_, index) => `layer-${index}`);
+
+    expect(hasGroupableSelectedLayerIds([], selectedIds, false)).toBe(true);
+  });
+
+  it('still rejects invalid ids when creating a group', () => {
+    expect(createGroupFromLayerSelection(role(), ['a', 'missing'])).toBeNull();
   });
 
   it('updates group and head visibility together', () => {

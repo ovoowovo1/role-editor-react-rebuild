@@ -155,8 +155,7 @@ describe('editor role commands', () => {
     const snapshotSession = beginTransientSession(role, [], []);
     expect(snapshotSession.selectionIds).toEqual([]);
     expect(snapshotSession.transformBefore).toBeNull();
-    expect(snapshotSession.roleBefore).toEqual(role);
-    expect(snapshotSession.roleBefore).not.toBe(role);
+    expect(snapshotSession.roleBefore).toBe(role);
   });
 
   it('turns transient commits into pending transform or snapshot decisions', () => {
@@ -170,19 +169,19 @@ describe('editor role commands', () => {
 
     expect(commitTransientSession(null, transformBefore, ['a'], current, [])).toMatchObject({
       pendingTransform: { target: transformBefore, selectionIds: ['a'] },
-      snapshotEntry: null,
+      historyEntry: null,
       restoreSelectionIds: ['a'],
       commitBaseTransient: false
     });
 
     const changedSnapshot = commitTransientSession(before, null, ['a'], current, ['fallback']);
     expect(changedSnapshot.pendingTransform).toBeNull();
-    expect(changedSnapshot.snapshotEntry).toMatchObject({ kind: 'snapshot', role: before });
+    expect(changedSnapshot.historyEntry).toMatchObject({ kind: 'patch' });
     expect(changedSnapshot.restoreSelectionIds).toEqual(['a']);
     expect(changedSnapshot.commitBaseTransient).toBe(true);
 
     const unchangedSnapshot = commitTransientSession(before, null, [], before, ['fallback']);
-    expect(unchangedSnapshot.snapshotEntry).toBeNull();
+    expect(unchangedSnapshot.historyEntry).toBeNull();
     expect(unchangedSnapshot.restoreSelectionIds).toEqual(['fallback']);
   });
 });

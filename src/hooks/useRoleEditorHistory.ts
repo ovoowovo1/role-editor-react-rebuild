@@ -1,16 +1,17 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import {
   beginTransientSession,
   commitTransientSession
 } from '../lib/editor/editorRoleCommands';
-import { cloneRole } from '../lib/editor/editorRoleUtils';
+import { cloneRole, syncGroups, touch } from '../lib/editor/editorRoleUtils';
 import { resolveLocalRedo, resolveLocalUndo } from '../lib/editor/editorHistoryCommands';
 import {
-  makeSnapshotEntry,
+  createHistoryIdPool,
+  makeRoleHistoryEntry,
   pushLocalHistoryEntry,
-  sameRole,
   type DecorationTransformTarget,
+  type HistoryIdPool,
   type LocalHistoryEntry
 } from '../lib/editor/editorTransformHistory';
 import type { RoleDocument } from '../types/role';
@@ -40,6 +41,8 @@ interface UseRoleEditorHistoryOptions {
   restoreSelection(ids: string[]): void;
 }
 
+type RoleUpdater = (current: RoleDocument) => RoleDocument;
+
 export function useRoleEditorHistory({
   history,
   role,
@@ -54,6 +57,7 @@ export function useRoleEditorHistory({
 }: UseRoleEditorHistoryOptions) {
   const [localPast, setLocalPast] = useState<LocalHistoryEntry[]>([]);
   const [localFuture, setLocalFuture] = useState<LocalHistoryEntry[]>([]);
+  const localHistoryIdPoolRef = useRef<HistoryIdPool>(createHistoryIdPool());
 
   const recordLocalHistoryEntry = useCallback((entry: LocalHistoryEntry) => {
     setLocalPast((items) => pushLocalHistoryEntry(items, entry));
@@ -82,12 +86,28 @@ export function useRoleEditorHistory({
 
   const commitRole = useCallback(
     (nextRole: RoleDocument, afterSelectionIds = selectedIdsRef.current) => {
-      if (sameRole(roleRef.current, nextRole)) return;
-      recordLocalHistoryEntry(makeSnapshotEntry(roleRef.current, selectedIdsRef.current, afterSelectionIds));
+      const entry = makeRoleHistoryEntry(
+        roleRef.current,
+        nextRole,
+        selectedIdsRef.current,
+        afterSelectionIds,
+        localHistoryIdPoolRef.current
+      );
+      if (!entry) return;
+      recordLocalHistoryEntry(entry);
       history.reset(nextRole);
       restoreHistorySelection(afterSelectionIds);
     },
     [history, recordLocalHistoryEntry, restoreHistorySelection, roleRef, selectedIdsRef]
+  );
+
+  const commitRoleUpdate = useCallback(
+    (updater: RoleUpdater, afterSelectionIds = selectedIdsRef.current) => {
+      const current = roleRef.current;
+      const nextRole = syncGroups(touch(updater(cloneRole(current))));
+      commitRole(nextRole, afterSelectionIds);
+    },
+    [commitRole, roleRef, selectedIdsRef]
   );
 
   const importRole = useCallback(
@@ -98,15 +118,6 @@ export function useRoleEditorHistory({
       history.reset(nextRole);
     },
     [history, setSelectedLayerIds]
-  );
-
-  const withImmediateHistory = useCallback(
-    (action: () => void, restoreIds = selectedIdsRef.current) => {
-      recordLocalHistoryEntry(makeSnapshotEntry(cloneRole(roleRef.current), selectedIdsRef.current, restoreIds));
-      action();
-      restoreHistorySelection(restoreIds);
-    },
-    [recordLocalHistoryEntry, restoreHistorySelection, roleRef, selectedIdsRef]
   );
 
   const undo = useCallback(() => {
@@ -165,7 +176,14 @@ export function useRoleEditorHistory({
     transientTransformBeforeRef.current = null;
     transientSelectionBeforeRef.current = [];
 
-    const session = commitTransientSession(before, transformBefore, selectionBefore, roleRef.current, selectedIdsRef.current);
+    const session = commitTransientSession(
+      before,
+      transformBefore,
+      selectionBefore,
+      roleRef.current,
+      selectedIdsRef.current,
+      localHistoryIdPoolRef.current
+    );
 
     if (session.pendingTransform) {
       queuePendingTransformHistory(session.pendingTransform);
@@ -173,8 +191,8 @@ export function useRoleEditorHistory({
     }
 
     if (session.commitBaseTransient) history.commitTransient();
-    if (session.snapshotEntry) {
-      recordLocalHistoryEntry(session.snapshotEntry);
+    if (session.historyEntry) {
+      recordLocalHistoryEntry(session.historyEntry);
     }
     restoreSelection(session.restoreSelectionIds);
   }, [
@@ -195,7 +213,7 @@ export function useRoleEditorHistory({
     commitRole,
     importRole,
     recordLocalHistoryEntry,
-    withImmediateHistory,
+    commitRoleUpdate,
     withTransformHistory,
     undo,
     redo,

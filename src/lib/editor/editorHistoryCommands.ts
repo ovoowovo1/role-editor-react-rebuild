@@ -3,7 +3,7 @@ import {
   applyDecorationTransformTarget,
   applyTranslateDelta,
   captureDecorationTransforms,
-  makeSnapshotEntry,
+  applyRoleHistoryPatch,
   pushLocalFutureEntry,
   pushLocalHistoryEntry,
   type LocalHistoryEntry
@@ -53,15 +53,21 @@ export function resolveLocalUndo(
     };
   }
 
-  return {
-    localPast: nextPast,
-    localFuture: pushLocalFutureEntry(
-      localFuture,
-      makeSnapshotEntry(currentRole, previous.inverseSelectionIds, previous.selectionIds)
-    ),
-    nextRole: previous.role,
-    restoreSelectionIds: previous.selectionIds
-  };
+  if (previous.kind === 'patch') {
+    return {
+      localPast: nextPast,
+      localFuture: pushLocalFutureEntry(localFuture, {
+        kind: 'patch',
+        patch: previous.patch,
+        selectionIds: previous.inverseSelectionIds,
+        inverseSelectionIds: previous.selectionIds
+      }),
+      nextRole: applyRoleHistoryPatch(currentRole, previous.patch, 'before'),
+      restoreSelectionIds: previous.selectionIds
+    };
+  }
+
+  return null;
 }
 
 export function resolveLocalRedo(
@@ -101,13 +107,19 @@ export function resolveLocalRedo(
     };
   }
 
-  return {
-    localPast: pushLocalHistoryEntry(
-      localPast,
-      makeSnapshotEntry(currentRole, next.inverseSelectionIds, next.selectionIds)
-    ),
-    localFuture: nextFuture,
-    nextRole: next.role,
-    restoreSelectionIds: next.selectionIds
-  };
+  if (next.kind === 'patch') {
+    return {
+      localPast: pushLocalHistoryEntry(localPast, {
+        kind: 'patch',
+        patch: next.patch,
+        selectionIds: next.inverseSelectionIds,
+        inverseSelectionIds: next.selectionIds
+      }),
+      localFuture: nextFuture,
+      nextRole: applyRoleHistoryPatch(currentRole, next.patch, 'after'),
+      restoreSelectionIds: next.selectionIds
+    };
+  }
+
+  return null;
 }

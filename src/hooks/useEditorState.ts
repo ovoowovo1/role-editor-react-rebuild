@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   EDITOR_BASE_HISTORY_LIMIT,
   EDITOR_STAGE_MAX_SCALE,
@@ -15,9 +15,38 @@ import {
   type InsertDraftSettings
 } from '../lib/editor/editorInsertSettings';
 import { useHistory } from './useHistory';
+import {
+  applyRoleHistoryPatch,
+  createHistoryIdPool,
+  makeBaseRoleHistoryEntry,
+  type HistoryIdPool,
+  type RoleHistoryBaseEntry
+} from '../lib/editor/editorTransformHistory';
+
+function sameRoleReference(a: RoleDocument, b: RoleDocument): boolean {
+  return a === b;
+}
 
 export function useEditorState() {
-  const history = useHistory<RoleDocument>(createDefaultRole(), { limit: EDITOR_BASE_HISTORY_LIMIT });
+  const roleHistoryIdPoolRef = useRef<HistoryIdPool>(createHistoryIdPool());
+  const roleHistoryCodec = useMemo(
+    () => ({
+      create(previous: RoleDocument, next: RoleDocument): RoleHistoryBaseEntry | null {
+        return makeBaseRoleHistoryEntry(previous, next, roleHistoryIdPoolRef.current);
+      },
+      apply(current: RoleDocument, entry: RoleHistoryBaseEntry, direction: 'undo' | 'redo'): RoleDocument {
+        return applyRoleHistoryPatch(current, entry.patch, direction === 'undo' ? 'before' : 'after');
+      }
+    }),
+    []
+  );
+  const history = useHistory<RoleDocument, RoleHistoryBaseEntry>(createDefaultRole(), {
+    limit: EDITOR_BASE_HISTORY_LIMIT,
+    // The patch codec performs the substantive change check. Avoid
+    // serializing all decorations for every transient transform frame.
+    isEqual: sameRoleReference,
+    codec: roleHistoryCodec
+  });
   const { present: role, setPresent: setRole } = history;
   const roleRef = useRef(role);
   const [selectedTab, setSelectedTab] = useState<PartTab>('deco');

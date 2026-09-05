@@ -36,6 +36,7 @@ export function useRoleEditor() {
   const derived = useEditorDerivedState({
     role,
     selectedLayerIds: commands.selectedLayerIds,
+    selectedDecorationIds: commands.rawSelectedDecorationIds,
     stableSelectedDecorations: commands.stableSelectedDecorations
   });
 

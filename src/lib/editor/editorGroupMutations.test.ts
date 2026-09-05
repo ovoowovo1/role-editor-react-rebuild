@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeDecorationGroup, makeDecorationLayer, makeRoleDocument } from '../../test/roleFixtures';
 import {
   createGroupFromSelection,
+  groupMembershipSignature,
   hasUngroupedSelected,
   makeGroupMap,
   renameGroupInRole,
@@ -27,6 +28,41 @@ function groupedRole() {
 }
 
 describe('editor group mutations', () => {
+  it('keeps membership signatures stable for non-topology changes', () => {
+    const current = groupedRole();
+    const transformed = {
+      ...current,
+      decorations: current.decorations.map((item) => ({ ...item, x: item.x + 10 }))
+    };
+    const renamed = {
+      ...current,
+      groups: current.groups.map((group) => ({ ...group, name: `${group.name} renamed` }))
+    };
+
+    expect(groupMembershipSignature(transformed.groups)).toBe(groupMembershipSignature(current.groups));
+    expect(groupMembershipSignature(renamed.groups)).toBe(groupMembershipSignature(current.groups));
+  });
+
+  it('changes membership signatures when group topology changes', () => {
+    const current = groupedRole();
+    const changed = {
+      ...current,
+      groups: current.groups.map((group) => group.id === 'child'
+        ? {
+            ...group,
+            itemIds: ['a', 'b', 'c'],
+            members: [
+              { type: 'layer' as const, id: 'a' },
+              { type: 'layer' as const, id: 'b' },
+              { type: 'layer' as const, id: 'c' }
+            ]
+          }
+        : group)
+    };
+
+    expect(groupMembershipSignature(changed.groups)).not.toBe(groupMembershipSignature(current.groups));
+  });
+
   it('maps nested group members and returns only ungrouped selected layers', () => {
     const role = groupedRole();
 

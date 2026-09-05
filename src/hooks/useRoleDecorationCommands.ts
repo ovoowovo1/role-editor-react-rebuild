@@ -34,10 +34,10 @@ interface UseRoleDecorationCommandsOptions {
   baseSelectedDecorations: DecorationLayer[];
   selectedIdsRef: MutableRefObject<string[]>;
   commitRole(nextRole: RoleDocument, afterSelectionIds?: string[]): void;
+  commitRoleUpdate(updater: (current: RoleDocument) => RoleDocument, afterSelectionIds?: string[]): void;
   recordLocalHistoryEntry(entry: { kind: 'translate'; ids: string[]; dx: number; dy: number; selectionIds: string[] }): void;
   restoreSelection(ids: string[]): void;
   updateRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
-  withImmediateHistory(action: () => void, restoreIds?: string[]): void;
   withTransformHistory(action: () => void, restoreIds?: string[]): void;
 }
 
@@ -51,10 +51,10 @@ export function useRoleDecorationCommands({
   baseSelectedDecorations,
   selectedIdsRef,
   commitRole,
+  commitRoleUpdate,
   recordLocalHistoryEntry,
   restoreSelection,
   updateRole,
-  withImmediateHistory,
   withTransformHistory
 }: UseRoleDecorationCommandsOptions) {
   const transformCommands = useRoleTransformCommands({
@@ -65,7 +65,7 @@ export function useRoleDecorationCommands({
     baseSelectedDecorations,
     selectedIdsRef,
     updateRole,
-    withImmediateHistory,
+    commitRoleUpdate,
     withTransformHistory
   });
   const dragCommands = useRoleDragCommands({

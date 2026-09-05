@@ -16,6 +16,19 @@ export function makeGroupMap(groups: DecorationGroup[]): Map<string, DecorationG
   return map;
 }
 
+/**
+ * Returns a stable key for group topology changes while ignoring presentation
+ * fields such as name, visibility, and collapsed state.
+ */
+export function groupMembershipSignature(groups: DecorationGroup[]): string {
+  return JSON.stringify(
+    groups.map((group) => [
+      group.id,
+      membersForGroup(group).map((member) => [member.type, member.id])
+    ])
+  );
+}
+
 export function groupForItem(groups: DecorationGroup[], itemId: string): DecorationGroup | undefined {
   return groupForLayer(groups, itemId);
 }

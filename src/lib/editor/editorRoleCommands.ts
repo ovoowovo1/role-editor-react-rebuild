@@ -2,16 +2,15 @@ import type { BodyPartTab, DecorationLayer, EditorClipboardItem, PartOption, Rol
 import { getPartFrame } from '../runtime/twlibPartRuntime';
 import { normalizeDegrees } from '../math';
 import { copyDecoration } from './editorImportMerge';
-import { cloneRole } from './editorRoleUtils';
 import { pasteClipboardIntoRole } from './editorDecorationMutations';
 import { insertDecorations, type InsertDraftSettings } from './editorInsertSettings';
 import {
   captureDecorationTransforms,
-  makeSnapshotEntry,
+  makeRoleHistoryEntry,
   roundPosition,
-  sameRole,
   validSelectionIds,
   type DecorationTransformTarget,
+  type HistoryIdPool,
   type LocalHistoryEntry
 } from './editorTransformHistory';
 
@@ -58,12 +57,14 @@ export function beginTransientSession(
   if (transformBefore.length) {
     return { selectionIds, transformBefore, roleBefore: null };
   }
-  return { selectionIds, transformBefore: null, roleBefore: cloneRole(role) };
+  // Role updates clone before mutating, so this immutable role reference is
+  // sufficient for the transient baseline and avoids another full copy.
+  return { selectionIds, transformBefore: null, roleBefore: role };
 }
 
 export interface CommitTransientSessionResult {
   pendingTransform: { target: DecorationTransformTarget[]; selectionIds: string[] } | null;
-  snapshotEntry: LocalHistoryEntry | null;
+  historyEntry: LocalHistoryEntry | null;
   restoreSelectionIds: string[];
   commitBaseTransient: boolean;
 }
@@ -73,12 +74,13 @@ export function commitTransientSession(
   transformBefore: DecorationTransformTarget[] | null,
   selectionBefore: string[],
   currentRole: RoleDocument,
-  fallbackSelectedIds: string[]
+  fallbackSelectedIds: string[],
+  idPool?: HistoryIdPool
 ): CommitTransientSessionResult {
   if (transformBefore) {
     return {
       pendingTransform: { target: transformBefore, selectionIds: selectionBefore },
-      snapshotEntry: null,
+      historyEntry: null,
       restoreSelectionIds: selectionBefore,
       commitBaseTransient: false
     };
@@ -86,9 +88,15 @@ export function commitTransientSession(
 
   return {
     pendingTransform: null,
-    snapshotEntry:
-      roleBefore && !sameRole(roleBefore, currentRole)
-        ? makeSnapshotEntry(roleBefore, selectionBefore, selectionIdsForCommand(fallbackSelectedIds, selectionBefore))
+      historyEntry:
+      roleBefore
+        ? makeRoleHistoryEntry(
+            roleBefore,
+            currentRole,
+            selectionBefore,
+            selectionIdsForCommand(fallbackSelectedIds, selectionBefore),
+            idPool
+          )
         : null,
     restoreSelectionIds: selectionIdsForCommand(selectionBefore, fallbackSelectedIds),
     commitBaseTransient: true

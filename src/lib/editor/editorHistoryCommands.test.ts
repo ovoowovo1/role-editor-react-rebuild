@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeDecorationLayer, makeRoleDocument } from '../../test/roleFixtures';
-import type { LocalHistoryEntry } from './editorTransformHistory';
+import { makeRoleHistoryEntry, type LocalHistoryEntry } from './editorTransformHistory';
 import { resolveLocalRedo, resolveLocalUndo } from './editorHistoryCommands';
 
 describe('editor history commands', () => {
@@ -67,17 +67,14 @@ describe('editor history commands', () => {
   it('restores snapshot selection on undo and redo', () => {
     const current = makeRoleDocument({ name: 'current' });
     const snapshot = makeRoleDocument({ name: 'snapshot' });
-    const past: LocalHistoryEntry[] = [
-      { kind: 'snapshot', role: snapshot, selectionIds: ['before'], inverseSelectionIds: ['after'] }
-    ];
+    const past: LocalHistoryEntry[] = [makeRoleHistoryEntry(snapshot, current, ['before'], ['after'])!];
 
     const undoResult = resolveLocalUndo(current, past, []);
 
     expect(undoResult?.nextRole.name).toBe('snapshot');
     expect(undoResult?.restoreSelectionIds).toEqual(['before']);
     expect(undoResult?.localFuture[0]).toMatchObject({
-      kind: 'snapshot',
-      role: { name: 'current' },
+      kind: 'patch',
       selectionIds: ['after'],
       inverseSelectionIds: ['before']
     });

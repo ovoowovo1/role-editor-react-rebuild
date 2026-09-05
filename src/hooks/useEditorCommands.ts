@@ -52,9 +52,9 @@ export function useEditorCommands({
     canUndo,
     canRedo,
     commitRole,
+    commitRoleUpdate,
     importRole,
     recordLocalHistoryEntry,
-    withImmediateHistory,
     withTransformHistory,
     undo,
     redo,
@@ -83,10 +83,10 @@ export function useEditorCommands({
     baseSelectedDecorations,
     selectedIdsRef,
     commitRole,
+    commitRoleUpdate,
     recordLocalHistoryEntry,
     restoreSelection,
     updateRole,
-    withImmediateHistory,
     withTransformHistory
   });
 
