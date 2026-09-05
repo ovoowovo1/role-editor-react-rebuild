@@ -51,6 +51,7 @@ describe('character stage helpers', () => {
     const key = actorSceneKey(role, 'idle');
 
     expect(actorSceneKey({ ...role, camp: 'civil', gender: 'male' }, 'run')).toBe(key);
+    expect(actorSceneKey({ ...role, decorations: [makeDecorationLayer('new-deco')] }, 'idle')).toBe(key);
     expect(actorSceneKey({ ...role, parts: { ...role.parts, head: 'h2' } }, 'idle')).not.toBe(key);
     expect(actorSceneKey({ ...role, partFrames: { ...role.partFrames, head: 3 } }, 'idle')).not.toBe(key);
     expect(actorSceneKey({ ...role, partScales: { ...role.partScales, head: 1.3 } }, 'idle')).not.toBe(key);

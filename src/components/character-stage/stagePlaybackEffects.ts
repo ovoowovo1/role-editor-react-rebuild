@@ -9,6 +9,52 @@ interface PlaybackResetState {
   restartKey: number;
 }
 
+export interface BodyAnimationFrameRange {
+  startFrame: number;
+  endFrame: number;
+}
+
+export interface BodyAnimationAdvance {
+  nextFrame: number | null;
+  remainingMs: number;
+}
+
+/**
+ * Calculate the frame to display after elapsed playback time without walking
+ * through every intermediate frame. The returned remainder keeps sub-frame
+ * timing intact for the next RAF callback.
+ */
+export function calculateBodyAnimationAdvance(
+  currentFrame: number,
+  range: BodyAnimationFrameRange,
+  accumulatedMs: number
+): BodyAnimationAdvance {
+  if (!Number.isFinite(accumulatedMs) || accumulatedMs < 0) {
+    return { nextFrame: null, remainingMs: 0 };
+  }
+
+  const elapsedFrames = Math.floor(accumulatedMs / BODY_ANIMATION_FRAME_MS);
+  const remainingMs = accumulatedMs - elapsedFrames * BODY_ANIMATION_FRAME_MS;
+  const validRange =
+    Number.isInteger(range.startFrame) &&
+    Number.isInteger(range.endFrame) &&
+    range.startFrame <= range.endFrame;
+  if (!validRange || elapsedFrames <= 0) {
+    return { nextFrame: null, remainingMs };
+  }
+
+  const frameCount = range.endFrame - range.startFrame + 1;
+  const currentOffset = Number.isFinite(currentFrame)
+    ? ((currentFrame - range.startFrame) % frameCount + frameCount) % frameCount
+    : frameCount - 1;
+  const nextOffset = (currentOffset + elapsedFrames) % frameCount;
+
+  return {
+    nextFrame: range.startFrame + nextOffset,
+    remainingMs
+  };
+}
+
 export function useBodyAnimationPlayback({
   sceneRef,
   lastPlaybackResetRef,
@@ -48,13 +94,19 @@ export function useBodyAnimationPlayback({
     let lastTime = performance.now();
     let accumulated = 0;
 
-    const advanceFrame = () => {
+    const advanceFrame = (elapsedMs: number) => {
       const currentScene = sceneRef.current;
       if (currentScene !== scene || scene.actorClip.destroyed) return;
       const range = scene.actorClip.getBodyFrameRange(bodyAnimationLabel);
-      const currentFrame = scene.actorClip.body.currentFrame;
-      const nextFrame = currentFrame >= range.endFrame ? range.startFrame : currentFrame + 1;
-      scene.actorClip.setBodyFrame(nextFrame);
+      const advance = calculateBodyAnimationAdvance(
+        scene.actorClip.body.currentFrame,
+        range,
+        elapsedMs
+      );
+      if (advance.nextFrame !== null) {
+        scene.actorClip.setBodyFrame(advance.nextFrame);
+      }
+      accumulated = advance.remainingMs;
     };
 
     const tick = (time: number) => {
@@ -62,10 +114,7 @@ export function useBodyAnimationPlayback({
       if (currentScene !== scene || scene.actorClip.destroyed) return;
       accumulated += time - lastTime;
       lastTime = time;
-      while (accumulated >= BODY_ANIMATION_FRAME_MS) {
-        advanceFrame();
-        accumulated -= BODY_ANIMATION_FRAME_MS;
-      }
+      advanceFrame(accumulated);
       rafId = requestAnimationFrame(tick);
     };
 
