@@ -6,6 +6,7 @@ import {
   ORIGINAL_DECO_MIN_SCALE
 } from '../../constants/editor';
 import { clamp, clampToDisc, normalizeDegrees, round } from '../math';
+import { mapDecorationTransforms } from './editorTransformUpdates';
 import {
   applyGroupParentToItem,
   deriveFirstItemPosition,
@@ -226,22 +227,19 @@ export function applyGroupTransformToSelectedRole(
   parent: DecoGroupParentTransform
 ): RoleDocument {
   const selected = new Set(selectedDecorationIds);
-  return {
-    ...role,
-    decorations: role.decorations.map((item) => {
-      if (!selected.has(item.id)) return item;
-      const derived = applyGroupParentToItem(parent, snapshot, item.id);
-      if (!derived) return item;
-      return {
-        ...item,
-        x: derived.x,
-        y: derived.y,
-        scaleX: derived.scaleX,
-        scaleY: derived.scaleY,
-        rotation: normalizeDegrees(derived.rotation)
-      };
-    })
-  };
+  return mapDecorationTransforms(role, (item) => {
+    if (!selected.has(item.id)) return item;
+    const derived = applyGroupParentToItem(parent, snapshot, item.id);
+    if (!derived) return item;
+    return {
+      ...item,
+      x: derived.x,
+      y: derived.y,
+      scaleX: derived.scaleX,
+      scaleY: derived.scaleY,
+      rotation: normalizeDegrees(derived.rotation)
+    };
+  });
 }
 
 export function applySingleTransformPatchToSelectedRole(
@@ -258,30 +256,27 @@ export function applySingleTransformPatchToSelectedRole(
   const deltaY = typeof patch.posY === 'number' ? patch.posY - first.y : 0;
   const shouldClampPosition = typeof patch.posX === 'number' || typeof patch.posY === 'number';
 
-  return {
-    ...role,
-    decorations: role.decorations.map((item) => {
-      if (!selected.has(item.id)) return item;
-      const next = { ...item };
-      if (typeof patch.rotate === 'number') next.rotation = normalizeDegrees(patch.rotate);
-      if (typeof patch.scale === 'number') {
-        const ratio = Math.abs(item.scaleY / (item.scaleX || 1));
-        const signX = item.scaleX < 0 ? -1 : 1;
-        const newScale = clampDecoScaleForLayer(patch.scale, item);
-        next.scaleX = signX * newScale;
-        next.scaleY = newScale * ratio;
-      }
-      if (typeof patch.ratio === 'number') {
-        next.scaleY = Math.abs(item.scaleX) * clampDecoRatio(patch.ratio);
-      }
-      if (shouldClampPosition) {
-        const disc = clampToDisc(item.x + deltaX, item.y + deltaY, range);
-        next.x = disc.x;
-        next.y = disc.y;
-      }
-      return next;
-    })
-  };
+  return mapDecorationTransforms(role, (item) => {
+    if (!selected.has(item.id)) return item;
+    const next = { ...item };
+    if (typeof patch.rotate === 'number') next.rotation = normalizeDegrees(patch.rotate);
+    if (typeof patch.scale === 'number') {
+      const ratio = Math.abs(item.scaleY / (item.scaleX || 1));
+      const signX = item.scaleX < 0 ? -1 : 1;
+      const newScale = clampDecoScaleForLayer(patch.scale, item);
+      next.scaleX = signX * newScale;
+      next.scaleY = newScale * ratio;
+    }
+    if (typeof patch.ratio === 'number') {
+      next.scaleY = Math.abs(item.scaleX) * clampDecoRatio(patch.ratio);
+    }
+    if (shouldClampPosition) {
+      const disc = clampToDisc(item.x + deltaX, item.y + deltaY, range);
+      next.x = disc.x;
+      next.y = disc.y;
+    }
+    return next;
+  });
 }
 
 export function nudgeSelectedRole(
@@ -292,14 +287,11 @@ export function nudgeSelectedRole(
 ): RoleDocument {
   const selected = new Set(selectedDecorationIds);
   const range = positionRangeFromRole(role);
-  return {
-    ...role,
-    decorations: role.decorations.map((item) => {
-      if (!selected.has(item.id)) return item;
-      const disc = clampToDisc(item.x + dx, item.y + dy, range);
-      return { ...item, x: disc.x, y: disc.y };
-    })
-  };
+  return mapDecorationTransforms(role, (item) => {
+    if (!selected.has(item.id)) return item;
+    const disc = clampToDisc(item.x + dx, item.y + dy, range);
+    return { ...item, x: disc.x, y: disc.y };
+  });
 }
 
 export function flipSelectedRole(
@@ -308,11 +300,8 @@ export function flipSelectedRole(
   axis: 'horizontal' | 'vertical'
 ): RoleDocument {
   const selected = new Set(selectedDecorationIds);
-  return {
-    ...role,
-    decorations: role.decorations.map((item) => {
-      if (!selected.has(item.id)) return item;
-      return axis === 'horizontal' ? { ...item, scaleX: -item.scaleX } : { ...item, scaleY: -item.scaleY };
-    })
-  };
+  return mapDecorationTransforms(role, (item) => {
+    if (!selected.has(item.id)) return item;
+    return axis === 'horizontal' ? { ...item, scaleX: -item.scaleX } : { ...item, scaleY: -item.scaleY };
+  });
 }

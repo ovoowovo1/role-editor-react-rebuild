@@ -38,6 +38,7 @@ interface UseRoleDecorationCommandsOptions {
   recordLocalHistoryEntry(entry: { kind: 'translate'; ids: string[]; dx: number; dy: number; selectionIds: string[] }): void;
   restoreSelection(ids: string[]): void;
   updateRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
+  updateTransformRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
   withTransformHistory(action: () => void, restoreIds?: string[]): void;
 }
 
@@ -55,6 +56,7 @@ export function useRoleDecorationCommands({
   recordLocalHistoryEntry,
   restoreSelection,
   updateRole,
+  updateTransformRole,
   withTransformHistory
 }: UseRoleDecorationCommandsOptions) {
   const transformCommands = useRoleTransformCommands({
@@ -65,6 +67,7 @@ export function useRoleDecorationCommands({
     baseSelectedDecorations,
     selectedIdsRef,
     updateRole,
+    updateTransformRole,
     commitRoleUpdate,
     withTransformHistory
   });

@@ -21,7 +21,8 @@ export function useRoleEditor() {
     setStageScale,
     insertDraftSettings,
     setInsertDraftSettings,
-    updateRole
+    updateRole,
+    updateTransformRole
   } = useEditorState();
 
   const commands = useEditorCommands({
@@ -30,7 +31,8 @@ export function useRoleEditor() {
     roleRef,
     insertDraftSettings,
     setSelectedTab,
-    updateRole
+    updateRole,
+    updateTransformRole
   });
 
   const derived = useEditorDerivedState({

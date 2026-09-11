@@ -18,6 +18,21 @@ export interface ActiveDecorationOverlay {
   selectedSet: Set<string>;
 }
 
+interface OrderCache {
+  decorations: readonly DecorationLayer[];
+  headIndex: number;
+  overlay: Container | null;
+  selected: Set<string> | null;
+}
+const orderCache = new WeakMap<StageSceneState, OrderCache>();
+
+function sameSelection(a: Set<string> | null, b: Set<string> | null | undefined): boolean {
+  if (!a?.size && !b?.size) return true;
+  if (!a || !b || a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
+}
+
 function replaceDisguiseChildren(root: Container, children: Container[]): void {
   root.removeChildren();
   const chunkSize = 1000;
@@ -27,10 +42,9 @@ function replaceDisguiseChildren(root: Container, children: Container[]): void {
 }
 
 function decorationIdsMatchLookup(scene: StageSceneState, role: RoleDocument): boolean {
-  const roleIds = new Set(role.decorations.map((deco) => deco.id));
-  if (roleIds.size !== scene.decorationsById.size) return false;
-  for (const id of roleIds) {
-    if (!scene.decorationsById.has(id)) return false;
+  if (role.decorations.length !== scene.decorationsById.size) return false;
+  for (const deco of role.decorations) {
+    if (!scene.decorationsById.has(deco.id)) return false;
   }
   return true;
 }
@@ -41,6 +55,17 @@ export function syncDisguiseChildOrder(
   overlay?: Container | null,
   selectedSet?: Set<string> | null
 ): void {
+  const headIndex = clampedHeadLayerIndex(role);
+  const cached = orderCache.get(scene);
+  if (cached && cached.headIndex === headIndex && cached.overlay === (overlay ?? null) &&
+    sameSelection(cached.selected, selectedSet) &&
+    cached.decorations.length === role.decorations.length &&
+    (cached.decorations === role.decorations ||
+      cached.decorations.every((deco, index) => deco.id === role.decorations[index].id))) {
+    // Retain only the latest array, rather than holding an old document alive.
+    cached.decorations = role.decorations;
+    return;
+  }
   // A large role update may defer display synchronization. Keep the existing
   // children until that update refreshes the lookup, otherwise ordering the
   // new IDs against old display records would temporarily blank the stage.
@@ -62,7 +87,6 @@ export function syncDisguiseChildOrder(
     }
   }
 
-  const headIndex = clampedHeadLayerIndex(role);
   topFirstChildren.splice(headIndex, 0, scene.headLayerClip);
 
   // Controller and brush graphics are permanent overlay children. Visibility
@@ -72,6 +96,10 @@ export function syncDisguiseChildOrder(
     .reverse()
     .concat(scene.selectionDragController, scene.brushFillOverlay);
 
+  orderCache.set(scene, {
+    decorations: role.decorations, headIndex, overlay: overlay ?? null,
+    selected: selectedSet ? new Set(selectedSet) : null
+  });
   if (sameChildOrder(scene.lastDisguiseChildOrder, orderedChildren)) return;
   replaceDisguiseChildren(scene.disguiseRoot, orderedChildren);
   scene.lastDisguiseChildOrder = orderedChildren;
@@ -116,21 +144,38 @@ export function syncDecorationDisplayRecords(
   decoOptions: DisguiseDecoOptions,
   activeOverlay?: ActiveDecorationOverlay | null
 ): void {
-  const decorationsById = new Map(role.decorations.map((deco) => [deco.id, deco]));
-  scene.decorationsById = decorationsById;
-
-  for (const [id, record] of scene.decoDisplays) {
-    const deco = decorationsById.get(id);
-    if (deco && record.displayKey === decorationDisplayKey(deco)) continue;
-    record.container.parent?.removeChild(record.container);
-    if (!record.container.destroyed) {
-      record.container.destroy({ children: true });
+  const decorationsById = scene.decorationsById;
+  // Most edits retain the ID sequence. Allocate a membership set only for
+  // removals or replacements, not for every position/scale update.
+  let membershipChanged = decorationsById.size !== role.decorations.length;
+  for (const deco of role.decorations) {
+    if (!decorationsById.has(deco.id)) membershipChanged = true;
+    decorationsById.set(deco.id, deco);
+  }
+  if (membershipChanged) {
+    const ids = new Set(role.decorations.map(deco => deco.id));
+    for (const id of decorationsById.keys()) {
+      if (ids.has(id)) continue;
+      decorationsById.delete(id);
+      const record = scene.decoDisplays.get(id);
+      record?.container.parent?.removeChild(record.container);
+      if (record && !record.container.destroyed) record.container.destroy({ children: true });
+      scene.decoDisplays.delete(id);
     }
-    scene.decoDisplays.delete(id);
+    orderCache.delete(scene);
   }
 
   for (const deco of role.decorations) {
     let record = scene.decoDisplays.get(deco.id);
+    if (record?.appliedDecoration === deco) continue;
+    const displayKey = decorationDisplayKey(deco);
+    if (record && record.displayKey !== displayKey) {
+      record.container.parent?.removeChild(record.container);
+      if (!record.container.destroyed) record.container.destroy({ children: true });
+      scene.decoDisplays.delete(deco.id);
+      orderCache.delete(scene);
+      record = undefined;
+    }
     if (!record) {
       const container = createDisguiseEntryDisplay(
         deco,
@@ -143,10 +188,11 @@ export function syncDecorationDisplayRecords(
       container.cursor = scene.decorationInteractionEnabled ? 'pointer' : 'default';
       record = {
         container,
-        displayKey: decorationDisplayKey(deco),
+        displayKey,
         transformKey: ''
       };
       scene.decoDisplays.set(deco.id, record);
+      orderCache.delete(scene);
     }
 
     const transformKey = decorationTransformKey(deco);
@@ -158,5 +204,8 @@ export function syncDecorationDisplayRecords(
       applyDecorationDisplayTransform(record.container, deco);
       record.transformKey = transformKey;
     }
+    // A drag overlay temporarily owns local coordinates; retry its pending
+    // transform after reparenting, even when the role reference is unchanged.
+    if (!isOverlayChild) record.appliedDecoration = deco;
   }
 }

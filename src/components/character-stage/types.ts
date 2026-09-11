@@ -77,6 +77,7 @@ export interface DecoDisplayRecord {
   container: Container;
   displayKey: string;
   transformKey: string;
+  appliedDecoration?: DecorationLayer;
 }
 
 export interface StageSceneState {

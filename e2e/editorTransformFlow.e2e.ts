@@ -59,6 +59,31 @@ test('keyboard nudge supports undo and redo', async ({ page }, testInfo) => {
   expectNoPageErrors(monitor);
 });
 
+test('an equal transform does not add undo history or discard redo', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'noop-transform', makeEditorSmokeRole(1));
+  await importRoleFile(page, fixture, 1);
+  await page.getByTestId('layer-row-e2e-deco-1').locator('.layer-badge').click();
+  const settleHistory = () => page.evaluate(() => new Promise<void>(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+  await setNumberInput(page, 'transform-rotate-number', 360);
+  await settleHistory();
+  await expect(page.getByTestId('transform-rotate-number')).toHaveValue('0');
+  await expect(page.getByTestId('undo-button')).toBeDisabled();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByTestId('undo-button')).toBeEnabled();
+  await page.getByTestId('undo-button').click();
+  await expect(page.getByTestId('redo-button')).toBeEnabled();
+  await setNumberInput(page, 'transform-rotate-number', 360);
+  await settleHistory();
+  await expect(page.getByTestId('undo-button')).toBeDisabled();
+  await expect(page.getByTestId('redo-button')).toBeEnabled();
+  await page.getByTestId('redo-button').click();
+  await expect(page.getByTestId('transform-pos-x-number')).toHaveValue('1');
+  expectNoPageErrors(monitor);
+});
+
 test('stage multi-drag commits one undoable translation for the selected layers', async ({ page }, testInfo) => {
   const monitor = watchPageErrors(page);
   const sourceRole = makeEditorSmokeRole(2);

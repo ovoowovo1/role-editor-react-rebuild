@@ -19,7 +19,8 @@ export function useEditorCommands({
   roleRef,
   insertDraftSettings,
   setSelectedTab,
-  updateRole
+  updateRole,
+  updateTransformRole
 }: {
   history: EditorHistory;
   role: RoleDocument;
@@ -27,6 +28,7 @@ export function useEditorCommands({
   insertDraftSettings: InsertDraftSettings;
   setSelectedTab: Dispatch<SetStateAction<PartTab>>;
   updateRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
+  updateTransformRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
 }) {
   const selection = useRoleSelection({ role, roleRef });
   const {
@@ -87,6 +89,7 @@ export function useEditorCommands({
     recordLocalHistoryEntry,
     restoreSelection,
     updateRole,
+    updateTransformRole,
     withTransformHistory
   });
 

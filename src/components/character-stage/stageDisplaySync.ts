@@ -113,7 +113,8 @@ export function useStageDisplaySync({
     roleRef,
     sceneRef,
     scheduleDeferredStageSync,
-    selectedIdsRef
+    selectedIdsRef,
+    sceneVersion
   ]);
 
   useEffect(() => {

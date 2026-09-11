@@ -17,6 +17,7 @@ export function useRoleTransformCommands({
   baseSelectedDecorations,
   selectedIdsRef,
   updateRole,
+  updateTransformRole,
   commitRoleUpdate,
   withTransformHistory
 }: {
@@ -27,6 +28,7 @@ export function useRoleTransformCommands({
   baseSelectedDecorations: DecorationLayer[];
   selectedIdsRef: MutableRefObject<string[]>;
   updateRole: UpdateRole;
+  updateTransformRole: UpdateRole;
   commitRoleUpdate(updater: (current: RoleDocument) => RoleDocument, afterSelectionIds?: string[]): void;
   withTransformHistory(action: () => void, restoreIds?: string[]): void;
 }) {
@@ -48,7 +50,7 @@ export function useRoleTransformCommands({
     roleRef,
     selectedDecorationIds,
     selectedDecorations: baseSelectedDecorations,
-    updateRole
+    updateRole: updateTransformRole
   });
 
   const editValues = useMemo<TransformValues>(() => {

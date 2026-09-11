@@ -9,6 +9,7 @@ import { createDefaultRole } from '../mock/options';
 import type { PartTab, RoleDocument } from '../types/role';
 import { clamp } from '../lib/math';
 import { cloneRole, syncGroups, touch } from '../lib/editor/editorRoleUtils';
+import { applyTransformUpdate } from '../lib/editor/editorTransformUpdates';
 import {
   DEFAULT_INSERT_SETTINGS,
   sanitizeInsertDraftSettings,
@@ -69,6 +70,13 @@ export function useEditorState() {
     setStageScaleState(clamp(steppedValue, EDITOR_STAGE_MIN_SCALE, EDITOR_STAGE_MAX_SCALE));
   }, []);
 
+  const updateTransformRole = useCallback(
+    (updater: (current: RoleDocument) => RoleDocument, commit = true) => {
+      setRole((current) => applyTransformUpdate(current, updater), commit ? 'history' : 'silent');
+    },
+    [setRole]
+  );
+
   const setInsertDraftSettings = useCallback((settings: InsertDraftSettings) => {
     setInsertDraftSettingsState(sanitizeInsertDraftSettings(settings));
   }, []);
@@ -84,6 +92,7 @@ export function useEditorState() {
     setStageScale,
     insertDraftSettings,
     setInsertDraftSettings,
-    updateRole
+    updateRole,
+    updateTransformRole
   };
 }

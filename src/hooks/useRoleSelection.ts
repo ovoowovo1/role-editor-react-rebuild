@@ -1,23 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { HEAD_LAYER_ID } from '../constants/layers';
-import { orderedSelectedDecorations } from '../lib/editor/editorRoleUtils';
 import {
-  decorationIdsFromLayerIds,
   toggleLayerSelection
 } from '../lib/editor/headLayerMutations';
 import { selectedLayerIdsForGroup } from '../lib/editor/editorSelectionCommands';
 import { layerIdsForRole } from '../lib/editor/layerOrdering';
+import { selectionIdsToRestoreForRole } from '../lib/editor/editorRoleCommands';
 import {
-  selectionIdsToRestoreForRole,
-  stableSelectionIdsForRole
-} from '../lib/editor/editorRoleCommands';
+  decorationSelectionIndex, orderedIndexedDecorations, retainEqualArray,
+  stableIndexedSelectionIds, validIndexedLayerIds, type DecorationSelectionIndex
+} from '../lib/editor/editorSelectionIndex';
 import type { DecorationTransformTarget } from '../lib/editor/editorTransformHistory';
 import type { RoleDocument } from '../types/role';
 
 interface UseRoleSelectionOptions {
   role: RoleDocument;
   roleRef: MutableRefObject<RoleDocument>;
+}
+
+function useStableArray<T>(values: T[]): T[] {
+  const previous = useRef(values);
+  previous.current = retainEqualArray(previous.current, values);
+  return previous.current;
 }
 
 export interface RoleSelectionState {
@@ -45,20 +50,24 @@ export function useRoleSelection({ role, roleRef }: UseRoleSelectionOptions): Ro
   const transientBeforeRef = useRef<RoleDocument | null>(null);
   const transientTransformBeforeRef = useRef<DecorationTransformTarget[] | null>(null);
   const transientSelectionBeforeRef = useRef<string[]>([]);
+  const previousIndex = useRef<DecorationSelectionIndex>();
+  const index = useMemo(() => {
+    const next = decorationSelectionIndex(role.decorations, previousIndex.current);
+    previousIndex.current = next;
+    return next;
+  }, [role.decorations]);
 
-  const selectedDecorationIds = useMemo(
-    () => decorationIdsFromLayerIds(role, selectedLayerIds),
-    [role, selectedLayerIds]
-  );
+  const selectedDecorationIds = useStableArray(useMemo(
+    () => selectedLayerIds.filter(id => index.positions.has(id)),
+    [index, selectedLayerIds]
+  ));
 
   useEffect(() => {
     setSelectedLayerIds((ids) => {
-      const valid = new Set(role.decorations.map((item) => item.id));
-      valid.add(HEAD_LAYER_ID);
-      const nextIds = ids.filter((id) => valid.has(id));
+      const nextIds = validIndexedLayerIds(index, ids);
       return nextIds.length === ids.length ? ids : nextIds;
     });
-  }, [role.decorations]);
+  }, [index]);
 
   useEffect(() => {
     if (selectedLayerIds.length) {
@@ -68,25 +77,25 @@ export function useRoleSelection({ role, roleRef }: UseRoleSelectionOptions): Ro
     }
   }, [selectedLayerIds]);
 
-  const stableSelectedIds = useMemo(() => {
-    return stableSelectionIdsForRole(
-      role,
+  const stableSelectedIds = useStableArray(useMemo(() => {
+    return stableIndexedSelectionIds(
+      index,
       selectedLayerIds,
       Boolean(transientBeforeRef.current || transientTransformBeforeRef.current),
       transientSelectionBeforeRef.current,
       selectedIdsRef.current
     );
-  }, [role, selectedLayerIds]);
+  }, [index, role, selectedLayerIds]));
 
-  const stableSelectedDecorations = useMemo(() => {
-    const selectedSet = new Set(stableSelectedIds);
-    return role.decorations.filter((deco) => selectedSet.has(deco.id));
-  }, [role.decorations, stableSelectedIds]);
+  const stableSelectedDecorations = useStableArray(useMemo(
+    () => orderedIndexedDecorations(role.decorations, index, stableSelectedIds),
+    [role.decorations, index, stableSelectedIds]
+  ));
 
-  const baseSelectedDecorations = useMemo(
-    () => orderedSelectedDecorations(role, selectedDecorationIds),
-    [role, selectedDecorationIds]
-  );
+  const baseSelectedDecorations = useStableArray(useMemo(
+    () => orderedIndexedDecorations(role.decorations, index, selectedDecorationIds),
+    [role.decorations, index, selectedDecorationIds]
+  ));
 
   const restoreSelection = useCallback(
     (ids: string[]) => {

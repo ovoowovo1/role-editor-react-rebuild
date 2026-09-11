@@ -52,6 +52,66 @@ describe('stage scene synchronization', () => {
     mocks.createDisguiseEntryDisplay.mockImplementation(() => new Container());
   });
 
+  it('keeps the lookup and skips unchanged decoration reads and order lookups', () => {
+    const scene = makeScene();
+    const a = makeDecorationLayer('a');
+    const b = makeDecorationLayer('b');
+    const role = makeRoleDocument({ decorations: [a, b] });
+    syncDecorationDisplayRecords(scene, role, decoOptions);
+    syncDisguiseChildOrder(scene, role);
+    const lookup = scene.decorationsById;
+    const rotationRead = vi.fn(() => 0);
+    Object.defineProperty(b, 'rotation', { get: rotationRead });
+    const next = { ...role, decorations: [{ ...a, x: 15 }, b] };
+    mocks.applyDecorationDisplayTransform.mockClear();
+    syncDecorationDisplayRecords(scene, next, decoOptions);
+    const displayLookup = vi.spyOn(scene.decoDisplays, 'get');
+    syncDisguiseChildOrder(scene, next);
+    expect(scene.decorationsById).toBe(lookup);
+    expect(lookup.get('a')).toBe(next.decorations[0]);
+    expect(rotationRead).not.toHaveBeenCalled();
+    expect(displayLookup).not.toHaveBeenCalled();
+    expect(mocks.applyDecorationDisplayTransform).toHaveBeenCalledOnce();
+  });
+
+  it('retries transforms deferred by a drag overlay even for the same layer reference', () => {
+    const scene = makeScene();
+    const role = makeRoleDocument({ decorations: [makeDecorationLayer('a')] });
+    syncDecorationDisplayRecords(scene, role, decoOptions);
+    const display = scene.decoDisplays.get('a')!.container;
+    const overlay = new Container();
+    overlay.addChild(display);
+    const next = { ...role, decorations: [{ ...role.decorations[0], x: 30 }] };
+    mocks.applyDecorationDisplayTransform.mockClear();
+    syncDecorationDisplayRecords(scene, next, decoOptions, { container: overlay, selectedSet: new Set(['a']) });
+    expect(mocks.applyDecorationDisplayTransform).not.toHaveBeenCalled();
+    scene.disguiseRoot.addChild(display);
+    syncDecorationDisplayRecords(scene, next, decoOptions);
+    expect(mocks.applyDecorationDisplayTransform).toHaveBeenCalledWith(display, next.decorations[0]);
+  });
+
+  it('invalidates cached order for asset replacement, reorder and a fresh scene', () => {
+    const scene = makeScene();
+    const role = makeRoleDocument({ decorations: [makeDecorationLayer('a'), makeDecorationLayer('b')] });
+    syncDecorationDisplayRecords(scene, role, decoOptions);
+    syncDisguiseChildOrder(scene, role);
+    const oldDisplay = scene.decoDisplays.get('a')!.container;
+    const replaced = { ...role, decorations: [{ ...role.decorations[0], assetId: 'replacement' }, role.decorations[1]] };
+    syncDecorationDisplayRecords(scene, replaced, decoOptions);
+    syncDisguiseChildOrder(scene, replaced);
+    expect(oldDisplay.destroyed).toBe(true);
+    expect(scene.disguiseRoot.children).toContain(scene.decoDisplays.get('a')!.container);
+    const reordered = { ...replaced, decorations: [...replaced.decorations].reverse() };
+    syncDecorationDisplayRecords(scene, reordered, decoOptions);
+    syncDisguiseChildOrder(scene, reordered);
+    expect(scene.disguiseRoot.children.indexOf(scene.decoDisplays.get('a')!.container)).toBeLessThan(scene.disguiseRoot.children.indexOf(scene.decoDisplays.get('b')!.container));
+    const fresh = makeScene();
+    syncDecorationDisplayRecords(fresh, reordered, decoOptions);
+    syncDisguiseChildOrder(fresh, reordered);
+    expect(fresh.decoDisplays.size).toBe(2);
+    expect(fresh.disguiseRoot.children).toContain(fresh.decoDisplays.get('a')!.container);
+  });
+
   it('uses the scene lookup for selection without rebuilding decoration displays', () => {
     const scene = makeScene();
     const a = makeDecorationLayer('a');
