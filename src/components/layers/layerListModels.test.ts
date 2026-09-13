@@ -115,12 +115,24 @@ describe('layer list row models', () => {
     expect(applyLayerSelection(groupRow, createLayerSelectionState(['a'])).selected).toBe(false);
     expect(applyLayerSelection(groupRow, createLayerSelectionState(['a', 'b'])).selected).toBe(true);
 
-    const largeSelection = createLayerSelectionState(
-      Array.from({ length: 501 }, (_, index) => `id-${index}`)
-    );
-    expect(applyLayerSelection(groupRow, largeSelection).selected).toBe(true);
-    expect(itemRows.every((row) => applyLayerSelection(row, largeSelection).selected)).toBe(true);
-    expect(applyLayerSelection(headRow, largeSelection).selected).toBe(true);
+    const largeSelection = createLayerSelectionState([
+      'a',
+      ...Array.from({ length: 500 }, (_, index) => `id-${index}`)
+    ]);
+    expect(applyLayerSelection(groupRow, largeSelection).selected).toBe(false);
+    expect(applyLayerSelection(itemRows[0], largeSelection).selected).toBe(true);
+    expect(applyLayerSelection(itemRows[1], largeSelection).selected).toBe(false);
+    expect(applyLayerSelection(headRow, largeSelection).selected).toBe(false);
+
+    const allLayers = createLayerSelectionState([
+      'a',
+      'b',
+      HEAD_LAYER_ID,
+      ...Array.from({ length: 498 }, (_, index) => `extra-${index}`)
+    ]);
+    expect(applyLayerSelection(groupRow, allLayers).selected).toBe(true);
+    expect(itemRows.every((row) => applyLayerSelection(row, allLayers).selected)).toBe(true);
+    expect(applyLayerSelection(headRow, allLayers).selected).toBe(true);
   });
 
   it('keeps structural rows and virtual geometry independent from selection updates', () => {

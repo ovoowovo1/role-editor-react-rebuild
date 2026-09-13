@@ -1,4 +1,5 @@
 import { Container, Rectangle } from 'pixi.js';
+import { HEAD_LAYER_ID } from '../../constants/layers';
 import type { DecorationLayer } from '../../types/role';
 import { clamp } from '../../lib/math';
 import {
@@ -191,4 +192,20 @@ export function syncSelectionDragController(
   scene.selectionDragControllerGraphic.beginFill(0x000000, 0.001);
   scene.selectionDragControllerGraphic.drawRect(hitArea.x, hitArea.y, hitArea.width, hitArea.height);
   scene.selectionDragControllerGraphic.endFill();
+}
+
+export function syncHeadLayerSelection(scene: StageSceneState, selectedIds: readonly string[]): void {
+  const selected = selectedIds.includes(HEAD_LAYER_ID);
+  if (scene.headLayerSelectionActive !== selected) {
+    scene.headLayerSelectionActive = selected;
+    scene.headLayerSelectionOverlay.filters = selected ? [getCachedControllerGlowFilter()] : null;
+  }
+
+  const visible = selected && scene.headLayerClip.visible;
+  scene.headLayerSelectionOverlay.visible = visible;
+  scene.headLayerSelectionVisual.position.copyFrom(scene.headLayerClip.position);
+  scene.headLayerSelectionVisual.rotation = scene.headLayerClip.rotation;
+  scene.headLayerSelectionVisual.scale.copyFrom(scene.headLayerClip.scale);
+  scene.headLayerSelectionVisual.alpha = scene.headLayerClip.alpha;
+  scene.headLayerSelectionVisual.visible = visible;
 }

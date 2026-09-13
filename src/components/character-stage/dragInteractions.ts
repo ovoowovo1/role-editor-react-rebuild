@@ -7,11 +7,10 @@ import {
   summarizeMultiDragPositions
 } from '../../lib/stage/characterStageHelpers';
 import { createLargeMultiDragPreview } from './stageOverlayVisuals';
-import { getDisplayRootPosition, reparentPreservingPosition } from './sceneGeometry';
+import { getDisplayRootPosition } from './sceneGeometry';
 import {
   setDecorationInteractionEnabled,
-  syncDisguiseChildOrder,
-  syncSelectionControllerForIds
+  syncDisguiseChildOrder
 } from './sceneSync';
 import type { DraggedDisplayItem, StagePointerPosition, StageRuntimeRefs } from './types';
 
@@ -81,7 +80,7 @@ function beginPreviewDrag(
   };
 }
 
-function beginOverlayDrag(
+function beginMultiDrag(
   global: StagePointerPosition,
   root: Container,
   selectionIds: string[],
@@ -107,17 +106,6 @@ function beginOverlayDrag(
   }
   if (items.length < 2) return false;
 
-  const overlay = new Container();
-  overlay.position.set(summary.centerX, summary.centerY);
-  scene.disguiseRoot.addChild(overlay);
-
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    reparentPreservingPosition(items[index].container, overlay);
-  }
-
-  const selectedSet = new Set(selectionIds);
-  syncDisguiseChildOrder(scene, refs.roleRef.current, overlay, selectedSet);
-
   const local = root.toLocal(global);
   refs.dragRef.current = {
     selectionIds,
@@ -126,11 +114,12 @@ function beginOverlayDrag(
     controllerStartX: scene.selectionDragController.position.x,
     controllerStartY: scene.selectionDragController.position.y,
     visual: {
-      kind: 'overlay',
-      container: overlay,
+      kind: 'multi',
       items,
       startX: summary.centerX,
-      startY: summary.centerY
+      startY: summary.centerY,
+      currentX: summary.centerX,
+      currentY: summary.centerY
     }
   };
   return true;
@@ -188,8 +177,8 @@ export function beginDecorationDrag(
   }
 
   if (
-    mode === 'overlay' &&
-    beginOverlayDrag(global, root, selectionIds, selectedDecorations, displayPositions, summary, refs)
+    mode === 'multi' &&
+    beginMultiDrag(global, root, selectionIds, selectedDecorations, displayPositions, summary, refs)
   ) {
     return;
   }
@@ -210,23 +199,22 @@ export function updateDecorationDrag(global: StagePointerPosition, refs: StageRu
     drag.offsetY,
     positionRange(refs.roleRef.current)
   );
-  drag.visual.container.position.set(next.x, next.y);
+  if (drag.visual.kind === 'multi') {
+    drag.visual.currentX = next.x;
+    drag.visual.currentY = next.y;
+    const dx = next.x - drag.visual.startX;
+    const dy = next.y - drag.visual.startY;
+    for (const item of drag.visual.items) {
+      item.container.position.set(item.startX + dx, item.startY + dy);
+    }
+  } else {
+    drag.visual.container.position.set(next.x, next.y);
+  }
   scene.selectionDragController.position.set(
     drag.controllerStartX + next.x - drag.visual.startX,
     drag.controllerStartY + next.y - drag.visual.startY
   );
   return true;
-}
-
-function restoreSelectionControllerOnNextFrame(
-  scene: NonNullable<StageRuntimeRefs['sceneRef']['current']>,
-  refs: StageRuntimeRefs
-): void {
-  requestAnimationFrame(() => {
-    if (refs.sceneRef.current !== scene || refs.dragRef.current || scene.actorStage.destroyed) return;
-    syncSelectionControllerForIds(scene, refs.selectedIdsRef.current);
-    syncDisguiseChildOrder(scene, refs.roleRef.current);
-  });
 }
 
 export function commitDecorationDrag(refs: StageRuntimeRefs): boolean {
@@ -236,19 +224,12 @@ export function commitDecorationDrag(refs: StageRuntimeRefs): boolean {
   refs.dragRef.current = null;
   const scene = refs.sceneRef.current;
   const { visual } = drag;
-  const dx = visual.container.position.x - visual.startX;
-  const dy = visual.container.position.y - visual.startY;
+  const currentX = visual.kind === 'multi' ? visual.currentX : visual.container.position.x;
+  const currentY = visual.kind === 'multi' ? visual.currentY : visual.container.position.y;
+  const dx = currentX - visual.startX;
+  const dy = currentY - visual.startY;
 
-  if (visual.kind === 'overlay') {
-    if (scene) {
-      for (const item of visual.items) {
-        reparentPreservingPosition(item.container, scene.disguiseRoot);
-      }
-    }
-    if (!visual.container.destroyed) {
-      visual.container.destroy({ children: false });
-    }
-  } else if (visual.kind === 'preview' && !visual.container.destroyed) {
+  if (visual.kind === 'preview' && !visual.container.destroyed) {
     visual.container.destroy({ children: true });
   }
 
@@ -258,8 +239,5 @@ export function commitDecorationDrag(refs: StageRuntimeRefs): boolean {
   }
 
   refs.callbacksRef.current.onCommitDrag(drag.selectionIds, dx, dy);
-  if (scene) {
-    restoreSelectionControllerOnNextFrame(scene, refs);
-  }
   return true;
 }

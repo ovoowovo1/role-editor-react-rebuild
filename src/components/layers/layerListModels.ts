@@ -24,8 +24,7 @@ export interface LayerRowModel {
 }
 
 export interface LayerSelectionState {
-  isLargeSelection: boolean;
-  selectedIds: Set<string> | null;
+  selectedIds: ReadonlySet<string>;
 }
 
 function groupRowId(groupId: string): string {
@@ -190,10 +189,8 @@ export function buildLayerRowModels({
 }
 
 export function createLayerSelectionState(selectedIds: readonly string[]): LayerSelectionState {
-  const isLargeSelection = selectedIds.length > 500;
   return {
-    isLargeSelection,
-    selectedIds: isLargeSelection ? null : new Set(selectedIds)
+    selectedIds: new Set(selectedIds)
   };
 }
 
@@ -204,14 +201,11 @@ export function applyLayerSelection(
   let selected = false;
   if (row.type === 'group') {
     const descendantIds = row.descendantIds ?? [];
-    selected = descendantIds.length > 0 && (
-      selection.isLargeSelection ||
-      descendantIds.every((id) => selection.selectedIds?.has(id))
-    );
+    selected = descendantIds.length > 0 && descendantIds.every((id) => selection.selectedIds.has(id));
   } else if (row.type === 'head') {
-    selected = selection.isLargeSelection || Boolean(selection.selectedIds?.has(HEAD_LAYER_ID));
+    selected = selection.selectedIds.has(HEAD_LAYER_ID);
   } else if (row.type === 'item' && row.deco) {
-    selected = selection.isLargeSelection || Boolean(selection.selectedIds?.has(row.deco.id));
+    selected = selection.selectedIds.has(row.deco.id);
   }
 
   return row.selected === selected ? row : { ...row, selected };

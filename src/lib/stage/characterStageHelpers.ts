@@ -58,7 +58,7 @@ export interface MultiDragPositionSummary {
   maxY: number;
 }
 
-export type MultiDragStartMode = 'single-fallback' | 'overlay' | 'preview';
+export type MultiDragStartMode = 'single-fallback' | 'multi' | 'preview';
 
 export function stageRendererResolution(devicePixelRatio: number): number {
   const normalized = Number.isFinite(devicePixelRatio) ? devicePixelRatio : 1;
@@ -126,10 +126,10 @@ export function summarizeMultiDragPositions(positions: readonly MultiDragPositio
   };
 }
 
-export function multiDragStartMode(selectedDecorationCount: number, overlayItemCount: number): MultiDragStartMode {
+export function multiDragStartMode(selectedDecorationCount: number, displayItemCount: number): MultiDragStartMode {
   if (selectedDecorationCount < 2) return 'single-fallback';
   if (selectedDecorationCount > LIVE_MULTI_DRAG_ITEM_LIMIT) return 'preview';
-  return overlayItemCount >= 2 ? 'overlay' : 'single-fallback';
+  return displayItemCount >= 2 ? 'multi' : 'single-fallback';
 }
 
 export function actorSceneKey(role: RoleDocument, _bodyAnimationLabel?: string): string {

@@ -21,12 +21,20 @@ function getRolePartScale(role: RoleDocument, category: BodyPartTab): number {
   return sanitizePartScale(role.partScales?.[category], 1);
 }
 
-export function prepareDisguiseRoot(
-  role: RoleDocument,
-  failedTextures: Set<string>
-): { disguiseRoot: Container; headLayerClip: GafMovieClip } {
-  const disguiseRoot = new Container();
+function headLayerForRole(role: RoleDocument) {
+  return role.headLayer ?? {
+    x: 0,
+    y: 0,
+    scaleX: getRolePartScale(role, 'head'),
+    scaleY: getRolePartScale(role, 'head'),
+    rotation: 0,
+    visible: true,
+    opacity: 1
+  };
+}
 
+/** Build the persisted head layer or an identical visual clone for overlays. */
+export function createHeadLayerClip(role: RoleDocument, failedTextures: Set<string>): GafMovieClip {
   const headLibrary = actorPartRuntime.head.library;
   const headLayerClip = createActorGafClip(
     failedTextures,
@@ -39,32 +47,25 @@ export function prepareDisguiseRoot(
   const headFrame = getRolePartFrame(role, 'head', headOption);
   headLayerClip.gotoAndStop(headFrame);
 
-  const headLayer = role.headLayer ?? {
-    x: 0,
-    y: 0,
-    scaleX: getRolePartScale(role, 'head'),
-    scaleY: getRolePartScale(role, 'head'),
-    rotation: 0,
-    visible: true,
-    opacity: 1
-  };
+  const headLayer = headLayerForRole(role);
   applyDisplayTransform(headLayerClip, displayTransformPatchForHeadLayer(headLayer, isRuntimeEmptyFrame('head', headFrame)));
+  return headLayerClip;
+}
+
+export function prepareDisguiseRoot(
+  role: RoleDocument,
+  failedTextures: Set<string>
+): { disguiseRoot: Container; headLayerClip: GafMovieClip } {
+  const disguiseRoot = new Container();
+  const headLayerClip = createHeadLayerClip(role, failedTextures);
 
   return { disguiseRoot, headLayerClip };
 }
 
 export function applyHeadLayerDisplayTransform(headLayerClip: GafMovieClip, role: RoleDocument): void {
-  const headLayer = role.headLayer ?? {
-    x: 0,
-    y: 0,
-    scaleX: getRolePartScale(role, 'head'),
-    scaleY: getRolePartScale(role, 'head'),
-    rotation: 0,
-    visible: true,
-    opacity: 1
-  };
   const headOption = getBodyPartOption('head', role.parts.head);
   const headFrame = getRolePartFrame(role, 'head', headOption);
+  const headLayer = headLayerForRole(role);
 
   applyDisplayTransform(headLayerClip, displayTransformPatchForHeadLayer(headLayer, isRuntimeEmptyFrame('head', headFrame)));
 }

@@ -56,11 +56,16 @@ describe('editor selection commands', () => {
         group('g1', [
           { type: 'layer', id: HEAD_LAYER_ID },
           { type: 'layer', id: 'c' }
+        ]),
+        group('g2', [
+          { type: 'layer', id: 'a' },
+          { type: 'layer', id: 'b' }
         ])
       ]
     });
 
-    expect(selectedLayerIdsForGroup(current, 'g1')).toEqual(['c', HEAD_LAYER_ID]);
+    expect(selectedLayerIdsForGroup(current, 'g1')).toEqual([HEAD_LAYER_ID, 'c']);
+    expect(selectedLayerIdsForGroup(current, 'g2')).toEqual(['a', 'b']);
     expect(selectedLayerIdsForGroup(current, 'missing')).toEqual([]);
   });
 

@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Container } from 'pixi.js';
+import { HEAD_LAYER_ID } from '../../constants/layers';
 import { makeDecorationLayer } from '../../test/roleFixtures';
 import type { StageSceneState } from './types';
 
 const mocks = vi.hoisted(() => ({
-  createDecorationVisual: vi.fn(() => new Container())
+  createDecorationVisual: vi.fn(() => new Container()),
+  getCachedControllerGlowFilter: vi.fn(() => ({ kind: 'controller-selection-filter' }))
 }));
 
 vi.mock('./pixiVisuals', () => ({
@@ -12,11 +14,12 @@ vi.mock('./pixiVisuals', () => ({
 }));
 
 vi.mock('./stageOverlayVisuals', () => ({
-  getCachedControllerGlowFilter: vi.fn(() => null)
+  getCachedControllerGlowFilter: mocks.getCachedControllerGlowFilter
 }));
 
 import {
   hideSelectionDragController,
+  syncHeadLayerSelection,
   syncSelectionDragControllerVisuals
 } from './selectionControllerSync';
 
@@ -29,6 +32,10 @@ function makeScene(): StageSceneState {
     selectionDragVisualsById: new Map(),
     selectionDragVisualDisplayKeysById: new Map(),
     selectionDragTargetId: null,
+    headLayerClip: new Container(),
+    headLayerSelectionOverlay: new Container(),
+    headLayerSelectionVisual: new Container(),
+    headLayerSelectionActive: false,
     failedTextures: new Set()
   } as unknown as StageSceneState;
 }
@@ -106,5 +113,43 @@ describe('selection controller visuals', () => {
     expect(scene.selectionDragControllerVisuals.children).toHaveLength(0);
     expect(scene.selectionDragController.visible).toBe(false);
     expect(scene.selectionDragController.eventMode).toBe('none');
+  });
+
+  it('renders a knockout green outline from a cloned head visual', () => {
+    const scene = makeScene();
+    const firstFilter = { kind: 'controller-selection-filter' };
+    mocks.getCachedControllerGlowFilter.mockReturnValue(firstFilter);
+    scene.headLayerClip.position.set(12, -8);
+    scene.headLayerClip.rotation = Math.PI / 3;
+    scene.headLayerClip.scale.set(1.5, -0.75);
+    scene.headLayerClip.alpha = 0.6;
+    scene.headLayerClip.visible = true;
+
+    syncHeadLayerSelection(scene, [HEAD_LAYER_ID, 'deco-a']);
+    expect(scene.headLayerSelectionActive).toBe(true);
+    expect(scene.headLayerClip.filters).toBeNull();
+    expect(scene.headLayerSelectionOverlay.filters).toEqual([firstFilter]);
+    expect(scene.headLayerSelectionOverlay.visible).toBe(true);
+    expect(scene.headLayerSelectionVisual.position).toMatchObject({ x: 12, y: -8 });
+    expect(scene.headLayerSelectionVisual.rotation).toBe(Math.PI / 3);
+    expect(scene.headLayerSelectionVisual.scale).toMatchObject({ x: 1.5, y: -0.75 });
+    expect(scene.headLayerSelectionVisual.alpha).toBe(0.6);
+    expect(scene.headLayerSelectionVisual.visible).toBe(true);
+    expect(mocks.getCachedControllerGlowFilter).toHaveBeenCalledOnce();
+
+    syncHeadLayerSelection(scene, [HEAD_LAYER_ID, 'deco-a']);
+    expect(mocks.getCachedControllerGlowFilter).toHaveBeenCalledOnce();
+
+    scene.headLayerClip.visible = false;
+    syncHeadLayerSelection(scene, [HEAD_LAYER_ID]);
+    expect(scene.headLayerSelectionActive).toBe(true);
+    expect(scene.headLayerSelectionOverlay.visible).toBe(false);
+    expect(scene.headLayerSelectionVisual.visible).toBe(false);
+
+    syncHeadLayerSelection(scene, ['deco-a']);
+    expect(scene.headLayerSelectionActive).toBe(false);
+    expect(scene.headLayerSelectionOverlay.filters).toBeNull();
+    expect(scene.headLayerSelectionOverlay.visible).toBe(false);
+    expect(scene.headLayerClip.filters).toBeNull();
   });
 });

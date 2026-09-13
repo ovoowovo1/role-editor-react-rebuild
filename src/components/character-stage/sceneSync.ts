@@ -11,27 +11,13 @@ import {
   createDisguiseEntryDisplay
 } from './pixiVisuals';
 import type { DisguiseDecoOptions, StageSceneState } from './types';
-import { syncSelectionDragController } from './selectionControllerSync';
-
-export interface ActiveDecorationOverlay {
-  container: Container;
-  selectedSet: Set<string>;
-}
+import { syncHeadLayerSelection, syncSelectionDragController } from './selectionControllerSync';
 
 interface OrderCache {
   decorations: readonly DecorationLayer[];
   headIndex: number;
-  overlay: Container | null;
-  selected: Set<string> | null;
 }
 const orderCache = new WeakMap<StageSceneState, OrderCache>();
-
-function sameSelection(a: Set<string> | null, b: Set<string> | null | undefined): boolean {
-  if (!a?.size && !b?.size) return true;
-  if (!a || !b || a.size !== b.size) return false;
-  for (const id of a) if (!b.has(id)) return false;
-  return true;
-}
 
 function replaceDisguiseChildren(root: Container, children: Container[]): void {
   root.removeChildren();
@@ -49,16 +35,22 @@ function decorationIdsMatchLookup(scene: StageSceneState, role: RoleDocument): b
   return true;
 }
 
+/** True once the display lookup has received the current role references. */
+export function isDecorationDisplaySyncCurrent(scene: StageSceneState, role: RoleDocument): boolean {
+  if (role.decorations.length !== scene.decorationsById.size) return false;
+  for (const deco of role.decorations) {
+    if (scene.decorationsById.get(deco.id) !== deco) return false;
+  }
+  return true;
+}
+
 export function syncDisguiseChildOrder(
   scene: StageSceneState,
-  role: RoleDocument,
-  overlay?: Container | null,
-  selectedSet?: Set<string> | null
+  role: RoleDocument
 ): void {
   const headIndex = clampedHeadLayerIndex(role);
   const cached = orderCache.get(scene);
-  if (cached && cached.headIndex === headIndex && cached.overlay === (overlay ?? null) &&
-    sameSelection(cached.selected, selectedSet) &&
+  if (cached && cached.headIndex === headIndex &&
     cached.decorations.length === role.decorations.length &&
     (cached.decorations === role.decorations ||
       cached.decorations.every((deco, index) => deco.id === role.decorations[index].id))) {
@@ -72,33 +64,25 @@ export function syncDisguiseChildOrder(
   if (!decorationIdsMatchLookup(scene, role)) return;
 
   const topFirstChildren: Container[] = [];
-  let overlayAdded = false;
 
   for (const deco of role.decorations) {
     const record = scene.decoDisplays.get(deco.id);
     if (!record) continue;
-    if (selectedSet?.has(deco.id)) {
-      if (!overlayAdded && overlay) {
-        topFirstChildren.push(overlay);
-        overlayAdded = true;
-      }
-    } else {
-      topFirstChildren.push(record.container);
-    }
+    topFirstChildren.push(record.container);
   }
 
   topFirstChildren.splice(headIndex, 0, scene.headLayerClip);
 
-  // Controller and brush graphics are permanent overlay children. Visibility
-  // changes must not force every decoration to be removed and re-added.
+  // Selection/brush/head visuals are permanent overlays. They intentionally
+  // render above the role children while the original deco containers keep
+  // their role-defined z-order.
   const orderedChildren = topFirstChildren
     .slice()
     .reverse()
-    .concat(scene.selectionDragController, scene.brushFillOverlay);
+    .concat(scene.selectionDragController, scene.brushFillOverlay, scene.headLayerSelectionOverlay);
 
   orderCache.set(scene, {
-    decorations: role.decorations, headIndex, overlay: overlay ?? null,
-    selected: selectedSet ? new Set(selectedSet) : null
+    decorations: role.decorations, headIndex
   });
   if (sameChildOrder(scene.lastDisguiseChildOrder, orderedChildren)) return;
   replaceDisguiseChildren(scene.disguiseRoot, orderedChildren);
@@ -131,6 +115,7 @@ export function syncSelectionControllerForIds(
   selectedIds: readonly string[],
   hasActiveDrag = false
 ): void {
+  syncHeadLayerSelection(scene, selectedIds);
   syncSelectionDragController(
     scene,
     selectedDecorationsFromLookup(scene.decorationsById, selectedIds),
@@ -142,7 +127,7 @@ export function syncDecorationDisplayRecords(
   scene: StageSceneState,
   role: RoleDocument,
   decoOptions: DisguiseDecoOptions,
-  activeOverlay?: ActiveDecorationOverlay | null
+  activeDragIds?: ReadonlySet<string> | null
 ): void {
   const decorationsById = scene.decorationsById;
   // Most edits retain the ID sequence. Allocate a membership set only for
@@ -196,16 +181,14 @@ export function syncDecorationDisplayRecords(
     }
 
     const transformKey = decorationTransformKey(deco);
-    const isOverlayChild = Boolean(
-      activeOverlay?.selectedSet.has(deco.id) &&
-      record.container.parent === activeOverlay.container
-    );
-    if (record.transformKey !== transformKey && !isOverlayChild) {
+    const isActiveDragItem = activeDragIds?.has(deco.id) ?? false;
+    if (record.transformKey !== transformKey && !isActiveDragItem) {
       applyDecorationDisplayTransform(record.container, deco);
       record.transformKey = transformKey;
     }
-    // A drag overlay temporarily owns local coordinates; retry its pending
-    // transform after reparenting, even when the role reference is unchanged.
-    if (!isOverlayChild) record.appliedDecoration = deco;
+    // Active drag items own their imperative position until the commit has
+    // produced a current role reference; the next display sync then applies
+    // the committed transform.
+    if (!isActiveDragItem) record.appliedDecoration = deco;
   }
 }

@@ -6,10 +6,10 @@ import type { RoleDocument } from '../../types/role';
 import { applyHeadLayerDisplayTransform } from './actorVisuals';
 import {
   setDecorationInteractionEnabled,
+  isDecorationDisplaySyncCurrent,
   syncDecorationDisplayRecords,
   syncDisguiseChildOrder,
   syncSelectionControllerForIds,
-  type ActiveDecorationOverlay
 } from './sceneSync';
 import { drawBrushFillOverlay } from './stageOverlayVisuals';
 import type { BrushDrawState, DisguiseDecoOptions, DragState, StageSceneState } from './types';
@@ -31,13 +31,8 @@ interface StageDisplaySyncOptions {
   cancelDeferredStageSync(): void;
 }
 
-function activeDecorationOverlay(drag: DragState | null): ActiveDecorationOverlay | null {
-  return drag?.visual.kind === 'overlay'
-    ? {
-        container: drag.visual.container,
-        selectedSet: new Set(drag.selectionIds)
-      }
-    : null;
+function activeDecorationDragIds(drag: DragState | null): ReadonlySet<string> | null {
+  return drag ? new Set(drag.selectionIds) : null;
 }
 
 export function useStageDisplaySync({
@@ -71,10 +66,14 @@ export function useStageDisplaySync({
       const currentScene = sceneRef.current;
       if (!currentScene) return;
       const activeDrag = dragRef.current;
-      const activeOverlay = activeDecorationOverlay(activeDrag);
       const currentRole = roleRef.current;
       applyHeadLayerDisplayTransform(currentScene.headLayerClip, currentRole);
-      syncDecorationDisplayRecords(currentScene, currentRole, decoOptions, activeOverlay);
+      syncDecorationDisplayRecords(
+        currentScene,
+        currentRole,
+        decoOptions,
+        activeDecorationDragIds(activeDrag)
+      );
 
       // Selection/order effects may have run before a deferred display update.
       // Repair them from current refs without turning ordinary selection changes
@@ -87,9 +86,7 @@ export function useStageDisplaySync({
         );
         syncDisguiseChildOrder(
           currentScene,
-          currentRole,
-          activeOverlay?.container,
-          activeOverlay?.selectedSet
+          currentRole
         );
       }
     };
@@ -120,8 +117,13 @@ export function useStageDisplaySync({
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
+    // A large role update can defer display synchronization. Do not rebuild
+    // the selection controller from the previous lookup while that update is
+    // pending; the deferred display pass will restore it after the lookup is
+    // current.
+    if (!isDecorationDisplaySyncCurrent(scene, role)) return;
     syncSelectionControllerForIds(scene, selectedIds, Boolean(dragRef.current));
-  }, [dragRef, role.decorations, sceneRef, sceneVersion, selectedIds]);
+  }, [dragRef, role, sceneRef, sceneVersion, selectedIds]);
 
   useEffect(() => {
     const scene = sceneRef.current;
@@ -132,12 +134,6 @@ export function useStageDisplaySync({
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
-    const activeOverlay = activeDecorationOverlay(dragRef.current);
-    syncDisguiseChildOrder(
-      scene,
-      role,
-      activeOverlay?.container,
-      activeOverlay?.selectedSet
-    );
+    syncDisguiseChildOrder(scene, role);
   }, [dragRef, role.decorations, role.headLayerIndex, sceneRef, sceneVersion]);
 }

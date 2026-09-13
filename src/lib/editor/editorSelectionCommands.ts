@@ -8,7 +8,10 @@ export function selectedLayerIdsForGroup(role: RoleDocument, groupId: string): s
   const group = role.groups?.find((item) => item.id === groupId);
   if (!group) return [];
   const groupIds = new Set(descendantLayerIdsForGroup(role.groups ?? [], group.id));
-  return layerIdsForRole({ ...role, decorations: role.decorations.filter((deco) => groupIds.has(deco.id)) });
+  // Start from the complete role order so HEAD is included only when it is
+  // actually a member of this group. Calling layerIdsForRole on a filtered
+  // decoration list would reinsert HEAD for every group.
+  return layerIdsForRole(role).filter((id) => groupIds.has(id));
 }
 
 function patchDecoration(current: RoleDocument, id: string, patch: Partial<DecorationLayer>): RoleDocument {

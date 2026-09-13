@@ -25,10 +25,11 @@ export type DragVisual =
       startY: number;
     }
   | {
-      kind: 'overlay';
-      container: Container;
+      kind: 'multi';
       startX: number;
       startY: number;
+      currentX: number;
+      currentY: number;
       items: DraggedDisplayItem[];
     }
   | {
@@ -85,6 +86,8 @@ export interface StageSceneState {
   actorClip: ActorClip;
   disguiseRoot: Container;
   headLayerClip: GafMovieClip;
+  headLayerSelectionOverlay: Container;
+  headLayerSelectionVisual: GafMovieClip;
   selectionDragController: Container;
   selectionDragControllerGraphic: Graphics;
   selectionDragControllerVisuals: Container;
@@ -95,6 +98,7 @@ export interface StageSceneState {
   selectionDragVisualsById: Map<string, Container>;
   selectionDragVisualDisplayKeysById: Map<string, string>;
   selectionDragTargetId: string | null;
+  headLayerSelectionActive: boolean;
   failedTextures: Set<string>;
   decoDisplays: Map<string, DecoDisplayRecord>;
   decorationsById: Map<string, DecorationLayer>;

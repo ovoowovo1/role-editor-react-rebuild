@@ -8,6 +8,7 @@ import {
 import {
   ACTOR_BODY_SCALE,
   buildActorClipForRole,
+  createHeadLayerClip,
   prepareDisguiseRoot
 } from './actorVisuals';
 import type { StageSceneState } from './types';
@@ -55,6 +56,12 @@ export function buildStageScene({
   actorClip.headClip.setDisguise(disguiseRoot);
   disguiseRoot.addChild(headLayerClip);
 
+  const headLayerSelectionOverlay = new Container();
+  const headLayerSelectionVisual = createHeadLayerClip(role, failedTextures);
+  headLayerSelectionOverlay.visible = false;
+  headLayerSelectionOverlay.eventMode = 'none';
+  headLayerSelectionOverlay.addChild(headLayerSelectionVisual);
+
   const selectionDragController = new Container();
   const selectionDragControllerGraphic = new Graphics();
   const selectionDragControllerVisuals = new Container();
@@ -68,7 +75,7 @@ export function buildStageScene({
   brushFillOverlay.visible = false;
   brushFillOverlay.eventMode = 'none';
   brushFillOverlay.addChild(brushFillCommittedGraphic, brushFillDraftGraphic);
-  disguiseRoot.addChild(selectionDragController, brushFillOverlay);
+  disguiseRoot.addChild(selectionDragController, brushFillOverlay, headLayerSelectionOverlay);
 
   const updatePosition = () => {
     const host = hostRef.current;
@@ -87,6 +94,8 @@ export function buildStageScene({
     actorClip,
     disguiseRoot,
     headLayerClip,
+    headLayerSelectionOverlay,
+    headLayerSelectionVisual,
     selectionDragController,
     selectionDragControllerGraphic,
     selectionDragControllerVisuals,
@@ -97,6 +106,7 @@ export function buildStageScene({
     selectionDragVisualsById: new Map(),
     selectionDragVisualDisplayKeysById: new Map(),
     selectionDragTargetId: null,
+    headLayerSelectionActive: false,
     failedTextures,
     decoDisplays: new Map(),
     decorationsById: new Map(),

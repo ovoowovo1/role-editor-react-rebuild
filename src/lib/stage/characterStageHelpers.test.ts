@@ -223,8 +223,8 @@ describe('character stage helpers', () => {
     expect(summarizeMultiDragPositions([])).toBeNull();
     expect(multiDragStartMode(1, 1)).toBe('single-fallback');
     expect(multiDragStartMode(2, 1)).toBe('single-fallback');
-    expect(multiDragStartMode(2, 2)).toBe('overlay');
-    expect(multiDragStartMode(LIVE_MULTI_DRAG_ITEM_LIMIT, LIVE_MULTI_DRAG_ITEM_LIMIT)).toBe('overlay');
+    expect(multiDragStartMode(2, 2)).toBe('multi');
+    expect(multiDragStartMode(LIVE_MULTI_DRAG_ITEM_LIMIT, LIVE_MULTI_DRAG_ITEM_LIMIT)).toBe('multi');
     expect(multiDragStartMode(LIVE_MULTI_DRAG_ITEM_LIMIT + 1, LIVE_MULTI_DRAG_ITEM_LIMIT + 1)).toBe('preview');
     expect(shouldUsePointBoundsForSelection(PRECISE_SELECTION_BOUNDS_LIMIT)).toBe(false);
     expect(shouldUsePointBoundsForSelection(PRECISE_SELECTION_BOUNDS_LIMIT + 1)).toBe(true);
