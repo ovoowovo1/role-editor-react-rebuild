@@ -19,6 +19,7 @@ interface EditorSourcePanelProps {
   colorBlockPresets: ColorBlockPresetState;
   selectedOptionId?: string;
   setStatus(message: string): void;
+  onAddReferenceImage(file: File): Promise<void>;
 }
 
 export function EditorSourcePanel({
@@ -26,7 +27,8 @@ export function EditorSourcePanel({
   shell,
   colorBlockPresets,
   selectedOptionId,
-  setStatus
+  setStatus,
+  onAddReferenceImage
 }: EditorSourcePanelProps) {
   if (shell.topBarMode === 'extra') {
     return (
@@ -42,6 +44,7 @@ export function EditorSourcePanel({
         onBrushFillClear={shell.clearBrushFillMask}
         onInsert={editor.insertDecorationBatch}
         onStatus={setStatus}
+        onAddReferenceImage={onAddReferenceImage}
       />
     );
   }

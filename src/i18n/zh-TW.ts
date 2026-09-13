@@ -28,6 +28,7 @@ export const zhTW: Record<string, string> = {
   'status.autoCreateInserted': '已插入 {count} 個自動生成裝飾圖層',
   'status.autoCreateFailed': '自動生成失敗：{message}',
   'status.autoCreateStopped': '自動生成已停止，可以下載目前結果或按「繼續生成」。',
+  'status.referenceImageAdded': '已加入參考圖片 {name}',
 
   // Insert Settings dialog
   'insert.title': '插入設定',
@@ -162,6 +163,8 @@ export const zhTW: Record<string, string> = {
   'extra.converting': '轉換中...',
   'extra.insert': '插入圖層',
   'extra.inserted': '已插入',
+  'extra.addReferenceImage': '加入舞台圖片',
+  'extra.error.referenceImageType': '請選擇 PNG 或 JPG 圖片。',
   'extra.progressIdle': '待命',
   'extra.progress.palette': '讀取色盤',
   'extra.progress.image': '準備圖片',
@@ -256,6 +259,10 @@ export const zhTW: Record<string, string> = {
   'layers.hintNoGroups': '頭部為單例圖層 · Ctrl / Cmd 點擊可多選',
   'layers.clearSelection': '點擊空白區域以清除選取',
   'layers.addDeco': '新增裝飾以建立更多圖層',
+  'referenceImage.opacity': '圖片透明度',
+  'referenceImage.scale': '圖片大小',
+  'referenceImage.posX': '圖片 X',
+  'referenceImage.posY': '圖片 Y',
 
   // LayerList Select dialog
   'layers.selectItems': '選取項目',

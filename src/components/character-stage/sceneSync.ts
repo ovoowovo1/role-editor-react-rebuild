@@ -1,5 +1,8 @@
 import { Container } from 'pixi.js';
 import type { DecorationLayer, RoleDocument } from '../../types/role';
+import { layerIdsForRole } from '../../lib/editor/layerOrdering';
+import { HEAD_LAYER_ID } from '../../constants/layers';
+import { REFERENCE_IMAGE_LAYER_PREFIX } from '../../types/referenceImage';
 import {
   clampedHeadLayerIndex,
   decorationDisplayKey,
@@ -12,6 +15,9 @@ import {
 } from './pixiVisuals';
 import type { DisguiseDecoOptions, StageSceneState } from './types';
 import { syncHeadLayerSelection, syncSelectionDragController } from './selectionControllerSync';
+import { syncReferenceImageDisplayRecords } from './referenceImageVisuals';
+import type { ReferenceImageLayer } from '../../types/referenceImage';
+import type { ReferenceImageOptions } from './types';
 
 interface OrderCache {
   decorations: readonly DecorationLayer[];
@@ -46,15 +52,15 @@ export function isDecorationDisplaySyncCurrent(scene: StageSceneState, role: Rol
 
 export function syncDisguiseChildOrder(
   scene: StageSceneState,
-  role: RoleDocument
+  role: RoleDocument,
+  layerOrder?: readonly string[]
 ): void {
   const headIndex = clampedHeadLayerIndex(role);
   const cached = orderCache.get(scene);
-  if (cached && cached.headIndex === headIndex &&
+  if (!layerOrder && !scene.referenceImageDisplays?.size && cached && cached.headIndex === headIndex &&
     cached.decorations.length === role.decorations.length &&
     (cached.decorations === role.decorations ||
       cached.decorations.every((deco, index) => deco.id === role.decorations[index].id))) {
-    // Retain only the latest array, rather than holding an old document alive.
     cached.decorations = role.decorations;
     return;
   }
@@ -63,30 +69,52 @@ export function syncDisguiseChildOrder(
   // new IDs against old display records would temporarily blank the stage.
   if (!decorationIdsMatchLookup(scene, role)) return;
 
-  const topFirstChildren: Container[] = [];
-
+  const fallbackCanonicalOrder = layerIdsForRole(role).reverse();
+  const requestedOrder = layerOrder?.length ? layerOrder : fallbackCanonicalOrder;
+  const roleContainers = new Map<string, Container>();
+  roleContainers.set(HEAD_LAYER_ID, scene.headLayerClip);
   for (const deco of role.decorations) {
     const record = scene.decoDisplays.get(deco.id);
-    if (!record) continue;
-    topFirstChildren.push(record.container);
+    if (record) roleContainers.set(deco.id, record.container);
   }
-
-  topFirstChildren.splice(headIndex, 0, scene.headLayerClip);
+  const imageContainers = new Map<string, Container>();
+  for (const [id, record] of scene.referenceImageDisplays?.entries?.() ?? []) imageContainers.set(`${REFERENCE_IMAGE_LAYER_PREFIX}${id}`, record.container);
+  const orderedChildren: Container[] = [];
+  const added = new Set<Container>();
+  for (const token of requestedOrder) {
+    const child = roleContainers.get(token) ?? imageContainers.get(token);
+    if (!child || added.has(child)) continue;
+    orderedChildren.push(child);
+    added.add(child);
+  }
+  // Repair an order that was generated before the role/image lookup caught up.
+  for (const token of fallbackCanonicalOrder) {
+    const child = roleContainers.get(token);
+    if (child && !added.has(child)) {
+      orderedChildren.push(child);
+      added.add(child);
+    }
+  }
+  for (const child of imageContainers.values()) {
+    if (!added.has(child)) {
+      orderedChildren.push(child);
+      added.add(child);
+    }
+  }
 
   // Selection/brush/head visuals are permanent overlays. They intentionally
   // render above the role children while the original deco containers keep
   // their role-defined z-order.
-  const orderedChildren = topFirstChildren
-    .slice()
-    .reverse()
-    .concat(scene.selectionDragController, scene.brushFillOverlay, scene.headLayerSelectionOverlay);
-
-  orderCache.set(scene, {
-    decorations: role.decorations, headIndex
-  });
-  if (sameChildOrder(scene.lastDisguiseChildOrder, orderedChildren)) return;
-  replaceDisguiseChildren(scene.disguiseRoot, orderedChildren);
-  scene.lastDisguiseChildOrder = orderedChildren;
+  const fullOrder = orderedChildren.concat(
+    scene.selectionDragController ? [scene.selectionDragController] : [],
+    scene.brushFillOverlay ? [scene.brushFillOverlay] : [],
+    scene.headLayerSelectionOverlay ? [scene.headLayerSelectionOverlay] : []
+  );
+  scene.layerOrder = [...requestedOrder];
+  orderCache.set(scene, { decorations: role.decorations, headIndex });
+  if (sameChildOrder(scene.lastDisguiseChildOrder, fullOrder)) return;
+  replaceDisguiseChildren(scene.disguiseRoot, fullOrder);
+  scene.lastDisguiseChildOrder = fullOrder;
 }
 
 export function setDecorationInteractionEnabled(
@@ -96,6 +124,10 @@ export function setDecorationInteractionEnabled(
   if (scene.decorationInteractionEnabled === enabled) return;
   scene.decorationInteractionEnabled = enabled;
   for (const { container } of scene.decoDisplays.values()) {
+    container.eventMode = enabled ? 'static' : 'none';
+    container.cursor = enabled ? 'pointer' : 'default';
+  }
+  for (const { container } of scene.referenceImageDisplays?.values?.() ?? []) {
     container.eventMode = enabled ? 'static' : 'none';
     container.cursor = enabled ? 'pointer' : 'default';
   }
@@ -192,4 +224,21 @@ export function syncDecorationDisplayRecords(
     // the committed transform.
     if (!isActiveDragItem) record.appliedDecoration = deco;
   }
+}
+
+export function syncReferenceImages(
+  scene: StageSceneState,
+  images: readonly ReferenceImageLayer[],
+  options: ReferenceImageOptions
+): void {
+  scene.referenceImagesById.clear();
+  for (const image of images) scene.referenceImagesById.set(image.id, image);
+  syncReferenceImageDisplayRecords(
+    scene.disguiseRoot,
+    images,
+    scene.referenceImageDisplays,
+    options,
+    scene.decorationInteractionEnabled,
+    false
+  );
 }

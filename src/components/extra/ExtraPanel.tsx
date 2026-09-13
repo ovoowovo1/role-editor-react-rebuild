@@ -30,7 +30,8 @@ export function ExtraPanel({
   onBrushFillBrushSizeChange,
   onBrushFillClear,
   onInsert,
-  onStatus
+  onStatus,
+  onAddReferenceImage
 }: ExtraPanelProps) {
   const [toolTab, setToolTab] = useState<ExtraPanelToolTab>('standard');
   const controller = useExtraPanelController({
@@ -44,7 +45,8 @@ export function ExtraPanel({
     onBrushFillBrushSizeChange,
     onBrushFillClear,
     onInsert,
-    onStatus
+    onStatus,
+    onAddReferenceImage
   });
 
   useEffect(() => {
@@ -152,6 +154,8 @@ export function ExtraPanel({
               onConvert={controller.convert}
               onInsert={controller.insert}
               onBrushFill={controller.fillBrushRange}
+              referenceFile={controller.file}
+              onAddReferenceImage={onAddReferenceImage}
             />
 
             <ExtraProgressView progress={controller.progress} active={controller.converting} />

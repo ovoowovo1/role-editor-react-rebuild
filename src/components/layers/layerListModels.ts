@@ -1,5 +1,6 @@
 import { GROUP_ROW_PREFIX, HEAD_LAYER_ID, HEAD_ROW_ID, ITEM_ROW_PREFIX } from '../../constants/layers';
 import type { DecorationGroup, DecorationLayer } from '../../types/role';
+import { referenceImageLayerToken, type ReferenceImageLayer } from '../../types/referenceImage';
 import { createGroupTreeIndex } from '../../lib/editor/groupTree';
 
 interface VirtualLayerModel {
@@ -12,7 +13,7 @@ interface VirtualLayerModel {
 export interface LayerRowModel {
   key: string;
   rowId: string;
-  type: 'item' | 'group' | 'head' | 'spacer';
+  type: 'item' | 'group' | 'head' | 'reference-image' | 'spacer';
   deco?: DecorationLayer;
   group?: DecorationGroup;
   index?: number;
@@ -21,6 +22,7 @@ export interface LayerRowModel {
   selected: boolean;
   itemCount?: number;
   descendantIds?: readonly string[];
+  referenceImage?: ReferenceImageLayer;
 }
 
 export interface LayerSelectionState {
@@ -206,7 +208,104 @@ export function applyLayerSelection(
     selected = selection.selectedIds.has(HEAD_LAYER_ID);
   } else if (row.type === 'item' && row.deco) {
     selected = selection.selectedIds.has(row.deco.id);
+  } else if (row.type === 'reference-image') {
+    return row;
   }
 
   return row.selected === selected ? row : { ...row, selected };
+}
+
+/**
+ * Inserts session-only image rows into the visual (top-to-bottom) layer list.
+ * `layerOrder` is canonical bottom-to-top, so the order is reversed for rows.
+ * Images that fall inside a collapsed or expanded group are clamped to the
+ * outside edge of that group; they never become group members.
+ */
+export function mergeReferenceImageRows(
+  roleRows: LayerRowModel[],
+  referenceImages: readonly ReferenceImageLayer[],
+  layerOrder: readonly string[]
+): LayerRowModel[] {
+  if (!referenceImages.length) return roleRows;
+  const imageByToken = new Map(referenceImages.map((image) => [referenceImageLayerToken(image.id), image]));
+  const roleRowsByToken = new Map<string, number>();
+  roleRows.forEach((row, index) => {
+    if (row.type === 'head') roleRowsByToken.set(HEAD_LAYER_ID, index);
+    else if (row.type === 'item' && row.deco) roleRowsByToken.set(row.deco.id, index);
+  });
+  const groupRanges = new Map<string, { start: number; end: number }>();
+  roleRows.forEach((row, index) => {
+    if (row.type !== 'group' || row.grouped) return;
+    let end = index;
+    while (end + 1 < roleRows.length && roleRows[end + 1].grouped) end += 1;
+    if (row.group) groupRanges.set(row.group.id, { start: index, end });
+  });
+  const rootRangeByToken = new Map<string, { start: number; end: number }>();
+  roleRows.forEach((row) => {
+    if (row.type !== 'group' || row.grouped || !row.group) return;
+    const range = groupRanges.get(row.group.id);
+    if (!range) return;
+    for (const id of row.descendantIds ?? []) rootRangeByToken.set(id, range);
+  });
+  const fallbackRoleOrder = roleRows
+    .filter((row) => row.type === 'head' || row.type === 'item')
+    .map((row) => row.type === 'head' ? HEAD_LAYER_ID : row.deco?.id)
+    .filter((id): id is string => Boolean(id));
+  const canonicalOrder = layerOrder.length
+    ? layerOrder
+    : [...fallbackRoleOrder.slice().reverse(), ...referenceImages.map((image) => referenceImageLayerToken(image.id))];
+  const visualOrder = canonicalOrder.slice().reverse();
+  const insertionBuckets = new Map<number, LayerRowModel[]>();
+  for (let index = 0; index < visualOrder.length; index += 1) {
+    const token = visualOrder[index];
+    const image = imageByToken.get(token);
+    if (!image) continue;
+    let insertionIndex = roleRows.length;
+    let previousToken: string | undefined;
+    let previousRoleIndex = -1;
+    for (let next = index - 1; next >= 0; next -= 1) {
+      const roleIndex = roleRowsByToken.get(visualOrder[next]);
+      if (roleIndex == null) continue;
+      previousToken = visualOrder[next];
+      previousRoleIndex = roleIndex;
+      break;
+    }
+    let nextToken: string | undefined;
+    let nextRoleIndex = -1;
+    for (let next = index + 1; next < visualOrder.length; next += 1) {
+      const roleIndex = roleRowsByToken.get(visualOrder[next]);
+      if (roleIndex == null) continue;
+      nextToken = visualOrder[next];
+      nextRoleIndex = roleIndex;
+      break;
+    }
+    const previousRange = previousToken ? rootRangeByToken.get(previousToken) : undefined;
+    const nextRange = nextToken ? rootRangeByToken.get(nextToken) : undefined;
+    if (previousRange && (!nextRange || nextRange !== previousRange)) {
+      insertionIndex = previousRange.end + 1;
+    } else if (nextRange) {
+      insertionIndex = nextRange.start;
+    } else if (previousRoleIndex >= 0) {
+      insertionIndex = previousRoleIndex + 1;
+    } else if (nextRoleIndex >= 0) {
+      insertionIndex = nextRoleIndex;
+    }
+    const row: LayerRowModel = {
+      key: `reference-image:${image.id}`,
+      rowId: `reference-image:${image.id}`,
+      type: 'reference-image',
+      referenceImage: image,
+      depth: 0,
+      selected: false
+    };
+    const bucket = insertionBuckets.get(insertionIndex) ?? [];
+    bucket.push(row);
+    insertionBuckets.set(insertionIndex, bucket);
+  }
+  const result: LayerRowModel[] = [];
+  for (let index = 0; index <= roleRows.length; index += 1) {
+    result.push(...(insertionBuckets.get(index) ?? []));
+    if (index < roleRows.length) result.push(roleRows[index]);
+  }
+  return result;
 }

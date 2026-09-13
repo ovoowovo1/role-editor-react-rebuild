@@ -1,9 +1,10 @@
 import type { MutableRefObject } from 'react';
-import type { Container, Graphics } from 'pixi.js';
+import type { Container, Graphics, Sprite } from 'pixi.js';
 import type { BrushFillMask, BrushFillPoint } from '../../lib/conversion/brushFillToDeco';
 import type { ActorClip } from '../../lib/runtime/actorClip';
 import type { GafMovieClip } from '../../lib/runtime/gafMovieClip';
 import type { DecorationLayer, RoleDocument } from '../../types/role';
+import type { ReferenceImageLayer } from '../../types/referenceImage';
 
 export interface StagePointerPosition {
   x: number;
@@ -37,6 +38,13 @@ export type DragVisual =
       container: Container;
       startX: number;
       startY: number;
+    }
+  | {
+      kind: 'reference-image';
+      id: string;
+      container: Container;
+      startX: number;
+      startY: number;
     };
 
 export interface DragState {
@@ -54,6 +62,7 @@ export interface BrushDrawState {
 
 export interface StageCallbacks {
   onCommitDrag(selectionIds: readonly string[], dx: number, dy: number): void;
+  onCommitReferenceImageDrag?(id: string, dx: number, dy: number): void;
   onClearSelection(): void;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
 }
@@ -74,6 +83,10 @@ export interface DisguiseDecoOptions {
   onPointerDown(id: string, global: StagePointerPosition, disguiseRoot: Container): void;
 }
 
+export interface ReferenceImageOptions {
+  onPointerDown(id: string, global: StagePointerPosition, disguiseRoot: Container): void;
+}
+
 export interface DecoDisplayRecord {
   container: Container;
   displayKey: string;
@@ -81,11 +94,19 @@ export interface DecoDisplayRecord {
   appliedDecoration?: DecorationLayer;
 }
 
+export interface ReferenceImageDisplayRecord {
+  container: Container;
+  sprite: Sprite;
+  displayKey: string;
+  appliedImage?: ReferenceImageLayer;
+}
+
 export interface StageSceneState {
   actorStage: Container;
   actorClip: ActorClip;
   disguiseRoot: Container;
   headLayerClip: GafMovieClip;
+  referenceImagesOverlay: Container;
   headLayerSelectionOverlay: Container;
   headLayerSelectionVisual: GafMovieClip;
   selectionDragController: Container;
@@ -103,6 +124,9 @@ export interface StageSceneState {
   failedTextures: Set<string>;
   decoDisplays: Map<string, DecoDisplayRecord>;
   decorationsById: Map<string, DecorationLayer>;
+  referenceImageDisplays: Map<string, ReferenceImageDisplayRecord>;
+  referenceImagesById: Map<string, ReferenceImageLayer>;
+  layerOrder: string[];
   decorationInteractionEnabled: boolean;
   lastDisguiseChildOrder: Container[];
   updatePosition(): void;
@@ -111,9 +135,12 @@ export interface StageSceneState {
 export interface StageRuntimeRefs {
   roleRef: MutableRefObject<RoleDocument>;
   selectedIdsRef: MutableRefObject<string[]>;
+  selectedReferenceImageIdRef: MutableRefObject<string | null>;
   callbacksRef: MutableRefObject<StageCallbacks>;
   brushFillRef: MutableRefObject<BrushFillState>;
   sceneRef: MutableRefObject<StageSceneState | null>;
   dragRef: MutableRefObject<DragState | null>;
   brushDrawRef: MutableRefObject<BrushDrawState | null>;
+  referenceImagesRef?: MutableRefObject<ReferenceImageLayer[]>;
+  layerOrderRef?: MutableRefObject<string[]>;
 }

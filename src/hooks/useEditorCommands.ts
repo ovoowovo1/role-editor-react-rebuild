@@ -60,6 +60,7 @@ export function useEditorCommands({
     withTransformHistory,
     undo,
     redo,
+    clearRedo,
     beginTransient,
     commitTransient
   } = useRoleEditorHistory({
@@ -152,6 +153,7 @@ export function useEditorCommands({
     commitTransient,
     undo,
     redo,
+    clearRedo,
     importRole,
     selectDecoration,
     clearSelection,

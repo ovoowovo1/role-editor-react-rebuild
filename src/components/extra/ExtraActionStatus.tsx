@@ -15,6 +15,8 @@ interface ExtraActionBarProps {
   onConvert(): void;
   onInsert(): void;
   onBrushFill(): void;
+  referenceFile?: File | null;
+  onAddReferenceImage?(file: File): Promise<void>;
 }
 
 export function ExtraActionBar({
@@ -27,7 +29,9 @@ export function ExtraActionBar({
   brushFilling,
   onConvert,
   onInsert,
-  onBrushFill
+  onBrushFill,
+  referenceFile = null,
+  onAddReferenceImage
 }: ExtraActionBarProps) {
   if (toolMode === 'image') {
     return (
@@ -37,6 +41,15 @@ export function ExtraActionBar({
         </button>
         <button type="button" className="primary-button" disabled={!canInsert} onClick={onInsert}>
           {inserted ? t('extra.inserted') : t('extra.insert')}
+        </button>
+        <button
+          type="button"
+          className="primary-button"
+          data-testid="extra-add-reference-image-button"
+          disabled={!referenceFile || !onAddReferenceImage}
+          onClick={() => referenceFile && onAddReferenceImage?.(referenceFile)}
+        >
+          {t('extra.addReferenceImage')}
         </button>
       </div>
     );

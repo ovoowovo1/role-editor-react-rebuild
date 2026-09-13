@@ -8,11 +8,13 @@ import {
   setDecorationInteractionEnabled,
   isDecorationDisplaySyncCurrent,
   syncDecorationDisplayRecords,
+  syncReferenceImages,
   syncDisguiseChildOrder,
   syncSelectionControllerForIds,
 } from './sceneSync';
 import { drawBrushFillOverlay } from './stageOverlayVisuals';
-import type { BrushDrawState, DisguiseDecoOptions, DragState, StageSceneState } from './types';
+import type { BrushDrawState, DisguiseDecoOptions, DragState, ReferenceImageOptions, StageSceneState } from './types';
+import type { ReferenceImageLayer } from '../../types/referenceImage';
 
 interface StageDisplaySyncOptions {
   role: RoleDocument;
@@ -20,6 +22,9 @@ interface StageDisplaySyncOptions {
   brushFillActive: boolean;
   brushFillMask: BrushFillMask;
   headGlowAlwaysOn: boolean;
+  referenceImages: ReferenceImageLayer[];
+  layerOrder: string[];
+  referenceImageOptions: ReferenceImageOptions;
   sceneVersion: number;
   appRef: MutableRefObject<Application | null>;
   roleRef: MutableRefObject<RoleDocument>;
@@ -42,6 +47,9 @@ export function useStageDisplaySync({
   brushFillActive,
   brushFillMask,
   headGlowAlwaysOn,
+  referenceImages,
+  layerOrder,
+  referenceImageOptions,
   sceneVersion,
   appRef,
   roleRef,
@@ -76,6 +84,7 @@ export function useStageDisplaySync({
         decoOptions,
         activeDecorationDragIds(activeDrag)
       );
+      syncReferenceImages(currentScene, referenceImages, referenceImageOptions);
 
       // Selection/order effects may have run before a deferred display update.
       // Repair them from current refs without turning ordinary selection changes
@@ -89,7 +98,8 @@ export function useStageDisplaySync({
         );
         syncDisguiseChildOrder(
           currentScene,
-          currentRole
+          currentRole,
+          layerOrder
         );
       }
     };
@@ -106,6 +116,9 @@ export function useStageDisplaySync({
     decoOptions,
     dragRef,
     role.decorations,
+    referenceImages,
+    layerOrder,
+    referenceImageOptions,
     role.headLayer,
     role.partFrames?.head,
     role.partScales?.head,
@@ -143,6 +156,6 @@ export function useStageDisplaySync({
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
-    syncDisguiseChildOrder(scene, role);
-  }, [dragRef, role.decorations, role.headLayerIndex, sceneRef, sceneVersion]);
+    syncDisguiseChildOrder(scene, role, layerOrder);
+  }, [dragRef, layerOrder, referenceImages, role.decorations, role.headLayerIndex, sceneRef, sceneVersion]);
 }

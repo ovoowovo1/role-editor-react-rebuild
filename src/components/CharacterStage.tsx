@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { BrushFillMask } from '../lib/conversion/brushFillToDeco';
 import { actorSceneKey } from '../lib/stage/characterStageHelpers';
 import type { RoleDocument } from '../types/role';
+import type { ReferenceImageLayer } from '../types/referenceImage';
 import {
   useBodyAnimationPlayback,
   useDeferredStageSync,
@@ -17,12 +18,16 @@ import { StageViewport } from './character-stage/StageViewport';
 interface CharacterStageProps {
   role: RoleDocument;
   selectedIds: string[];
+  selectedReferenceImageId: string | null;
   bodyAnimationLabel: string;
   bodyAnimationPlaying: boolean;
   bodyAnimationRestartKey: number;
   stageScale: number;
   facingQuarterTurns: number;
   onCommitDrag(selectionIds: readonly string[], dx: number, dy: number): void;
+  referenceImages: ReferenceImageLayer[];
+  layerOrder: string[];
+  onCommitReferenceImageDrag(id: string, dx: number, dy: number): void;
   onClearSelection(): void;
   brushFillActive?: boolean;
   brushFillBrushSize?: number;
@@ -34,12 +39,16 @@ interface CharacterStageProps {
 export function CharacterStage({
   role,
   selectedIds,
+  selectedReferenceImageId,
   bodyAnimationLabel,
   bodyAnimationPlaying,
   bodyAnimationRestartKey,
   stageScale,
   facingQuarterTurns,
   onCommitDrag,
+  referenceImages,
+  layerOrder,
+  onCommitReferenceImageDrag,
   onClearSelection,
   brushFillActive = false,
   brushFillBrushSize = 18,
@@ -56,6 +65,7 @@ export function CharacterStage({
   const stageRuntime = useStageRuntimeController({
     role,
     selectedIds,
+    selectedReferenceImageId,
     stageScale,
     facingQuarterTurns,
     bodyAnimationLabel,
@@ -63,7 +73,10 @@ export function CharacterStage({
     brushFillBrushSize,
     brushFillMask,
     headGlowAlwaysOn,
+    referenceImages,
+    layerOrder,
     onCommitDrag,
+    onCommitReferenceImageDrag,
     onClearSelection,
     onBrushFillMaskChange
   });
@@ -96,6 +109,7 @@ export function CharacterStage({
     hostRef,
     stageBgRef,
     decoOptions: stageRuntime.decoOptions,
+    referenceImageOptions: stageRuntime.referenceImageOptions,
     sceneKey,
     cancelDeferredStageSync,
     setSceneVersion
@@ -114,6 +128,9 @@ export function CharacterStage({
     dragRef: stageRuntime.dragRef,
     brushDrawRef: stageRuntime.brushDrawRef,
     headGlowAlwaysOn,
+    referenceImages,
+    layerOrder,
+    referenceImageOptions: stageRuntime.referenceImageOptions,
     decoOptions: stageRuntime.decoOptions,
     scheduleDeferredStageSync,
     cancelDeferredStageSync

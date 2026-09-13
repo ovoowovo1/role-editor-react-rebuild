@@ -120,6 +120,10 @@ export function useHistory<T, H = T>(initialValue: T, options: UseHistoryOptions
     }
   }, []);
 
+  const clearRedo = useCallback(() => {
+    setFuture([]);
+  }, []);
+
   const meta = useMemo(
     () => historyMeta({ past, future }),
     [future.length, past.length]
@@ -134,6 +138,7 @@ export function useHistory<T, H = T>(initialValue: T, options: UseHistoryOptions
     undo,
     redo,
     reset,
+    clearRedo,
     ...meta
   };
 }

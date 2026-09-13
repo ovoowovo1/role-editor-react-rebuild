@@ -122,4 +122,22 @@ describe('layer list virtualization helpers', () => {
       intent: 'sort'
     });
   });
+
+  it('allows reference images to sort before or after role rows without joining groups', () => {
+    const target = {
+      rowId: `${ITEM_ROW_PREFIX}a`,
+      index: 0,
+      center: 38.5,
+      top: 0,
+      bottom: 77,
+      row: itemRow('a')
+    };
+    expect(canJoinTargetGroup('reference-image:ref', target, [])).toBe(false);
+    expect(dropStateForTarget(target, 10, 'pointer', false, 'reference-image:ref', [])).toMatchObject({
+      intent: 'sort', placement: 'before'
+    });
+    expect(dropStateForTarget(target, 70, 'pointer', false, 'reference-image:ref', [])).toMatchObject({
+      intent: 'sort', placement: 'after'
+    });
+  });
 });

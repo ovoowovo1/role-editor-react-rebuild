@@ -71,6 +71,7 @@ function makeRuntimeRefs(): StageRuntimeRefs {
   return {
     roleRef: { current: { decorations: [] } },
     selectedIdsRef: { current: ['selected'] },
+    selectedReferenceImageIdRef: { current: null },
     callbacksRef: {
       current: {
         onCommitDrag: vi.fn(),
@@ -192,5 +193,17 @@ describe('stage pointer interactions', () => {
 
     expect(refs.callbacksRef.current.onClearSelection).toHaveBeenCalledOnce();
     expect(raf.pendingCount()).toBe(0);
+  });
+
+  it('does not treat a click on an image display as an empty-stage click', () => {
+    const refs = makeRuntimeRefs();
+    const handlers = createStagePointerHandlers(refs);
+    const stage = {};
+    const image = {};
+
+    handlers.handlePointerDown(pointerEvent(2, 3, image, stage));
+    handlers.handleUp(pointerEvent(2, 3, image, stage));
+
+    expect(refs.callbacksRef.current.onClearSelection).not.toHaveBeenCalled();
   });
 });

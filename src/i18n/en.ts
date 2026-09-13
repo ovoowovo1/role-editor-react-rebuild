@@ -28,6 +28,7 @@ export const en: Record<string, string> = {
   'status.autoCreateInserted': 'Inserted {count} AutoCreate deco layers',
   'status.autoCreateFailed': 'AutoCreate failed: {message}',
   'status.autoCreateStopped': 'AutoCreate stopped. You can download the current result or resume generation.',
+  'status.referenceImageAdded': 'Added reference image {name}',
 
   // Insert Settings dialog
   'insert.title': 'Insert Settings',
@@ -162,6 +163,8 @@ export const en: Record<string, string> = {
   'extra.converting': 'Converting...',
   'extra.insert': 'Insert layers',
   'extra.inserted': 'Inserted',
+  'extra.addReferenceImage': 'Add to stage',
+  'extra.error.referenceImageType': 'Please choose a PNG or JPG image.',
   'extra.progressIdle': 'Idle',
   'extra.progress.palette': 'Reading palette',
   'extra.progress.image': 'Preparing image',
@@ -256,6 +259,10 @@ export const en: Record<string, string> = {
   'layers.hintNoGroups': 'Head is a singleton layer · Ctrl / Cmd click for multi-select',
   'layers.clearSelection': 'Click empty area to clear selection',
   'layers.addDeco': 'Add a Deco to create more layers',
+  'referenceImage.opacity': 'Image opacity',
+  'referenceImage.scale': 'Image size',
+  'referenceImage.posX': 'Image X',
+  'referenceImage.posY': 'Image Y',
 
   // LayerList Select dialog
   'layers.selectItems': 'Select Items',

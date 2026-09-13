@@ -56,6 +56,10 @@ export function buildStageScene({
   actorClip.headClip.setDisguise(disguiseRoot);
   disguiseRoot.addChild(headLayerClip);
 
+  const referenceImagesOverlay = new Container();
+  // The overlay itself is passive while its sprite children remain clickable.
+  referenceImagesOverlay.eventMode = 'passive';
+
   const headLayerSelectionOverlay = new Container();
   const headLayerSelectionVisual = createHeadLayerClip(role, failedTextures);
   headLayerSelectionOverlay.visible = false;
@@ -94,6 +98,7 @@ export function buildStageScene({
     actorClip,
     disguiseRoot,
     headLayerClip,
+    referenceImagesOverlay,
     headLayerSelectionOverlay,
     headLayerSelectionVisual,
     selectionDragController,
@@ -111,6 +116,9 @@ export function buildStageScene({
     failedTextures,
     decoDisplays: new Map(),
     decorationsById: new Map(),
+    referenceImageDisplays: new Map(),
+    referenceImagesById: new Map(),
+    layerOrder: [],
     decorationInteractionEnabled: true,
     lastDisguiseChildOrder: [],
     updatePosition

@@ -23,6 +23,7 @@ interface BaseHistoryApi {
   reset(next: RoleDocument, keepHistory?: boolean): void;
   undo(): void;
   redo(): void;
+  clearRedo(): void;
   beginTransient(): void;
   commitTransient(): void;
   cancelTransient(): void;
@@ -147,6 +148,11 @@ export function useRoleEditorHistory({
     history.redo();
   }, [history, localFuture, localPast, restoreHistorySelection, roleRef]);
 
+  const clearRedo = useCallback(() => {
+    setLocalFuture([]);
+    history.clearRedo();
+  }, [history]);
+
   const beginTransient = useCallback(() => {
     const session = beginTransientSession(roleRef.current, stableSelectedIds, selectedIdsRef.current);
     transientSelectionBeforeRef.current = session.selectionIds;
@@ -220,6 +226,7 @@ export function useRoleEditorHistory({
     withTransformHistory,
     undo,
     redo,
+    clearRedo,
     beginTransient,
     commitTransient
   };

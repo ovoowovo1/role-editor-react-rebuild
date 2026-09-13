@@ -10,12 +10,14 @@ import {
 import { t } from '../../i18n';
 import { HEAD_LAYER_ID } from '../../constants/layers';
 import type { DecorationGroup, DecorationLayer, HeadLayerTransform } from '../../types/role';
+import type { ReferenceImageLayer } from '../../types/referenceImage';
 import type { LayerReorderOptions } from '../../lib/editor/editorLayerDrag';
-import { GroupHeaderRow, HeadRow, LayerItemRow } from './LayerRows';
+import { GroupHeaderRow, HeadRow, LayerItemRow, ReferenceImageRow } from './LayerRows';
 import {
   applyLayerSelection,
   buildLayerRowModels,
-  createLayerSelectionState
+  createLayerSelectionState,
+  mergeReferenceImageRows,
 } from './layerListModels';
 import { SelectLayerDialog } from './SelectLayerDialog';
 import { useLayerListDrag } from './useLayerListDrag';
@@ -33,6 +35,9 @@ interface LayerListProps {
   headOptionId: string;
   groups: DecorationGroup[];
   selectedIds: string[];
+  referenceImages?: ReferenceImageLayer[];
+  selectedReferenceImageId?: string | null;
+  layerOrder?: readonly string[];
   canGroupSelected: boolean;
   onSelect(id: string, additive: boolean): void;
   onSelectMany?(ids: string[]): void;
@@ -46,6 +51,9 @@ interface LayerListProps {
   onToggleVisibility(id: string): void;
   onDelete(id: string): void;
   onClearSelection(): void;
+  onSelectReferenceImage?(id: string): void;
+  onToggleReferenceImageVisibility?(id: string): void;
+  onDeleteReferenceImage?(id: string): void;
 }
 
 export function LayerList({
@@ -55,6 +63,9 @@ export function LayerList({
   headOptionId,
   groups,
   selectedIds,
+  referenceImages = [],
+  selectedReferenceImageId = null,
+  layerOrder = [],
   canGroupSelected,
   onSelect,
   onSelectMany,
@@ -67,7 +78,10 @@ export function LayerList({
   onReorder,
   onToggleVisibility,
   onDelete,
-  onClearSelection
+  onClearSelection,
+  onSelectReferenceImage = () => undefined,
+  onToggleReferenceImageVisibility = () => undefined,
+  onDeleteReferenceImage = () => undefined
 }: LayerListProps) {
   const [selectItemsOpen, setSelectItemsOpen] = useState(false);
   const [scrollState, setScrollState] = useState({ scrollTop: 0, viewportHeight: 0 });
@@ -108,10 +122,12 @@ export function LayerList({
     }
   }, [onClearSelection, onSelect, onSelectMany]);
 
-  const layerCount = decorations.length + 1;
+  const layerCount = decorations.length + 1 + referenceImages.length;
   const virtualRows = useMemo<VirtualLayerRow[]>(
     () => [
-      ...rowModels,
+      ...mergeReferenceImageRows(rowModels, referenceImages, layerOrder).map((row) => row.type === 'reference-image'
+        ? { ...row, selected: row.referenceImage?.id === selectedReferenceImageId }
+        : row),
       {
         key: 'layer-spacer',
         rowId: 'layer-spacer',
@@ -119,7 +135,7 @@ export function LayerList({
         selected: false
       }
     ],
-    [rowModels]
+    [layerOrder, referenceImages, rowModels, selectedReferenceImageId]
   );
   const virtualGeometry = useMemo(
     () => buildVirtualGeometry(virtualRows),
@@ -165,13 +181,13 @@ export function LayerList({
   );
 
   const handleBlankListClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!selectedIds.length || dragState) return;
+    if ((!selectedIds.length && !selectedReferenceImageId) || dragState) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
     const interactiveTarget = target.closest('.layer-row, .layer-group, button, input, textarea, select, [role="dialog"]');
     if (interactiveTarget) return;
     onClearSelection();
-  }, [dragState, onClearSelection, selectedIds.length]);
+  }, [dragState, onClearSelection, selectedIds.length, selectedReferenceImageId]);
 
   useLayoutEffect(() => {
     const scrollEl = scrollRef.current;
@@ -248,7 +264,16 @@ export function LayerList({
                 transform: `translateY(${top}px)`
               }}
             >
-              {row.type === 'group' ? (
+              {row.type === 'reference-image' && row.referenceImage ? (
+                <ReferenceImageRow
+                  row={row}
+                  isDragging={dragState?.activeRowId === row.rowId}
+                  dragHandleProps={dragHandlePropsForRow(row.rowId)}
+                  onSelect={onSelectReferenceImage}
+                  onToggleVisibility={onToggleReferenceImageVisibility}
+                  onDelete={onDeleteReferenceImage}
+                />
+              ) : row.type === 'group' ? (
                 <GroupHeaderRow
                   row={row}
                   isDragging={dragState?.activeRowId === row.rowId}

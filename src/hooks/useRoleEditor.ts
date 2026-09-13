@@ -70,6 +70,7 @@ export function useRoleEditor() {
     cancelTransient: history.cancelTransient,
     undo: commands.undo,
     redo: commands.redo,
+    clearRedo: commands.clearRedo,
     insertDraftSettings,
     setInsertDraftSettings,
     choosePart: commands.choosePart,

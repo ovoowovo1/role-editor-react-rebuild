@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Container } from 'pixi.js';
 import { makeDecorationLayer, makeRoleDocument } from '../../test/roleFixtures';
-import { beginDecorationDrag, commitDecorationDrag, updateDecorationDrag } from './dragInteractions';
+import {
+  beginDecorationDrag,
+  beginReferenceImageDrag,
+  commitDecorationDrag,
+  updateDecorationDrag
+} from './dragInteractions';
 import type { StageRuntimeRefs, StageSceneState } from './types';
 
 const mocks = vi.hoisted(() => ({
@@ -18,6 +23,7 @@ function makeRefs(scene: StageSceneState, visual: Container): StageRuntimeRefs {
   return {
     roleRef: { current: { decorations: [], headLayerIndex: 0 } } as never,
     selectedIdsRef: { current: ['deco-a'] },
+    selectedReferenceImageIdRef: { current: null },
     callbacksRef: {
       current: {
         onCommitDrag: vi.fn(),
@@ -82,6 +88,7 @@ function makeMultiDragRefs(): { refs: StageRuntimeRefs; scene: StageSceneState; 
   const refs: StageRuntimeRefs = {
     roleRef: { current: role },
     selectedIdsRef: { current: ['a', 'c'] },
+    selectedReferenceImageIdRef: { current: null },
     callbacksRef: {
       current: {
         onCommitDrag: vi.fn(),
@@ -94,6 +101,34 @@ function makeMultiDragRefs(): { refs: StageRuntimeRefs; scene: StageSceneState; 
     brushDrawRef: { current: null }
   } as StageRuntimeRefs;
   return { refs, scene, children: [...disguiseRoot.children] as Container[] };
+}
+
+function makeReferenceImageRefs(selectedId: string | null): StageRuntimeRefs {
+  const disguiseRoot = new Container();
+  const image = new Container();
+  image.position.set(12, 8);
+  const selectionDragController = new Container();
+  disguiseRoot.addChild(image, selectionDragController);
+  const scene = {
+    disguiseRoot,
+    selectionDragController,
+    referenceImageDisplays: new Map([['ref-a', { container: image }]])
+  } as unknown as StageSceneState;
+  return {
+    roleRef: { current: { decorations: [], positionRange: 100 } } as never,
+    selectedIdsRef: { current: [] },
+    selectedReferenceImageIdRef: { current: selectedId },
+    callbacksRef: {
+      current: {
+        onCommitDrag: vi.fn(),
+        onClearSelection: vi.fn()
+      }
+    },
+    brushFillRef: { current: { active: false } } as never,
+    sceneRef: { current: scene },
+    dragRef: { current: null },
+    brushDrawRef: { current: null }
+  } as StageRuntimeRefs;
 }
 
 describe('decoration drag commit', () => {
@@ -144,5 +179,31 @@ describe('decoration drag commit', () => {
     expect(commitDecorationDrag(refs)).toBe(true);
     expect(root.children).toEqual(children);
     expect(refs.callbacksRef.current.onCommitDrag).toHaveBeenCalledWith(['a', 'c'], 12, 8);
+  });
+});
+
+describe('reference image drag selection guard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('ignores a stage pointer for an image that was not selected in the layer list', () => {
+    const refs = makeReferenceImageRefs('other-image');
+    const root = refs.sceneRef.current!.disguiseRoot;
+
+    beginReferenceImageDrag('ref-a', { x: 12, y: 8 }, root, refs);
+
+    expect(refs.dragRef.current).toBeNull();
+    expect(mocks.setDecorationInteractionEnabled).not.toHaveBeenCalled();
+  });
+
+  it('starts dragging only the image currently selected in the layer list', () => {
+    const refs = makeReferenceImageRefs('ref-a');
+    const root = refs.sceneRef.current!.disguiseRoot;
+
+    beginReferenceImageDrag('ref-a', { x: 12, y: 8 }, root, refs);
+
+    expect(refs.dragRef.current?.visual.kind).toBe('reference-image');
+    expect(refs.dragRef.current?.visual).toMatchObject({ id: 'ref-a', startX: 12, startY: 8 });
   });
 });

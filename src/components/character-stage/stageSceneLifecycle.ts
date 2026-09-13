@@ -10,6 +10,7 @@ import { applyHeadLayerDisplayTransform } from './actorVisuals';
 import {
   setDecorationInteractionEnabled,
   syncDecorationDisplayRecords,
+  syncReferenceImages,
   syncDisguiseChildOrder,
   syncSelectionControllerForIds
 } from './sceneSync';
@@ -20,6 +21,7 @@ import type {
   BrushFillState,
   DisguiseDecoOptions,
   DragState,
+  ReferenceImageOptions,
   StageRuntimeRefs,
   StageSceneBuildConfig,
   StageSceneState
@@ -40,6 +42,7 @@ export function useStageSceneLifecycle({
   hostRef,
   stageBgRef,
   decoOptions,
+  referenceImageOptions,
   sceneKey,
   cancelDeferredStageSync,
   setSceneVersion
@@ -58,6 +61,7 @@ export function useStageSceneLifecycle({
   hostRef: MutableRefObject<HTMLDivElement | null>;
   stageBgRef: MutableRefObject<HTMLDivElement | null>;
   decoOptions: DisguiseDecoOptions;
+  referenceImageOptions: ReferenceImageOptions;
   sceneKey: string;
   cancelDeferredStageSync(): void;
   setSceneVersion: Dispatch<SetStateAction<number>>;
@@ -109,13 +113,20 @@ export function useStageSceneLifecycle({
       drawBrushFillOverlay(scene, brushFillRef.current.mask);
       setDecorationInteractionEnabled(scene, !brushFillRef.current.active);
       syncDecorationDisplayRecords(scene, currentRole, decoOptions);
+      if (stageRuntimeRefs.referenceImagesRef) {
+        syncReferenceImages(
+          scene,
+          stageRuntimeRefs.referenceImagesRef.current,
+          referenceImageOptions
+        );
+      }
       syncSelectionControllerForIds(
         scene,
         selectedIdsRef.current,
         false,
         headGlowAlwaysOnRef.current
       );
-      syncDisguiseChildOrder(scene, currentRole);
+      syncDisguiseChildOrder(scene, currentRole, stageRuntimeRefs.layerOrderRef?.current);
       scene.updatePosition();
 
       const pointerHandlers = createStagePointerHandlers(stageRuntimeRefs);
@@ -142,6 +153,12 @@ export function useStageSceneLifecycle({
         scene.decorationsById.clear();
         scene.selectionDragVisualsById.clear();
         scene.selectionDragVisualDisplayKeysById.clear();
+        for (const record of scene.referenceImageDisplays.values()) {
+          if (!record.container.destroyed) record.container.destroy({ children: true });
+        }
+        scene.referenceImageDisplays.clear();
+        scene.referenceImagesById.clear();
+        if (!scene.referenceImagesOverlay.destroyed) scene.referenceImagesOverlay.destroy({ children: true });
         scene.lastDisguiseChildOrder = [];
         if (sceneRef.current === scene) {
           sceneRef.current = null;
@@ -160,6 +177,7 @@ export function useStageSceneLifecycle({
     brushFillRef,
     cancelDeferredStageSync,
     decoOptions,
+    referenceImageOptions,
     dragRef,
     roleRef,
     sceneBuildConfigRef,

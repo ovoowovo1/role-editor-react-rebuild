@@ -24,6 +24,7 @@ export interface ExtraPanelProps {
   onBrushFillClear(): void;
   onInsert(decorations: DecorationLayer[], groupName: string): number;
   onStatus(message: string): void;
+  onAddReferenceImage?(file: File): Promise<void>;
 }
 
 export function useExtraPanelController({

@@ -105,7 +105,7 @@ export function createStagePointerHandlers(refs: StageRuntimeRefs) {
     const shouldClearSelection = Boolean(
       pointerDown?.emptyStageTarget &&
       event.target === event.currentTarget &&
-      refs.selectedIdsRef.current.length
+      true
     );
     pointerDown = null;
 

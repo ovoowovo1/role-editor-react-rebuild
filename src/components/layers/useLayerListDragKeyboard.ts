@@ -1,7 +1,8 @@
 import { useCallback, type MutableRefObject } from 'react';
-import type { LayerReorderOptions } from '../../lib/editor/editorLayerDrag';
+import type { LayerDropPlacement, LayerReorderOptions } from '../../lib/editor/editorLayerDrag';
 import {
   nextDraggableRowId,
+  isReferenceImageRowId,
   type LayerDragState,
   type VirtualLayerRow
 } from './layerListVirtualization';
@@ -54,7 +55,9 @@ export function useLayerListDragKeyboard({
         ...current,
         overRowId: nextRowId,
         intent: 'sort' as const,
-        placement: undefined,
+        placement: (isReferenceImageRowId(current.activeRowId)
+          ? direction === 1 ? 'after' : 'before'
+          : undefined) as LayerDropPlacement | undefined,
         joinGroupId: undefined,
         parentGroupId: undefined,
         anchorGroupId: undefined

@@ -50,6 +50,39 @@ function beginDirectDrag(
   };
 }
 
+export function beginReferenceImageDrag(
+  id: string,
+  global: StagePointerPosition,
+  root: Container,
+  refs: StageRuntimeRefs
+): void {
+  if (refs.brushFillRef.current.active || refs.dragRef.current) return;
+  if (refs.selectedReferenceImageIdRef.current !== id) return;
+  const scene = refs.sceneRef.current;
+  const record = scene?.referenceImageDisplays.get(id);
+  if (!scene || !record) return;
+
+  scene.selectionDragController.eventMode = 'none';
+  scene.selectionDragController.cursor = 'default';
+  setDecorationInteractionEnabled(scene, false);
+  const start = getDisplayRootPosition(record.container, scene.disguiseRoot);
+  const local = root.toLocal(global);
+  refs.dragRef.current = {
+    selectionIds: [],
+    offsetX: local.x - start.x,
+    offsetY: local.y - start.y,
+    controllerStartX: scene.selectionDragController.position.x,
+    controllerStartY: scene.selectionDragController.position.y,
+    visual: {
+      kind: 'reference-image',
+      id,
+      container: record.container,
+      startX: start.x,
+      startY: start.y
+    }
+  };
+}
+
 function beginPreviewDrag(
   global: StagePointerPosition,
   root: Container,
@@ -146,7 +179,7 @@ export function beginDecorationDrag(
   scene.selectionDragController.eventMode = 'none';
   scene.selectionDragController.cursor = 'default';
   setDecorationInteractionEnabled(scene, false);
-  syncDisguiseChildOrder(scene, refs.roleRef.current);
+  syncDisguiseChildOrder(scene, refs.roleRef.current, refs.layerOrderRef?.current);
 
   if (selectedDecorations.length < 2) {
     beginDirectDrag(id, global, root, selectionIds, refs);
@@ -235,9 +268,13 @@ export function commitDecorationDrag(refs: StageRuntimeRefs): boolean {
 
   if (scene) {
     setDecorationInteractionEnabled(scene, !refs.brushFillRef.current.active);
-    syncDisguiseChildOrder(scene, refs.roleRef.current);
+    syncDisguiseChildOrder(scene, refs.roleRef.current, refs.layerOrderRef?.current);
   }
 
-  refs.callbacksRef.current.onCommitDrag(drag.selectionIds, dx, dy);
+  if (visual.kind === 'reference-image') {
+    refs.callbacksRef.current.onCommitReferenceImageDrag?.(visual.id, dx, dy);
+  } else {
+    refs.callbacksRef.current.onCommitDrag(drag.selectionIds, dx, dy);
+  }
   return true;
 }

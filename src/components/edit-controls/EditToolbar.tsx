@@ -3,6 +3,7 @@ import { EDITOR_STAGE_SCALE_STEP } from '../../constants/editor';
 
 interface EditToolbarProps {
   disabled: boolean;
+  selectionDisabled?: boolean;
   faceDisabled: boolean;
   bodyAnimationLabel: string;
   bodyAnimationPlaying: boolean;
@@ -30,6 +31,7 @@ interface EditToolbarProps {
 
 export function EditToolbar({
   disabled,
+  selectionDisabled = disabled,
   faceDisabled,
   bodyAnimationLabel,
   bodyAnimationPlaying,
@@ -64,7 +66,7 @@ export function EditToolbar({
           type="button"
           className="tool-icon-btn"
           data-testid="toolbar-deselect-button"
-          disabled={disabled}
+          disabled={selectionDisabled}
           onClick={onCancelSelection}
           aria-label={t('edit.cancelSelection')}
           title={t('edit.cancelSelection')}

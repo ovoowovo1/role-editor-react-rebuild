@@ -1,12 +1,14 @@
 import { t } from '../i18n';
 import { EditToolbar } from './edit-controls/EditToolbar';
 import { TransformRangePanel } from './edit-controls/TransformRangePanel';
+import { ReferenceImageControls } from './edit-controls/ReferenceImageControls';
 import type { EditControlsProps } from './edit-controls/types';
 
 export function EditControls({
   disabled,
   faceAlwaysEnabled = false,
   editValues,
+  referenceImage = null,
   bodyAnimationLabel,
   bodyAnimationPlaying,
   playbackToolVisible,
@@ -36,14 +38,20 @@ export function EditControls({
   onRestartWeaponAnimation,
   onTogglePlaybackTool,
   onToggleHeadGlowAlwaysOn,
-  onStageScaleChange
+  onStageScaleChange,
+  onReferenceImageBeginTransform,
+  onReferenceImageCommitTransform,
+  onReferenceImageTransformChange
 }: EditControlsProps) {
-  const faceDisabled = faceAlwaysEnabled ? false : disabled;
+  const imageSelected = Boolean(referenceImage);
+  const roleDisabled = disabled || imageSelected;
+  const faceDisabled = faceAlwaysEnabled ? false : roleDisabled;
 
   return (
-    <section className={`edit-function ${disabled ? 'disabled' : ''}`} aria-label={t('edit.controls')}>
+    <section className={`edit-function ${roleDisabled ? 'disabled' : ''}`} aria-label={t('edit.controls')}>
       <EditToolbar
-        disabled={disabled}
+        disabled={roleDisabled}
+        selectionDisabled={disabled && !imageSelected}
         faceDisabled={faceDisabled}
         bodyAnimationLabel={bodyAnimationLabel}
         bodyAnimationPlaying={bodyAnimationPlaying}
@@ -69,18 +77,28 @@ export function EditControls({
         onStageScaleChange={onStageScaleChange}
       />
 
-      <TransformRangePanel
-        disabled={disabled}
-        editValues={editValues}
-        positionRange={positionRange}
-        selectionScaleMin={selectionScaleMin}
-        selectionScaleMax={selectionScaleMax}
-        selectionRatioMin={selectionRatioMin}
-        selectionRatioMax={selectionRatioMax}
-        onBeginTransient={onBeginTransient}
-        onCommitTransient={onCommitTransient}
-        onTransformChange={onTransformChange}
-      />
+      {referenceImage ? (
+        <ReferenceImageControls
+          image={referenceImage}
+          positionRange={positionRange}
+          onBegin={onReferenceImageBeginTransform ?? (() => undefined)}
+          onCommit={onReferenceImageCommitTransform ?? (() => undefined)}
+          onChange={onReferenceImageTransformChange ?? (() => undefined)}
+        />
+      ) : (
+        <TransformRangePanel
+          disabled={disabled}
+          editValues={editValues}
+          positionRange={positionRange}
+          selectionScaleMin={selectionScaleMin}
+          selectionScaleMax={selectionScaleMax}
+          selectionRatioMin={selectionRatioMin}
+          selectionRatioMax={selectionRatioMax}
+          onBeginTransient={onBeginTransient}
+          onCommitTransient={onCommitTransient}
+          onTransformChange={onTransformChange}
+        />
+      )}
     </section>
   );
 }

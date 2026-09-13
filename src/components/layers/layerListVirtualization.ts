@@ -232,11 +232,20 @@ export function layerIdFromRowId(rowId: string): string | null {
   return rowId || null;
 }
 
+export function isReferenceImageRowId(rowId: string): boolean {
+  return rowId.startsWith('reference-image:');
+}
+
+export function referenceImageIdFromRowId(rowId: string): string | null {
+  return isReferenceImageRowId(rowId) ? rowId.slice('reference-image:'.length) : null;
+}
+
 export function groupIdFromRowId(rowId: string): string | null {
   return rowId.startsWith(GROUP_ROW_PREFIX) ? rowId.slice(GROUP_ROW_PREFIX.length) : null;
 }
 
 export function canJoinTargetGroup(activeRowId: string, target: DraggableTarget, groups: DecorationGroup[]): boolean {
+  if (isReferenceImageRowId(activeRowId)) return false;
   if (!target.row.group || target.row.group.collapsed) return false;
   if (target.row.type !== 'group' && !target.row.grouped) return false;
   const activeGroupId = groupIdFromRowId(activeRowId);
@@ -275,6 +284,24 @@ export function dropStateForTarget(
   activeRowId: string | undefined,
   groups: DecorationGroup[]
 ): Pick<LayerDragState, 'overRowId' | 'intent' | 'placement' | 'joinGroupId' | 'parentGroupId' | 'anchorGroupId'> {
+  if (target.row.type === 'reference-image') {
+    const yInRow = virtualY - target.top;
+    const height = Math.max(1, target.bottom - target.top);
+    return {
+      overRowId: target.rowId,
+      intent: 'sort',
+      placement: yInRow < height / 2 ? 'before' : 'after'
+    };
+  }
+  if (activeRowId && isReferenceImageRowId(activeRowId) && mode === 'pointer' && target.row.group) {
+    const yInRow = virtualY - target.top;
+    const height = Math.max(1, target.bottom - target.top);
+    return {
+      overRowId: target.rowId,
+      intent: 'sort',
+      placement: yInRow < height / 2 ? 'before' : 'after'
+    };
+  }
   if (mode === 'pointer' && target.row.group) {
     const yInRow = virtualY - target.top;
     const height = Math.max(1, target.bottom - target.top);
@@ -307,6 +334,16 @@ export function dropStateForTarget(
         joinGroupId: target.row.group.id
       };
     }
+    return {
+      overRowId: target.rowId,
+      intent: 'sort',
+      placement: yInRow < height / 2 ? 'before' : 'after'
+    };
+  }
+
+  if (mode === 'pointer' && activeRowId && isReferenceImageRowId(activeRowId)) {
+    const yInRow = virtualY - target.top;
+    const height = Math.max(1, target.bottom - target.top);
     return {
       overRowId: target.rowId,
       intent: 'sort',

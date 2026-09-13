@@ -1,9 +1,11 @@
 import type { TransformValues } from '../../types/role';
+import type { ReferenceImageLayer } from '../../types/referenceImage';
 
 export interface EditControlsProps {
   disabled: boolean;
   faceAlwaysEnabled?: boolean;
   editValues: TransformValues;
+  referenceImage?: ReferenceImageLayer | null;
   bodyAnimationLabel: string;
   bodyAnimationPlaying: boolean;
   playbackToolVisible: boolean;
@@ -36,6 +38,9 @@ export interface EditControlsProps {
   onTogglePlaybackTool(): void;
   onToggleHeadGlowAlwaysOn(): void;
   onStageScaleChange(scale: number): void;
+  onReferenceImageBeginTransform?(): void;
+  onReferenceImageCommitTransform?(): void;
+  onReferenceImageTransformChange?(patch: { x?: number; y?: number; scale?: number; opacity?: number }, commit?: boolean): void;
 }
 
 export interface RangeControlProps {

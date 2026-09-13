@@ -11,6 +11,7 @@ import { t } from '../../i18n';
 import { HEAD_LAYER_ID } from '../../constants/layers';
 import { optionById } from '../../mock/options';
 import type { HeadLayerTransform } from '../../types/role';
+import type { ReferenceImageLayer } from '../../types/referenceImage';
 import { AssetPreview } from '../AssetPreview';
 import type { LayerRowModel } from './layerListModels';
 
@@ -76,6 +77,55 @@ export function LayerItemRow({
       >
         ×
       </button>
+    </div>
+  );
+}
+
+export function ReferenceImageRow({
+  row,
+  isDragging = false,
+  dragHandleProps,
+  onSelect,
+  onToggleVisibility,
+  onDelete
+}: {
+  row: LayerRowModel;
+  isDragging?: boolean;
+  dragHandleProps?: DragHandleProps;
+  onSelect(id: string): void;
+  onToggleVisibility(id: string): void;
+  onDelete(id: string): void;
+}) {
+  const image = row.referenceImage as ReferenceImageLayer;
+  return (
+    <div
+      className={`layer-row reference-image-row ${row.selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${!image.visible ? 'muted' : ''}`}
+      data-layer-id={row.rowId}
+      data-reference-image-id={image.id}
+      data-testid={`reference-image-row-${image.id}`}
+      onClick={() => onSelect(image.id)}
+    >
+      <button className="drag-handle" type="button" data-testid={`reference-image-drag-${image.id}`} {...dragHandleProps} title={t('layer.dragHandle')}>
+        ⋮⋮
+      </button>
+      <div className="layer-thumb"><img src={image.src} alt="" width={50} height={50} /></div>
+      <div className="layer-meta"><strong title={image.name}>{image.name}</strong></div>
+      <button
+        className="layer-icon-button"
+        type="button"
+        data-testid={`reference-image-visibility-${image.id}`}
+        title={image.visible ? t('layer.hide') : t('layer.show')}
+        onClick={(event) => { event.stopPropagation(); onToggleVisibility(image.id); }}
+      >
+        {image.visible ? '◉' : '○'}
+      </button>
+      <button
+        className="layer-delete"
+        type="button"
+        data-testid={`reference-image-delete-${image.id}`}
+        title={t('layer.delete')}
+        onClick={(event) => { event.stopPropagation(); onDelete(image.id); }}
+      >×</button>
     </div>
   );
 }

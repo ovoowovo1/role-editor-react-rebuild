@@ -2,7 +2,8 @@ import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { Application } from 'pixi.js';
 import type { BrushFillMask } from '../../lib/conversion/brushFillToDeco';
 import type { RoleDocument } from '../../types/role';
-import { beginDecorationDrag } from './dragInteractions';
+import type { ReferenceImageLayer } from '../../types/referenceImage';
+import { beginDecorationDrag, beginReferenceImageDrag } from './dragInteractions';
 import type {
   BrushDrawState,
   BrushFillState,
@@ -17,6 +18,7 @@ import type {
 interface StageRuntimeControllerOptions {
   role: RoleDocument;
   selectedIds: string[];
+  selectedReferenceImageId: string | null;
   stageScale: number;
   facingQuarterTurns: number;
   bodyAnimationLabel: string;
@@ -24,7 +26,10 @@ interface StageRuntimeControllerOptions {
   brushFillBrushSize: number;
   brushFillMask: BrushFillMask;
   headGlowAlwaysOn: boolean;
+  referenceImages: ReferenceImageLayer[];
+  layerOrder: string[];
   onCommitDrag(selectionIds: readonly string[], dx: number, dy: number): void;
+  onCommitReferenceImageDrag(id: string, dx: number, dy: number): void;
   onClearSelection(): void;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
 }
@@ -32,6 +37,7 @@ interface StageRuntimeControllerOptions {
 export function useStageRuntimeController({
   role,
   selectedIds,
+  selectedReferenceImageId,
   stageScale,
   facingQuarterTurns,
   bodyAnimationLabel,
@@ -39,7 +45,10 @@ export function useStageRuntimeController({
   brushFillBrushSize,
   brushFillMask,
   headGlowAlwaysOn,
+  referenceImages,
+  layerOrder,
   onCommitDrag,
+  onCommitReferenceImageDrag,
   onClearSelection,
   onBrushFillMaskChange
 }: StageRuntimeControllerOptions) {
@@ -49,9 +58,13 @@ export function useStageRuntimeController({
   const sceneRef = useRef<StageSceneState | null>(null);
   const roleRef = useRef(role);
   const selectedIdsRef = useRef(selectedIds);
+  const selectedReferenceImageIdRef = useRef(selectedReferenceImageId);
   const headGlowAlwaysOnRef = useRef(headGlowAlwaysOn);
+  const referenceImagesRef = useRef(referenceImages);
+  const layerOrderRef = useRef(layerOrder);
   const callbacksRef = useRef<StageCallbacks>({
     onCommitDrag,
+    onCommitReferenceImageDrag,
     onClearSelection,
     onBrushFillMaskChange
   });
@@ -74,9 +87,13 @@ export function useStageRuntimeController({
   useLayoutEffect(() => {
     roleRef.current = role;
     selectedIdsRef.current = selectedIds;
+    selectedReferenceImageIdRef.current = selectedReferenceImageId;
     headGlowAlwaysOnRef.current = headGlowAlwaysOn;
+    referenceImagesRef.current = referenceImages;
+    layerOrderRef.current = layerOrder;
     callbacksRef.current = {
       onCommitDrag,
+      onCommitReferenceImageDrag,
       onClearSelection,
       onBrushFillMaskChange
     };
@@ -99,24 +116,30 @@ export function useStageRuntimeController({
     brushFillBrushSize,
     brushFillMask,
     headGlowAlwaysOn,
+    onCommitReferenceImageDrag,
     facingQuarterTurns,
     onBrushFillMaskChange,
     onClearSelection,
     onCommitDrag,
     role,
     selectedIds,
-    stageScale
+    selectedReferenceImageId,
+    stageScale,
+    layerOrder
   ]);
 
   const stageRuntimeRefs = useMemo<StageRuntimeRefs>(
     () => ({
       roleRef,
       selectedIdsRef,
+      selectedReferenceImageIdRef,
       callbacksRef,
       brushFillRef,
       sceneRef,
       dragRef,
-      brushDrawRef
+      brushDrawRef,
+      referenceImagesRef,
+      layerOrderRef
     }),
     []
   );
@@ -130,13 +153,26 @@ export function useStageRuntimeController({
     [stageRuntimeRefs]
   );
 
+  const referenceImageOptions = useMemo(
+    () => ({
+      onPointerDown: (id: string, global: { x: number; y: number }, root: import('pixi.js').Container) => {
+        if (stageRuntimeRefs.selectedReferenceImageIdRef.current !== id) return;
+        beginReferenceImageDrag(id, global, root, stageRuntimeRefs);
+      }
+    }),
+    [stageRuntimeRefs]
+  );
+
   return {
     appRef,
     dragRef,
     brushDrawRef,
+    referenceImagesRef,
+    layerOrderRef,
     sceneRef,
     roleRef,
     selectedIdsRef,
+    selectedReferenceImageIdRef,
     headGlowAlwaysOnRef,
     brushFillRef,
     stageBuildGenerationRef,
@@ -144,6 +180,7 @@ export function useStageRuntimeController({
     lastPlaybackResetRef,
     sceneBuildConfigRef,
     stageRuntimeRefs,
-    decoOptions
+    decoOptions,
+    referenceImageOptions
   };
 }

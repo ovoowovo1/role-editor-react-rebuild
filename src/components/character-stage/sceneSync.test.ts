@@ -309,4 +309,29 @@ describe('stage scene synchronization', () => {
     ]);
     expect(removeChildren).toHaveBeenCalledOnce();
   });
+
+  it('places reference image displays at their canonical stack positions', () => {
+    const scene = makeScene();
+    scene.referenceImageDisplays = new Map();
+    const a = makeDecorationLayer('a');
+    const b = makeDecorationLayer('b');
+    const role = makeRoleDocument({ decorations: [a, b], headLayerIndex: 1 });
+    syncDecorationDisplayRecords(scene, role, decoOptions);
+    const image = new Container();
+    scene.referenceImageDisplays.set('ref', {
+      container: image,
+      sprite: {} as never,
+      displayKey: 'blob:ref'
+    });
+    syncDisguiseChildOrder(scene, role, ['b', 'reference-image:ref', '__head_layer__', 'a']);
+    expect(scene.disguiseRoot.children).toEqual([
+      scene.decoDisplays.get('b')!.container,
+      image,
+      scene.headLayerClip,
+      scene.decoDisplays.get('a')!.container,
+      scene.selectionDragController,
+      scene.brushFillOverlay,
+      scene.headLayerSelectionOverlay
+    ]);
+  });
 });

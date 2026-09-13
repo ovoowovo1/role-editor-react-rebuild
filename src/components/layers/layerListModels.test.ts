@@ -4,8 +4,10 @@ import type { DecorationGroup, DecorationLayer } from '../../types/role';
 import {
   applyLayerSelection,
   buildLayerRowModels,
-  createLayerSelectionState
+  createLayerSelectionState,
+  mergeReferenceImageRows
 } from './layerListModels';
+import type { ReferenceImageLayer } from '../../types/referenceImage';
 import { buildVirtualGeometry, type VirtualLayerRow } from './layerListVirtualization';
 
 function layer(id: string): DecorationLayer {
@@ -33,6 +35,21 @@ function group(id: string, members: NonNullable<DecorationGroup['members']>, pat
     visible: true,
     collapsed: false,
     ...patch
+  };
+}
+
+function referenceImage(id: string): ReferenceImageLayer {
+  return {
+    id,
+    name: `${id}.png`,
+    src: `blob:${id}`,
+    width: 10,
+    height: 10,
+    x: 0,
+    y: 0,
+    scale: 1,
+    opacity: 1,
+    visible: true
   };
 }
 
@@ -154,5 +171,33 @@ describe('layer list row models', () => {
     expect(rows.map((row) => row.selected)).toEqual([false, false, false]);
     expect(selectedRows.map((row) => row.selected)).toEqual([true, true, false]);
     expect(buildVirtualGeometry(virtualRows)).toEqual(geometry);
+  });
+
+  it('places reference images between role rows using canonical bottom-to-top order', () => {
+    const rows = buildLayerRowModels({
+      decorations: [layer('a'), layer('b')],
+      groups: [],
+      headLayerIndex: 1
+    });
+    const merged = mergeReferenceImageRows(rows, [referenceImage('ref')], [
+      'b', HEAD_LAYER_ID, 'reference-image:ref', 'a'
+    ]);
+    expect(merged.map((row) => row.rowId)).toEqual([
+      'item:a', 'reference-image:ref', HEAD_ROW_ID, 'item:b'
+    ]);
+  });
+
+  it('keeps images outside group blocks when an order token falls in a group', () => {
+    const rows = buildLayerRowModels({
+      decorations: [layer('a'), layer('b')],
+      groups: [group('g', [{ type: 'layer', id: 'a' }, { type: 'layer', id: 'b' }])],
+      headLayerIndex: 2
+    });
+    const merged = mergeReferenceImageRows(rows, [referenceImage('ref')], [
+      'b', 'reference-image:ref', 'a', HEAD_LAYER_ID
+    ]);
+    expect(merged.map((row) => row.rowId)).toEqual([
+      'reference-image:ref', 'group:g', 'item:a', 'item:b', HEAD_ROW_ID
+    ]);
   });
 });
