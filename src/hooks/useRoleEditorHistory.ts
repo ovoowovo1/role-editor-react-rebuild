@@ -95,6 +95,9 @@ export function useRoleEditorHistory({
       );
       if (!entry) return;
       recordLocalHistoryEntry(entry);
+      // Keep command consumers (including deferred selection restoration) on
+      // the committed role before React publishes the next render.
+      roleRef.current = nextRole;
       history.reset(nextRole);
       restoreHistorySelection(afterSelectionIds);
     },
