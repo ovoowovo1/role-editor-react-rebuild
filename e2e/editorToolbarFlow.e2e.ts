@@ -90,7 +90,17 @@ test('stage scale, face rotate, and animation controls respond without page erro
   await expect(page.getByTestId('toolbar-playback-toggle-button')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.playback-tool')).toBeVisible();
 
-  await page.getByTestId('toolbar-face-rotate-button').click();
+  const faceButton = page.getByTestId('toolbar-face-rotate-button');
+  const faceIcon = faceButton.locator('.face-mat-icon');
+  await expect(faceIcon).toHaveAttribute('style', /rotate\(-90deg\)/);
+  await faceButton.click();
+  await expect(faceIcon).toHaveAttribute('style', /rotate\(0deg\)/);
+  await faceButton.click();
+  await expect(faceIcon).toHaveAttribute('style', /rotate\(90deg\)/);
+  await faceButton.click();
+  await expect(faceIcon).toHaveAttribute('style', /rotate\(180deg\)/);
+  await faceButton.click();
+  await expect(faceIcon).toHaveAttribute('style', /rotate\(-90deg\)/);
   await page.getByTestId('toolbar-animation-start-button').click();
   await expect(page.getByTestId('toolbar-animation-start-button')).toBeDisabled();
   await expect(page.getByTestId('toolbar-animation-stop-button')).toBeEnabled();

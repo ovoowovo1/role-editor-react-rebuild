@@ -865,10 +865,6 @@ input:disabled {
   line-height: 1;
 }
 
-.tool-icon-btn.tool-icon-face .face-mat-icon {
-  transform: rotate(-90deg);
-}
-
 .layer-delete {
   background: rgba(255, 92, 92, 0.88);
 }

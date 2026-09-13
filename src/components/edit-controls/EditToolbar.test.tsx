@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { EditToolbar } from './EditToolbar';
 
-function renderToolbar(headGlowAlwaysOn: boolean): string {
+function renderToolbar(headGlowAlwaysOn: boolean, facingQuarterTurns = 0): string {
   return renderToStaticMarkup(
     <EditToolbar
       disabled
@@ -11,6 +11,7 @@ function renderToolbar(headGlowAlwaysOn: boolean): string {
       bodyAnimationPlaying={false}
       playbackToolVisible={false}
       headGlowAlwaysOn={headGlowAlwaysOn}
+      facingQuarterTurns={facingQuarterTurns}
       stageScale={1}
       stageMinScale={0.5}
       stageMaxScale={2}
@@ -42,5 +43,15 @@ describe('EditToolbar head glow toggle', () => {
     const html = renderToolbar(true);
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('關閉頭部長亮綠邊');
+  });
+
+  it.each([
+    [0, '-90deg'],
+    [1, '0deg'],
+    [2, '90deg'],
+    [3, '180deg']
+  ])('rotates the face icon for quarter turn %i', (turns, rotation) => {
+    const html = renderToolbar(false, turns);
+    expect(html).toContain(`style="transform:rotate(${rotation})"`);
   });
 });

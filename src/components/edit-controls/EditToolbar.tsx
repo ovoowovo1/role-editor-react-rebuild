@@ -8,6 +8,7 @@ interface EditToolbarProps {
   bodyAnimationPlaying: boolean;
   playbackToolVisible: boolean;
   headGlowAlwaysOn: boolean;
+  facingQuarterTurns: number;
   stageScale: number;
   stageMinScale: number;
   stageMaxScale: number;
@@ -32,6 +33,7 @@ export function EditToolbar({
   bodyAnimationPlaying,
   playbackToolVisible,
   headGlowAlwaysOn,
+  facingQuarterTurns,
   stageScale,
   stageMinScale,
   stageMaxScale,
@@ -128,7 +130,11 @@ export function EditToolbar({
           aria-label={t('edit.face')}
           title={t('edit.face')}
         >
-          <span className="material-icons face-mat-icon" aria-hidden="true">
+          <span
+            className="material-icons face-mat-icon"
+            style={{ transform: `rotate(${facingQuarterTurns * 90 - 90}deg)` }}
+            aria-hidden="true"
+          >
             face
           </span>
         </button>

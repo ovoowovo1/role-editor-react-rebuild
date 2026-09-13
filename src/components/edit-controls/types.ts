@@ -8,6 +8,7 @@ export interface EditControlsProps {
   bodyAnimationPlaying: boolean;
   playbackToolVisible: boolean;
   headGlowAlwaysOn: boolean;
+  facingQuarterTurns: number;
   stageScale: number;
   positionRange: number;
   stageMinScale: number;

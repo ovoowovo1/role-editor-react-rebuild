@@ -42,6 +42,7 @@ export function EditorStagePanel({ editor, shell }: EditorStagePanelProps) {
         bodyAnimationPlaying={shell.bodyAnimationPlaying}
         playbackToolVisible={shell.playbackToolVisible}
         headGlowAlwaysOn={shell.headGlowAlwaysOn}
+        facingQuarterTurns={shell.facingQuarterTurns}
         editValues={editor.editValues}
         stageScale={editor.stageScale}
         positionRange={editor.role.positionRange ?? DEFAULT_POSITION_RANGE}

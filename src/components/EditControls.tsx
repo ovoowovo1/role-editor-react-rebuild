@@ -11,6 +11,7 @@ export function EditControls({
   bodyAnimationPlaying,
   playbackToolVisible,
   headGlowAlwaysOn,
+  facingQuarterTurns,
   stageScale,
   positionRange,
   stageMinScale,
@@ -46,6 +47,7 @@ export function EditControls({
         bodyAnimationPlaying={bodyAnimationPlaying}
         playbackToolVisible={playbackToolVisible}
         headGlowAlwaysOn={headGlowAlwaysOn}
+        facingQuarterTurns={facingQuarterTurns}
         stageScale={stageScale}
         stageMinScale={stageMinScale}
         stageMaxScale={stageMaxScale}
