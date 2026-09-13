@@ -113,9 +113,10 @@ function selectedDecorationsFromLookup(
 export function syncSelectionControllerForIds(
   scene: StageSceneState,
   selectedIds: readonly string[],
-  hasActiveDrag = false
+  hasActiveDrag = false,
+  headGlowAlwaysOn = false
 ): void {
-  syncHeadLayerSelection(scene, selectedIds);
+  syncHeadLayerSelection(scene, selectedIds, headGlowAlwaysOn);
   syncSelectionDragController(
     scene,
     selectedDecorationsFromLookup(scene.decorationsById, selectedIds),

@@ -29,6 +29,7 @@ export function useEditorShellUiState(initialTopBarMode: TopBarMode, onPartTabCh
   const [brushFillActive, setBrushFillActive] = useState(false);
   const [brushFillBrushSize, setBrushFillBrushSize] = useState(18);
   const [brushFillMask, setBrushFillMask] = useState<BrushFillMask>({ points: [] });
+  const [headGlowAlwaysOn, setHeadGlowAlwaysOn] = useState(false);
 
   useEffect(() => {
     try {
@@ -52,6 +53,7 @@ export function useEditorShellUiState(initialTopBarMode: TopBarMode, onPartTabCh
   const clearBrushFillMask = useCallback(() => setBrushFillMask({ points: [] }), []);
   const rotateFacing = useCallback(() => setFacingQuarterTurns((turns) => (turns + 1) % 4), []);
   const togglePlaybackToolVisible = useCallback(() => setPlaybackToolVisible((visible) => !visible), []);
+  const toggleHeadGlowAlwaysOn = useCallback(() => setHeadGlowAlwaysOn((visible) => !visible), []);
   const restartBodyAnimation = useCallback(() => {
     setBodyAnimationRestartKey((key) => key + 1);
     setBodyAnimationPlaying(false);
@@ -80,6 +82,8 @@ export function useEditorShellUiState(initialTopBarMode: TopBarMode, onPartTabCh
     setBrushFillBrushSize,
     brushFillMask,
     setBrushFillMask,
+    headGlowAlwaysOn,
+    toggleHeadGlowAlwaysOn,
     handleTopBarChange,
     clearBrushFillMask,
     rotateFacing,

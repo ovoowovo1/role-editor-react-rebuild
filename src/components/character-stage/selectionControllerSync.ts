@@ -194,14 +194,20 @@ export function syncSelectionDragController(
   scene.selectionDragControllerGraphic.endFill();
 }
 
-export function syncHeadLayerSelection(scene: StageSceneState, selectedIds: readonly string[]): void {
+export function syncHeadLayerSelection(
+  scene: StageSceneState,
+  selectedIds: readonly string[],
+  headGlowAlwaysOn = false
+): void {
   const selected = selectedIds.includes(HEAD_LAYER_ID);
-  if (scene.headLayerSelectionActive !== selected) {
-    scene.headLayerSelectionActive = selected;
-    scene.headLayerSelectionOverlay.filters = selected ? [getCachedControllerGlowFilter()] : null;
+  const glowActive = selected || headGlowAlwaysOn;
+  scene.headLayerSelectionActive = selected;
+  if (scene.headLayerGlowActive !== glowActive) {
+    scene.headLayerGlowActive = glowActive;
+    scene.headLayerSelectionOverlay.filters = glowActive ? [getCachedControllerGlowFilter()] : null;
   }
 
-  const visible = selected && scene.headLayerClip.visible;
+  const visible = glowActive && scene.headLayerClip.visible;
   scene.headLayerSelectionOverlay.visible = visible;
   scene.headLayerSelectionVisual.position.copyFrom(scene.headLayerClip.position);
   scene.headLayerSelectionVisual.rotation = scene.headLayerClip.rotation;

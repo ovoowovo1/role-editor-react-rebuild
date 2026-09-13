@@ -10,6 +10,7 @@ export function EditControls({
   bodyAnimationLabel,
   bodyAnimationPlaying,
   playbackToolVisible,
+  headGlowAlwaysOn,
   stageScale,
   positionRange,
   stageMinScale,
@@ -31,6 +32,7 @@ export function EditControls({
   onStopWeaponAnimation,
   onRestartWeaponAnimation,
   onTogglePlaybackTool,
+  onToggleHeadGlowAlwaysOn,
   onStageScaleChange
 }: EditControlsProps) {
   const faceDisabled = faceAlwaysEnabled ? false : disabled;
@@ -43,6 +45,7 @@ export function EditControls({
         bodyAnimationLabel={bodyAnimationLabel}
         bodyAnimationPlaying={bodyAnimationPlaying}
         playbackToolVisible={playbackToolVisible}
+        headGlowAlwaysOn={headGlowAlwaysOn}
         stageScale={stageScale}
         stageMinScale={stageMinScale}
         stageMaxScale={stageMaxScale}
@@ -56,6 +59,7 @@ export function EditControls({
         onStopWeaponAnimation={onStopWeaponAnimation}
         onRestartWeaponAnimation={onRestartWeaponAnimation}
         onTogglePlaybackTool={onTogglePlaybackTool}
+        onToggleHeadGlowAlwaysOn={onToggleHeadGlowAlwaysOn}
         onStageScaleChange={onStageScaleChange}
       />
 

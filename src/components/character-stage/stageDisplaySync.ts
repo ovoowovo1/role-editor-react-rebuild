@@ -19,6 +19,7 @@ interface StageDisplaySyncOptions {
   selectedIds: string[];
   brushFillActive: boolean;
   brushFillMask: BrushFillMask;
+  headGlowAlwaysOn: boolean;
   sceneVersion: number;
   appRef: MutableRefObject<Application | null>;
   roleRef: MutableRefObject<RoleDocument>;
@@ -40,6 +41,7 @@ export function useStageDisplaySync({
   selectedIds,
   brushFillActive,
   brushFillMask,
+  headGlowAlwaysOn,
   sceneVersion,
   appRef,
   roleRef,
@@ -82,7 +84,8 @@ export function useStageDisplaySync({
         syncSelectionControllerForIds(
           currentScene,
           selectedIdsRef.current,
-          Boolean(activeDrag)
+          Boolean(activeDrag),
+          headGlowAlwaysOn
         );
         syncDisguiseChildOrder(
           currentScene,
@@ -111,6 +114,7 @@ export function useStageDisplaySync({
     sceneRef,
     scheduleDeferredStageSync,
     selectedIdsRef,
+    headGlowAlwaysOn,
     sceneVersion
   ]);
 
@@ -122,8 +126,13 @@ export function useStageDisplaySync({
     // pending; the deferred display pass will restore it after the lookup is
     // current.
     if (!isDecorationDisplaySyncCurrent(scene, role)) return;
-    syncSelectionControllerForIds(scene, selectedIds, Boolean(dragRef.current));
-  }, [dragRef, role, sceneRef, sceneVersion, selectedIds]);
+    syncSelectionControllerForIds(
+      scene,
+      selectedIds,
+      Boolean(dragRef.current),
+      headGlowAlwaysOn
+    );
+  }, [dragRef, headGlowAlwaysOn, role, sceneRef, sceneVersion, selectedIds]);
 
   useEffect(() => {
     const scene = sceneRef.current;

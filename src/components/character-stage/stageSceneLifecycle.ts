@@ -29,6 +29,7 @@ export function useStageSceneLifecycle({
   appRef,
   roleRef,
   selectedIdsRef,
+  headGlowAlwaysOnRef,
   brushFillRef,
   dragRef,
   sceneRef,
@@ -46,6 +47,7 @@ export function useStageSceneLifecycle({
   appRef: MutableRefObject<Application | null>;
   roleRef: MutableRefObject<RoleDocument>;
   selectedIdsRef: MutableRefObject<string[]>;
+  headGlowAlwaysOnRef: MutableRefObject<boolean>;
   brushFillRef: MutableRefObject<BrushFillState>;
   dragRef: MutableRefObject<DragState | null>;
   sceneRef: MutableRefObject<StageSceneState | null>;
@@ -107,7 +109,12 @@ export function useStageSceneLifecycle({
       drawBrushFillOverlay(scene, brushFillRef.current.mask);
       setDecorationInteractionEnabled(scene, !brushFillRef.current.active);
       syncDecorationDisplayRecords(scene, currentRole, decoOptions);
-      syncSelectionControllerForIds(scene, selectedIdsRef.current);
+      syncSelectionControllerForIds(
+        scene,
+        selectedIdsRef.current,
+        false,
+        headGlowAlwaysOnRef.current
+      );
       syncDisguiseChildOrder(scene, currentRole);
       scene.updatePosition();
 

@@ -107,6 +107,7 @@ export function buildStageScene({
     selectionDragVisualDisplayKeysById: new Map(),
     selectionDragTargetId: null,
     headLayerSelectionActive: false,
+    headLayerGlowActive: false,
     failedTextures,
     decoDisplays: new Map(),
     decorationsById: new Map(),

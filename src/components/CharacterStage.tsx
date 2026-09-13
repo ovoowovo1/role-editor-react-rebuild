@@ -27,6 +27,7 @@ interface CharacterStageProps {
   brushFillActive?: boolean;
   brushFillBrushSize?: number;
   brushFillMask?: BrushFillMask;
+  headGlowAlwaysOn?: boolean;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
 }
 
@@ -43,6 +44,7 @@ export function CharacterStage({
   brushFillActive = false,
   brushFillBrushSize = 18,
   brushFillMask = { points: [] },
+  headGlowAlwaysOn = false,
   onBrushFillMaskChange
 }: CharacterStageProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -60,6 +62,7 @@ export function CharacterStage({
     brushFillActive,
     brushFillBrushSize,
     brushFillMask,
+    headGlowAlwaysOn,
     onCommitDrag,
     onClearSelection,
     onBrushFillMaskChange
@@ -82,6 +85,7 @@ export function CharacterStage({
     appRef: stageRuntime.appRef,
     roleRef: stageRuntime.roleRef,
     selectedIdsRef: stageRuntime.selectedIdsRef,
+    headGlowAlwaysOnRef: stageRuntime.headGlowAlwaysOnRef,
     brushFillRef: stageRuntime.brushFillRef,
     dragRef: stageRuntime.dragRef,
     sceneRef: stageRuntime.sceneRef,
@@ -109,6 +113,7 @@ export function CharacterStage({
     sceneRef: stageRuntime.sceneRef,
     dragRef: stageRuntime.dragRef,
     brushDrawRef: stageRuntime.brushDrawRef,
+    headGlowAlwaysOn,
     decoOptions: stageRuntime.decoOptions,
     scheduleDeferredStageSync,
     cancelDeferredStageSync

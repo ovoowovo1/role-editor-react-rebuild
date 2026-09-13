@@ -847,6 +847,12 @@ input:disabled {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.tool-icon-btn.tool-icon-head-glow[aria-pressed='true'] {
+  color: #99ff99;
+  background: rgba(153, 255, 153, 0.16);
+  box-shadow: 0 0 0 1px rgba(153, 255, 153, 0.4), 0 0 10px rgba(153, 255, 153, 0.3);
+}
+
 .tool-icon-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;

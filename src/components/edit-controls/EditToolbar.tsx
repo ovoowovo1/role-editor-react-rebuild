@@ -7,6 +7,7 @@ interface EditToolbarProps {
   bodyAnimationLabel: string;
   bodyAnimationPlaying: boolean;
   playbackToolVisible: boolean;
+  headGlowAlwaysOn: boolean;
   stageScale: number;
   stageMinScale: number;
   stageMaxScale: number;
@@ -20,6 +21,7 @@ interface EditToolbarProps {
   onStopWeaponAnimation(): void;
   onRestartWeaponAnimation(): void;
   onTogglePlaybackTool(): void;
+  onToggleHeadGlowAlwaysOn(): void;
   onStageScaleChange(scale: number): void;
 }
 
@@ -29,6 +31,7 @@ export function EditToolbar({
   bodyAnimationLabel,
   bodyAnimationPlaying,
   playbackToolVisible,
+  headGlowAlwaysOn,
   stageScale,
   stageMinScale,
   stageMaxScale,
@@ -42,9 +45,11 @@ export function EditToolbar({
   onStopWeaponAnimation,
   onRestartWeaponAnimation,
   onTogglePlaybackTool,
+  onToggleHeadGlowAlwaysOn,
   onStageScaleChange
 }: EditToolbarProps) {
   const playbackToggleLabel = playbackToolVisible ? t('edit.hidePlaybackTool') : t('edit.showPlaybackTool');
+  const headGlowToggleLabel = headGlowAlwaysOn ? t('edit.disableHeadGlowAlwaysOn') : t('edit.enableHeadGlowAlwaysOn');
 
   return (
     <div className="tool-row" aria-label={t('edit.iconToolbar')}>
@@ -60,6 +65,19 @@ export function EditToolbar({
         >
           <span className="material-icons" aria-hidden="true">
             touch_app
+          </span>
+        </button>
+        <button
+          type="button"
+          className="tool-icon-btn tool-icon-head-glow"
+          data-testid="toolbar-head-glow-toggle-button"
+          aria-pressed={headGlowAlwaysOn}
+          onClick={onToggleHeadGlowAlwaysOn}
+          aria-label={headGlowToggleLabel}
+          title={headGlowToggleLabel}
+        >
+          <span className="material-icons" aria-hidden="true">
+            highlight
           </span>
         </button>
         <button

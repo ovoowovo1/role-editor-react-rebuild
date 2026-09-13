@@ -36,6 +36,7 @@ function makeScene(): StageSceneState {
     headLayerSelectionOverlay: new Container(),
     headLayerSelectionVisual: new Container(),
     headLayerSelectionActive: false,
+    headLayerGlowActive: false,
     failedTextures: new Set()
   } as unknown as StageSceneState;
 }
@@ -151,5 +152,40 @@ describe('selection controller visuals', () => {
     expect(scene.headLayerSelectionOverlay.filters).toBeNull();
     expect(scene.headLayerSelectionOverlay.visible).toBe(false);
     expect(scene.headLayerClip.filters).toBeNull();
+  });
+
+  it('keeps the head outline on independently of layer selection', () => {
+    const scene = makeScene();
+    const firstFilter = { kind: 'controller-selection-filter' };
+    mocks.getCachedControllerGlowFilter.mockReturnValue(firstFilter);
+    scene.headLayerClip.visible = true;
+
+    syncHeadLayerSelection(scene, [], true);
+    expect(scene.headLayerSelectionActive).toBe(false);
+    expect(scene.headLayerGlowActive).toBe(true);
+    expect(scene.headLayerSelectionOverlay.filters).toEqual([firstFilter]);
+    expect(scene.headLayerSelectionOverlay.visible).toBe(true);
+    expect(mocks.getCachedControllerGlowFilter).toHaveBeenCalledOnce();
+
+    syncHeadLayerSelection(scene, ['deco-a'], true);
+    expect(mocks.getCachedControllerGlowFilter).toHaveBeenCalledOnce();
+    expect(scene.headLayerSelectionOverlay.filters).toEqual([firstFilter]);
+
+    syncHeadLayerSelection(scene, ['deco-a'], false);
+    expect(scene.headLayerGlowActive).toBe(false);
+    expect(scene.headLayerSelectionOverlay.filters).toBeNull();
+    expect(scene.headLayerSelectionOverlay.visible).toBe(false);
+  });
+
+  it('hides an always-on outline while the head is hidden and restores it when visible', () => {
+    const scene = makeScene();
+    scene.headLayerClip.visible = false;
+    syncHeadLayerSelection(scene, [], true);
+    expect(scene.headLayerGlowActive).toBe(true);
+    expect(scene.headLayerSelectionOverlay.visible).toBe(false);
+
+    scene.headLayerClip.visible = true;
+    syncHeadLayerSelection(scene, [], true);
+    expect(scene.headLayerSelectionOverlay.visible).toBe(true);
   });
 });

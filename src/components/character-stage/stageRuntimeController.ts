@@ -23,6 +23,7 @@ interface StageRuntimeControllerOptions {
   brushFillActive: boolean;
   brushFillBrushSize: number;
   brushFillMask: BrushFillMask;
+  headGlowAlwaysOn: boolean;
   onCommitDrag(selectionIds: readonly string[], dx: number, dy: number): void;
   onClearSelection(): void;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
@@ -37,6 +38,7 @@ export function useStageRuntimeController({
   brushFillActive,
   brushFillBrushSize,
   brushFillMask,
+  headGlowAlwaysOn,
   onCommitDrag,
   onClearSelection,
   onBrushFillMaskChange
@@ -47,6 +49,7 @@ export function useStageRuntimeController({
   const sceneRef = useRef<StageSceneState | null>(null);
   const roleRef = useRef(role);
   const selectedIdsRef = useRef(selectedIds);
+  const headGlowAlwaysOnRef = useRef(headGlowAlwaysOn);
   const callbacksRef = useRef<StageCallbacks>({
     onCommitDrag,
     onClearSelection,
@@ -71,6 +74,7 @@ export function useStageRuntimeController({
   useLayoutEffect(() => {
     roleRef.current = role;
     selectedIdsRef.current = selectedIds;
+    headGlowAlwaysOnRef.current = headGlowAlwaysOn;
     callbacksRef.current = {
       onCommitDrag,
       onClearSelection,
@@ -94,6 +98,7 @@ export function useStageRuntimeController({
     brushFillActive,
     brushFillBrushSize,
     brushFillMask,
+    headGlowAlwaysOn,
     facingQuarterTurns,
     onBrushFillMaskChange,
     onClearSelection,
@@ -132,6 +137,7 @@ export function useStageRuntimeController({
     sceneRef,
     roleRef,
     selectedIdsRef,
+    headGlowAlwaysOnRef,
     brushFillRef,
     stageBuildGenerationRef,
     stageTeardownRef,

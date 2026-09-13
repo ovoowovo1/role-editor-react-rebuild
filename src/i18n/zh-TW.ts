@@ -62,6 +62,8 @@ export const zhTW: Record<string, string> = {
   'edit.weaponPlayback': '武器動畫播放',
   'edit.hidePlaybackTool': '隱藏播放工具',
   'edit.showPlaybackTool': '顯示播放工具',
+  'edit.enableHeadGlowAlwaysOn': '開啟頭部長亮綠邊',
+  'edit.disableHeadGlowAlwaysOn': '關閉頭部長亮綠邊',
   'edit.iconToolbar': '圖示工具列',
   'edit.controls': '編輯控制項',
   'edit.start': '開始',

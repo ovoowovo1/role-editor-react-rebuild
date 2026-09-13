@@ -449,3 +449,19 @@ test('renames, collapses, toggles visibility, and preserves group metadata', asy
   expectNoPageErrors(monitor);
   expectNoPageErrors(roundTripMonitor);
 });
+
+test('toggles the always-on head green outline without requiring a layer selection', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'head-glow-toggle-source', makeEditorSmokeRole(1));
+
+  await importRoleFile(page, fixture, 1);
+  const toggle = page.getByTestId('toolbar-head-glow-toggle-button');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  expectNoPageErrors(monitor);
+});

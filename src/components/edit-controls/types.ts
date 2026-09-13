@@ -7,6 +7,7 @@ export interface EditControlsProps {
   bodyAnimationLabel: string;
   bodyAnimationPlaying: boolean;
   playbackToolVisible: boolean;
+  headGlowAlwaysOn: boolean;
   stageScale: number;
   positionRange: number;
   stageMinScale: number;
@@ -30,6 +31,7 @@ export interface EditControlsProps {
   onStopWeaponAnimation(): void;
   onRestartWeaponAnimation(): void;
   onTogglePlaybackTool(): void;
+  onToggleHeadGlowAlwaysOn(): void;
   onStageScaleChange(scale: number): void;
 }
 

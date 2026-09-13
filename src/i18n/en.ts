@@ -62,6 +62,8 @@ export const en: Record<string, string> = {
   'edit.weaponPlayback': 'Weapon animation playback',
   'edit.hidePlaybackTool': 'Hide playback controls',
   'edit.showPlaybackTool': 'Show playback controls',
+  'edit.enableHeadGlowAlwaysOn': 'Turn on always-on head green outline',
+  'edit.disableHeadGlowAlwaysOn': 'Turn off always-on head green outline',
   'edit.iconToolbar': 'Icon toolbar',
   'edit.controls': 'Edit controls',
   'edit.start': 'Start',

@@ -31,6 +31,7 @@ export function EditorStagePanel({ editor, shell }: EditorStagePanelProps) {
           brushFillActive={shell.brushFillActive}
           brushFillBrushSize={shell.brushFillBrushSize}
           brushFillMask={shell.brushFillMask}
+          headGlowAlwaysOn={shell.headGlowAlwaysOn}
           onBrushFillMaskChange={shell.setBrushFillMask}
         />
       </Suspense>
@@ -40,6 +41,7 @@ export function EditorStagePanel({ editor, shell }: EditorStagePanelProps) {
         bodyAnimationLabel={shell.bodyAnimationLabel}
         bodyAnimationPlaying={shell.bodyAnimationPlaying}
         playbackToolVisible={shell.playbackToolVisible}
+        headGlowAlwaysOn={shell.headGlowAlwaysOn}
         editValues={editor.editValues}
         stageScale={editor.stageScale}
         positionRange={editor.role.positionRange ?? DEFAULT_POSITION_RANGE}
@@ -62,6 +64,7 @@ export function EditorStagePanel({ editor, shell }: EditorStagePanelProps) {
         onStopWeaponAnimation={() => shell.setBodyAnimationPlaying(false)}
         onRestartWeaponAnimation={shell.restartBodyAnimation}
         onTogglePlaybackTool={shell.togglePlaybackToolVisible}
+        onToggleHeadGlowAlwaysOn={shell.toggleHeadGlowAlwaysOn}
         onStageScaleChange={editor.setStageScale}
       />
     </section>

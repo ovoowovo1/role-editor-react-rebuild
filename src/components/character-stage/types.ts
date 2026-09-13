@@ -99,6 +99,7 @@ export interface StageSceneState {
   selectionDragVisualDisplayKeysById: Map<string, string>;
   selectionDragTargetId: string | null;
   headLayerSelectionActive: boolean;
+  headLayerGlowActive: boolean;
   failedTextures: Set<string>;
   decoDisplays: Map<string, DecoDisplayRecord>;
   decorationsById: Map<string, DecorationLayer>;

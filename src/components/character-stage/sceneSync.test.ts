@@ -147,6 +147,18 @@ describe('stage scene synchronization', () => {
     expect(mocks.syncSelectionDragController).toHaveBeenNthCalledWith(2, scene, [a], false);
   });
 
+  it('forwards the always-on head glow state without changing decoration selection', () => {
+    const scene = makeScene();
+    const deco = makeDecorationLayer('a');
+    const role = makeRoleDocument({ decorations: [deco] });
+    syncDecorationDisplayRecords(scene, role, decoOptions);
+
+    syncSelectionControllerForIds(scene, [], false, true);
+
+    expect(mocks.syncHeadLayerSelection).toHaveBeenCalledWith(scene, [], true);
+    expect(mocks.syncSelectionDragController).toHaveBeenCalledWith(scene, [], false);
+  });
+
   it('updates transforms in place and only replaces changed display identities', () => {
     const scene = makeScene();
     const a = makeDecorationLayer('a', { assetId: 'asset-a' });
