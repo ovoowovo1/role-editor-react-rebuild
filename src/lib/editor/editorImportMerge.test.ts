@@ -51,6 +51,7 @@ function role(patch: Partial<RoleDocument> = {}): RoleDocument {
 describe('editor import merge helpers', () => {
   it('copies imported decorations and remaps imported groups', () => {
     const incoming = role({
+      name: 'Imported Role',
       decorations: [layer('a'), layer('b')],
       groups: [
         group('oldGroup', [
@@ -64,9 +65,93 @@ describe('editor import merge helpers', () => {
 
     expect(result?.copiedIds).toHaveLength(2);
     expect(result?.role.decorations.map((item) => item.id)).toEqual(result?.copiedIds);
+    expect(result?.role.groups).toHaveLength(2);
+    expect(result?.role.groups[0]).toMatchObject({
+      name: 'Imported Role',
+      itemIds: result?.copiedIds,
+      visible: true,
+      collapsed: true,
+      members: [{ type: 'group' }]
+    });
+    expect(result?.role.groups[1].id).not.toBe('oldGroup');
+    expect(result?.role.groups[1].itemIds).toEqual(result?.copiedIds);
+  });
+
+  it('wraps ungrouped imported decorations in a collapsed group', () => {
+    const incoming = role({
+      name: 'Imported Set',
+      decorations: [layer('a'), layer('b'), layer('c')]
+    });
+
+    const result = mergeImportedDecorationsIntoRole(role(), incoming, DEFAULT_INSERT_SETTINGS);
+
     expect(result?.role.groups).toHaveLength(1);
-    expect(result?.role.groups[0].id).not.toBe('oldGroup');
-    expect(result?.role.groups[0].itemIds).toEqual(result?.copiedIds);
+    expect(result?.role.groups[0]).toMatchObject({
+      name: 'Imported Set',
+      collapsed: true,
+      itemIds: result?.copiedIds,
+      members: result?.copiedIds.map((id) => ({ type: 'layer', id }))
+    });
+  });
+
+  it('wraps nested and ungrouped imported content in source layer order', () => {
+    const incoming = role({
+      name: 'Nested Import',
+      decorations: [layer('a'), layer('b'), layer('c'), layer('d')],
+      groups: [
+        group('child', [
+          { type: 'layer', id: 'a' },
+          { type: 'layer', id: 'b' }
+        ]),
+        group('parent', [
+          { type: 'group', id: 'child' },
+          { type: 'layer', id: 'c' }
+        ])
+      ]
+    });
+
+    const result = mergeImportedDecorationsIntoRole(role(), incoming, DEFAULT_INSERT_SETTINGS);
+    const outer = result?.role.groups[0];
+
+    expect(outer?.name).toBe('Nested Import');
+    expect(outer?.collapsed).toBe(true);
+    expect(outer?.itemIds).toEqual(result?.copiedIds);
+    expect(outer?.members).toHaveLength(2);
+    expect(outer?.members?.[0].type).toBe('group');
+    expect(outer?.members?.[1]).toEqual({
+      type: 'layer',
+      id: result?.copiedIds[3]
+    });
+    expect(result?.role.groups).toHaveLength(3);
+    expect(result?.role.groups.slice(1).map((item) => item.name)).toEqual(['child', 'parent']);
+  });
+
+  it('falls back to the next group name and keeps a single imported deco ungrouped', () => {
+    const existing = role({
+      decorations: [layer('existing-layer'), layer('other-layer')],
+      groups: [group('existing', [{ type: 'layer', id: 'existing-layer' }, { type: 'layer', id: 'other-layer' }])]
+    });
+    const named = mergeImportedDecorationsIntoRole(
+      existing,
+      role({ name: '   ', decorations: [layer('a'), layer('b')] }),
+      DEFAULT_INSERT_SETTINGS
+    );
+    expect(named?.role.groups.find((item) => item.name === 'Group 2')).toBeDefined();
+
+    const single = mergeImportedDecorationsIntoRole(role(), role({ decorations: [layer('a')] }), DEFAULT_INSERT_SETTINGS);
+    expect(single?.role.groups).toEqual([]);
+  });
+
+  it('does not mutate either role while merging', () => {
+    const current = role({ decorations: [layer('current')] });
+    const incoming = role({ name: 'Imported', decorations: [layer('a'), layer('b')] });
+    const currentBefore = structuredClone(current);
+    const incomingBefore = structuredClone(incoming);
+
+    mergeImportedDecorationsIntoRole(current, incoming, DEFAULT_INSERT_SETTINGS);
+
+    expect(current).toEqual(currentBefore);
+    expect(incoming).toEqual(incomingBefore);
   });
 
   it('inserts a decoration batch and creates a group for multi-item batches', () => {

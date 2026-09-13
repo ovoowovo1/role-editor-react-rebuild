@@ -2,7 +2,7 @@ import type { DecorationGroup, DecorationLayer, EditorClipboardItem, PartOption,
 import { createId } from '../math';
 import { insertDecorations, type InsertDraftSettings } from './editorInsertSettings';
 import { syncGroups } from './editorRoleUtils';
-import { descendantLayerIdsForGroup, membersForGroup } from './groupTree';
+import { descendantLayerIdsForGroup, membersForGroup, topLevelGroupIds } from './groupTree';
 import { nextGroupId } from './headLayerMutations';
 
 export function nextGroupName(role: RoleDocument): string {
@@ -66,6 +66,49 @@ export function remapImportedGroups(
     .filter((group): group is DecorationGroup => group !== null);
 }
 
+function wrapImportedGroups(
+  baseRole: RoleDocument,
+  incoming: RoleDocument,
+  copied: DecorationLayer[],
+  importedGroups: DecorationGroup[],
+  idMap: Map<string, string>
+): DecorationGroup | null {
+  if (copied.length < 2) return null;
+
+  const topLevelIds = topLevelGroupIds(importedGroups);
+  const topLevelGroupByLayerId = new Map<string, string>();
+  for (const groupId of topLevelIds) {
+    for (const layerId of descendantLayerIdsForGroup(importedGroups, groupId)) {
+      topLevelGroupByLayerId.set(layerId, groupId);
+    }
+  }
+
+  const members: DecorationGroup['members'] = [];
+  const addedGroups = new Set<string>();
+  for (const item of incoming.decorations) {
+    const copiedId = idMap.get(item.id);
+    if (!copiedId) continue;
+    const groupId = topLevelGroupByLayerId.get(copiedId);
+    if (groupId) {
+      if (addedGroups.has(groupId)) continue;
+      addedGroups.add(groupId);
+      members.push({ type: 'group', id: groupId });
+      continue;
+    }
+    members.push({ type: 'layer', id: copiedId });
+  }
+
+  if (!members.length) return null;
+  return {
+    id: nextGroupId(),
+    name: incoming.name.trim() || nextGroupName(baseRole),
+    itemIds: copied.map((item) => item.id),
+    members,
+    visible: true,
+    collapsed: true
+  };
+}
+
 export function mergeImportedDecorationsIntoRole(
   role: RoleDocument,
   incoming: RoleDocument,
@@ -81,11 +124,15 @@ export function mergeImportedDecorationsIntoRole(
 
   const baseRole = insertDecorations(role, copied, settings);
   const importedGroups = remapImportedGroups(incoming, idMap, (group) => group.name);
+  const wrapperGroup = wrapImportedGroups(baseRole, incoming, copied, importedGroups, idMap);
+  const groups = wrapperGroup
+    ? [...(baseRole.groups ?? []), wrapperGroup, ...importedGroups]
+    : [...(baseRole.groups ?? []), ...importedGroups];
 
   return {
     role: syncGroups({
       ...baseRole,
-      groups: [...(baseRole.groups ?? []), ...importedGroups],
+      groups,
       updatedAt: new Date().toISOString()
     }),
     copiedIds: copied.map((item) => item.id)

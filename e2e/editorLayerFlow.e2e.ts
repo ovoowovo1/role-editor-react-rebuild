@@ -465,3 +465,33 @@ test('toggles the always-on head green outline without requiring a layer selecti
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   expectNoPageErrors(monitor);
 });
+
+test('merges a file into a collapsed outer group and preserves selected members', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const baseFixture = await writeRoleFixture(testInfo, 'merge-group-base', makeEditorSmokeRole(1));
+  const incomingFixture = await writeRoleFixture(
+    testInfo,
+    'merge-group-incoming',
+    { ...makeEditorSmokeRole(3), name: 'Merged Outfit' }
+  );
+
+  await importRoleFile(page, baseFixture, 1);
+  await page.getByTestId('merge-file-input').setInputFiles(incomingFixture);
+  const groupRows = page.locator('[data-testid^="group-row-"]');
+  await expect(groupRows).toHaveCount(1);
+  const groupRow = groupRows.first();
+  await expect(groupRow).toContainText('Merged Outfit');
+  await expect(groupRow).toHaveClass(/selected/);
+  await expect(page.locator('.layer-row.group-child')).toHaveCount(0);
+
+  await groupRow.getByTestId(/group-toggle-/).click();
+  await expect(page.locator('.layer-row.group-child')).toHaveCount(3);
+  await expect(page.locator('.layer-row.group-child.selected')).toHaveCount(3);
+
+  await page.getByTestId('undo-button').click();
+  await expect(page.locator('[data-testid^="group-row-"]')).toHaveCount(0);
+  await page.getByTestId('redo-button').click();
+  await expect(page.locator('[data-testid^="group-row-"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid^="group-row-"]').first()).toHaveClass(/selected/);
+  expectNoPageErrors(monitor);
+});
