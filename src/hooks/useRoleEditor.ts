@@ -101,6 +101,8 @@ export function useRoleEditor() {
     pasteClipboard: commands.pasteClipboard,
     mirrorCopyHorizontalSelected: commands.mirrorCopyHorizontalSelected,
     mirrorCopyVerticalSelected: commands.mirrorCopyVerticalSelected,
+    centerMirrorCopyHorizontalSelected: commands.centerMirrorCopyHorizontalSelected,
+    centerMirrorCopyVerticalSelected: commands.centerMirrorCopyVerticalSelected,
     reorderDecorations: commands.reorderDecorations,
     moveSelectedToBoundary: commands.moveSelectedToBoundary,
     changeCamp: commands.changeCamp,

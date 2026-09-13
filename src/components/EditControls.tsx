@@ -27,6 +27,8 @@ export function EditControls({
   onFlip,
   onMirrorCopyHorizontal,
   onMirrorCopyVertical,
+  onCenterMirrorCopyHorizontal,
+  onCenterMirrorCopyVertical,
   onFaceRotate,
   onOpenWeaponAnimation,
   onStartWeaponAnimation,
@@ -55,6 +57,8 @@ export function EditControls({
         onFlip={onFlip}
         onMirrorCopyHorizontal={onMirrorCopyHorizontal}
         onMirrorCopyVertical={onMirrorCopyVertical}
+        onCenterMirrorCopyHorizontal={onCenterMirrorCopyHorizontal}
+        onCenterMirrorCopyVertical={onCenterMirrorCopyVertical}
         onFaceRotate={onFaceRotate}
         onOpenWeaponAnimation={onOpenWeaponAnimation}
         onStartWeaponAnimation={onStartWeaponAnimation}

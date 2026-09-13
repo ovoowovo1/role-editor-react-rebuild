@@ -3,6 +3,8 @@ import { HEAD_LAYER_ID } from '../../constants/layers';
 import { makeDecorationLayer, makePartOption, makeRoleDocument } from '../../test/roleFixtures';
 import {
   beginTransientSession,
+  centeredMirroredCopiedDecorations,
+  centeredMirroredExpansion,
   clipboardDecorationsFromSelection,
   commandSelectionIdsForRole,
   commitTransientSession,
@@ -70,6 +72,118 @@ describe('editor role commands', () => {
     expect(mirroredY[0]).toMatchObject({ y: 8.77, scaleY: -3, rotation: 90 });
     expect(mirroredX[0].id).not.toBe(selected[0].id);
     expect(mirroredY[0].id).not.toBe(selected[0].id);
+  });
+
+  it('mirrors a single decoration around the role centre without moving the original', () => {
+    const selected = [
+      makeDecorationLayer('a', {
+        x: 12.345,
+        y: -8.765,
+        scaleX: 2,
+        scaleY: 3,
+        rotation: 270,
+        visible: false,
+        opacity: 0.4
+      })
+    ];
+
+    const expandedX = centeredMirroredExpansion(selected, 'horizontal');
+    const expandedY = centeredMirroredExpansion(selected, 'vertical');
+
+    expect(expandedX.originalDecorations).toEqual(selected);
+    expect(expandedY.originalDecorations).toEqual(selected);
+    expect(expandedX.originalDecorations[0]).not.toBe(selected[0]);
+    expect(expandedX.copiedDecorations).toHaveLength(1);
+    expect(expandedX.copiedDecorations[0]).toMatchObject({
+      x: 0,
+      y: 0,
+      scaleX: -2,
+      scaleY: 3,
+      rotation: 90,
+      visible: false,
+      opacity: 0.4
+    });
+    expect(expandedX.copiedDecorations[0].id).not.toBe(selected[0].id);
+    expect(expandedY.copiedDecorations[0].id).not.toBe(selected[0].id);
+
+    expect(expandedY.copiedDecorations[0]).toMatchObject({
+      x: 0,
+      y: 0,
+      scaleX: 2,
+      scaleY: -3,
+      rotation: 90,
+      visible: false,
+      opacity: 0.4
+    });
+
+    expect(selected[0]).toMatchObject({ x: 12.345, y: -8.765, scaleX: 2, scaleY: 3, rotation: 270 });
+  });
+
+  it('mirrors a multi-selection around its arithmetic centre without moving originals', () => {
+    const selected = [
+      makeDecorationLayer('a', { x: 10, y: 4 }),
+      makeDecorationLayer('b', { x: 30, y: 14, scaleX: 2, scaleY: 3, rotation: 45 })
+    ];
+
+    const expandedX = centeredMirroredExpansion(selected, 'horizontal');
+    const expandedY = centeredMirroredExpansion(selected, 'vertical');
+
+    expect(expandedX.originalDecorations).toEqual(selected);
+    expect(expandedY.originalDecorations).toEqual(selected);
+    expect(expandedX.copiedDecorations.map(({ x, y }) => ({ x, y }))).toEqual([
+      { x: 10, y: -5 },
+      { x: -10, y: 5 }
+    ]);
+    expect(expandedY.copiedDecorations.map(({ x, y }) => ({ x, y }))).toEqual([
+      { x: -10, y: 5 },
+      { x: 10, y: -5 }
+    ]);
+    expect(expandedX.copiedDecorations.map(({ scaleX, scaleY, rotation }) => ({ scaleX, scaleY, rotation }))).toEqual([
+      { scaleX: -1, scaleY: 1, rotation: -0 },
+      { scaleX: -2, scaleY: 3, rotation: -45 }
+    ]);
+    expect(expandedY.copiedDecorations.map(({ scaleX, scaleY, rotation }) => ({ scaleX, scaleY, rotation }))).toEqual([
+      { scaleX: 1, scaleY: -1, rotation: -0 },
+      { scaleX: 2, scaleY: -3, rotation: -45 }
+    ]);
+  });
+
+  it('places a mirrored multi-selection around the head origin while preserving source positions', () => {
+    const selected = [
+      makeDecorationLayer('a', { x: -75.3, y: -42.66 }),
+      makeDecorationLayer('b', { x: -61.3, y: -39.66 })
+    ];
+
+    const copies = centeredMirroredCopiedDecorations(selected, 'horizontal');
+
+    expect(copies.map(({ x, y }) => ({ x, y }))).toEqual([
+      { x: 7, y: -1.5 },
+      { x: -7, y: 1.5 }
+    ]);
+    expect(selected.map(({ x, y }) => ({ x, y }))).toEqual([
+      { x: -75.3, y: -42.66 },
+      { x: -61.3, y: -39.66 }
+    ]);
+  });
+
+  it('keeps the copy-only helper aligned with the expansion copy half', () => {
+    const selected = [makeDecorationLayer('a', { x: 4, y: 5 })];
+    const expanded = centeredMirroredExpansion(selected, 'horizontal');
+    const copies = centeredMirroredCopiedDecorations(selected, 'horizontal');
+
+    expect(copies).toHaveLength(1);
+    expect(copies[0]).toMatchObject({
+      x: expanded.copiedDecorations[0].x,
+      y: expanded.copiedDecorations[0].y,
+      scaleX: expanded.copiedDecorations[0].scaleX,
+      scaleY: expanded.copiedDecorations[0].scaleY,
+      rotation: expanded.copiedDecorations[0].rotation
+    });
+  });
+
+  it('returns no center-mirror copies for an empty selection', () => {
+    expect(centeredMirroredCopiedDecorations([], 'horizontal')).toEqual([]);
+    expect(centeredMirroredExpansion([], 'vertical')).toEqual({ originalDecorations: [], copiedDecorations: [] });
   });
 
   it('pastes local clipboard copies and returns ids for selection restoration', () => {

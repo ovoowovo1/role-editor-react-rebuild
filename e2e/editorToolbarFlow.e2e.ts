@@ -5,6 +5,7 @@ import {
   importRoleFile,
   makeEditorSmokeRole,
   nonHeadDecoCodes,
+  nonHeadDecoEntries,
   readLegacyPayload,
   visibleLayerIds,
   watchPageErrors,
@@ -34,6 +35,60 @@ test('copy, paste, mirror copy, and delete selected update exported layer count'
 
   const exportPath = await downloadJsonExport(page, testInfo, 'toolbar-export.json');
   expect(nonHeadDecoCodes(await readLegacyPayload(exportPath))).toHaveLength(3);
+  expectNoPageErrors(monitor);
+});
+
+test('centre mirror copy buttons expand a single selection around the role centre', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'toolbar-centre-mirror-source', makeEditorSmokeRole(2));
+
+  await importRoleFile(page, fixture, 2);
+  await page.getByTestId('layer-row-e2e-deco-2').locator('.layer-badge').click();
+
+  await expect(page.getByTestId('toolbar-center-mirror-copy-horizontal-button').locator('.material-icons')).toHaveText('vertical_align_center');
+  await expect(page.getByTestId('toolbar-center-mirror-copy-vertical-button').locator('.material-icons')).toHaveText('format_align_center');
+
+  await page.getByTestId('toolbar-center-mirror-copy-horizontal-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toHaveLength(4);
+  await expect(page.locator('[data-testid^="layer-row-"].selected')).toHaveCount(1);
+  let exportPath = await downloadJsonExport(page, testInfo, 'toolbar-centre-horizontal.json');
+  let entries = nonHeadDecoEntries(await readLegacyPayload(exportPath));
+  expect(entries.filter((entry) => entry.x === 8 && entry.y === -6)).toHaveLength(1);
+  expect(entries.filter((entry) => entry.x === 0 && entry.y === 0)).toHaveLength(2);
+
+  await page.getByTestId('undo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toHaveLength(3);
+  await page.getByTestId('redo-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toHaveLength(4);
+
+  await page.getByTestId('layer-row-e2e-deco-2').locator('.layer-badge').click();
+  await page.getByTestId('toolbar-center-mirror-copy-vertical-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toHaveLength(5);
+  await expect(page.locator('[data-testid^="layer-row-"].selected')).toHaveCount(1);
+  exportPath = await downloadJsonExport(page, testInfo, 'toolbar-centre-vertical.json');
+  entries = nonHeadDecoEntries(await readLegacyPayload(exportPath));
+  expect(entries.filter((entry) => entry.x === 8 && entry.y === -6)).toHaveLength(1);
+  expect(entries.filter((entry) => entry.x === 0 && entry.y === 0)).toHaveLength(3);
+  expectNoPageErrors(monitor);
+});
+
+test('centre mirror copy preserves the current multi-selection centre', async ({ page }, testInfo) => {
+  const monitor = watchPageErrors(page);
+  const fixture = await writeRoleFixture(testInfo, 'toolbar-centre-mirror-multi-source', makeEditorSmokeRole(2));
+
+  await importRoleFile(page, fixture, 2);
+  await page.getByTestId('layer-row-e2e-deco-1').locator('.layer-badge').click();
+  await page.getByTestId('layer-row-e2e-deco-2').locator('.layer-badge').click({ modifiers: ['ControlOrMeta'] });
+
+  await page.getByTestId('toolbar-center-mirror-copy-horizontal-button').click();
+  await expect.poll(() => visibleLayerIds(page)).toHaveLength(5);
+  await expect(page.locator('[data-testid^="layer-row-"].selected')).toHaveCount(2);
+  const exportPath = await downloadJsonExport(page, testInfo, 'toolbar-centre-multi-horizontal.json');
+  const entries = nonHeadDecoEntries(await readLegacyPayload(exportPath));
+  expect(entries.filter((entry) => entry.x === 0 && entry.y === 0)).toHaveLength(1);
+  expect(entries.filter((entry) => entry.x === 8 && entry.y === -6)).toHaveLength(1);
+  expect(entries.filter((entry) => entry.x === 4 && entry.y === 3)).toHaveLength(1);
+  expect(entries.filter((entry) => entry.x === -4 && entry.y === -3)).toHaveLength(1);
   expectNoPageErrors(monitor);
 });
 

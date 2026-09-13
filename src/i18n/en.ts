@@ -54,6 +54,8 @@ export const en: Record<string, string> = {
   'edit.flipHorizontal': 'Flip Horizontal',
   'edit.mirrorCopyH': 'Mirror Copy Horizontal',
   'edit.mirrorCopyV': 'Mirror Copy Vertical',
+  'edit.centerMirrorCopyH': 'Mirror Copy Horizontal to Center',
+  'edit.centerMirrorCopyV': 'Mirror Copy Vertical to Center',
   'edit.face': 'Face',
   'edit.weaponAnimation': 'Weapon Animation: {label}',
   'edit.startAnimation': 'Start weapon animation',

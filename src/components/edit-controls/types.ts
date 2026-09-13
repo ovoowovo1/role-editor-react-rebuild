@@ -26,6 +26,8 @@ export interface EditControlsProps {
   onFlip(): void;
   onMirrorCopyHorizontal(): void;
   onMirrorCopyVertical(): void;
+  onCenterMirrorCopyHorizontal(): void;
+  onCenterMirrorCopyVertical(): void;
   onFaceRotate(): void;
   onOpenWeaponAnimation(): void;
   onStartWeaponAnimation(): void;

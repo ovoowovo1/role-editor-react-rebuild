@@ -16,6 +16,8 @@ interface EditToolbarProps {
   onFlip(): void;
   onMirrorCopyHorizontal(): void;
   onMirrorCopyVertical(): void;
+  onCenterMirrorCopyHorizontal(): void;
+  onCenterMirrorCopyVertical(): void;
   onFaceRotate(): void;
   onOpenWeaponAnimation(): void;
   onStartWeaponAnimation(): void;
@@ -41,6 +43,8 @@ export function EditToolbar({
   onFlip,
   onMirrorCopyHorizontal,
   onMirrorCopyVertical,
+  onCenterMirrorCopyHorizontal,
+  onCenterMirrorCopyVertical,
   onFaceRotate,
   onOpenWeaponAnimation,
   onStartWeaponAnimation,
@@ -119,6 +123,32 @@ export function EditToolbar({
         >
           <span className="material-icons" aria-hidden="true">
             swap_vert
+          </span>
+        </button>
+        <button
+          type="button"
+          className="tool-icon-btn"
+          data-testid="toolbar-center-mirror-copy-horizontal-button"
+          disabled={disabled}
+          onClick={onCenterMirrorCopyHorizontal}
+          aria-label={t('edit.centerMirrorCopyH')}
+          title={t('edit.centerMirrorCopyH')}
+        >
+          <span className="material-icons" aria-hidden="true">
+            vertical_align_center
+          </span>
+        </button>
+        <button
+          type="button"
+          className="tool-icon-btn"
+          data-testid="toolbar-center-mirror-copy-vertical-button"
+          disabled={disabled}
+          onClick={onCenterMirrorCopyVertical}
+          aria-label={t('edit.centerMirrorCopyV')}
+          title={t('edit.centerMirrorCopyV')}
+        >
+          <span className="material-icons" aria-hidden="true">
+            format_align_center
           </span>
         </button>
         <button

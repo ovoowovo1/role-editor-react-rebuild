@@ -165,6 +165,62 @@ export function mirroredCopiedDecorations(
   );
 }
 
+export interface CenterMirrorExpansionResult {
+  originalDecorations: DecorationLayer[];
+  copiedDecorations: DecorationLayer[];
+}
+
+function centerMirrorPivot(selectedDecorations: readonly DecorationLayer[]): { x: number; y: number } {
+  const sum = selectedDecorations.reduce(
+    (acc, item) => ({ x: acc.x + item.x, y: acc.y + item.y }),
+    { x: 0, y: 0 }
+  );
+  return {
+    x: sum.x / selectedDecorations.length,
+    y: sum.y / selectedDecorations.length
+  };
+}
+
+export function centeredMirroredCopiedDecorations(
+  selectedDecorations: DecorationLayer[],
+  axis: 'horizontal' | 'vertical'
+): DecorationLayer[] {
+  if (!selectedDecorations.length) return [];
+  const pivot = centerMirrorPivot(selectedDecorations);
+  return selectedDecorations.map((item) =>
+    copyDecoration(
+      item,
+      axis === 'horizontal'
+        ? {
+            x: roundPosition(pivot.x - item.x),
+            y: roundPosition(item.y - pivot.y),
+            scaleX: -item.scaleX,
+            rotation: normalizeDegrees(-item.rotation)
+          }
+        : {
+            x: roundPosition(item.x - pivot.x),
+            y: roundPosition(pivot.y - item.y),
+            scaleY: -item.scaleY,
+            rotation: normalizeDegrees(-item.rotation)
+          }
+    )
+  );
+}
+
+/**
+ * Keeps the historical result shape for internal callers while ensuring that
+ * center-mirror commands never modify the original decoration positions.
+ */
+export function centeredMirroredExpansion(
+  selectedDecorations: DecorationLayer[],
+  axis: 'horizontal' | 'vertical'
+): CenterMirrorExpansionResult {
+  return {
+    originalDecorations: selectedDecorations.map((item) => ({ ...item })),
+    copiedDecorations: centeredMirroredCopiedDecorations(selectedDecorations, axis)
+  };
+}
+
 export function roleWithChosenBodyPart(
   current: RoleDocument,
   tab: BodyPartTab,

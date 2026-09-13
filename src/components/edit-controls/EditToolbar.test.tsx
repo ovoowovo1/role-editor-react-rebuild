@@ -19,6 +19,8 @@ function renderToolbar(headGlowAlwaysOn: boolean, facingQuarterTurns = 0): strin
       onFlip={vi.fn()}
       onMirrorCopyHorizontal={vi.fn()}
       onMirrorCopyVertical={vi.fn()}
+      onCenterMirrorCopyHorizontal={vi.fn()}
+      onCenterMirrorCopyVertical={vi.fn()}
       onFaceRotate={vi.fn()}
       onOpenWeaponAnimation={vi.fn()}
       onStartWeaponAnimation={vi.fn()}
@@ -43,6 +45,19 @@ describe('EditToolbar head glow toggle', () => {
     const html = renderToolbar(true);
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('關閉頭部長亮綠邊');
+  });
+
+  it('renders centre mirror copy buttons without changing the toolbar container', () => {
+    const html = renderToolbar(false);
+    expect(html).toContain('class="tool-row"');
+    expect(html).toContain('data-testid="toolbar-center-mirror-copy-horizontal-button"');
+    expect(html).toContain('data-testid="toolbar-center-mirror-copy-vertical-button"');
+    expect(html).toMatch(/data-testid="toolbar-center-mirror-copy-horizontal-button"[^>]*disabled/);
+    expect(html).toMatch(/data-testid="toolbar-center-mirror-copy-vertical-button"[^>]*disabled/);
+    expect(html).toContain('>vertical_align_center</span>');
+    expect(html).toContain('>format_align_center</span>');
+    expect(html).toContain('水平鏡像複製並移到中心');
+    expect(html).toContain('垂直鏡像複製並移到中心');
   });
 
   it.each([

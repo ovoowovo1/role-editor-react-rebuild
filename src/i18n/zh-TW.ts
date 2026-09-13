@@ -54,6 +54,8 @@ export const zhTW: Record<string, string> = {
   'edit.flipHorizontal': '水平翻轉',
   'edit.mirrorCopyH': '水平鏡像複製',
   'edit.mirrorCopyV': '垂直鏡像複製',
+  'edit.centerMirrorCopyH': '水平鏡像複製並移到中心',
+  'edit.centerMirrorCopyV': '垂直鏡像複製並移到中心',
   'edit.face': '臉部（對齊舊版占位）',
   'edit.weaponAnimation': '武器動畫：{label}',
   'edit.startAnimation': '開始武器動畫',

@@ -59,6 +59,8 @@ export function EditorStagePanel({ editor, shell }: EditorStagePanelProps) {
         onFlip={editor.flipSelected}
         onMirrorCopyHorizontal={editor.mirrorCopyHorizontalSelected}
         onMirrorCopyVertical={editor.mirrorCopyVerticalSelected}
+        onCenterMirrorCopyHorizontal={editor.centerMirrorCopyHorizontalSelected}
+        onCenterMirrorCopyVertical={editor.centerMirrorCopyVerticalSelected}
         onFaceRotate={shell.rotateFacing}
         onOpenWeaponAnimation={() => shell.setWeaponAnimationOpen(true)}
         onStartWeaponAnimation={() => shell.setBodyAnimationPlaying(true)}

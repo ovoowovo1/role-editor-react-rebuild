@@ -4,6 +4,7 @@ import type { DecorationLayer, EditorClipboardItem, RoleDocument } from '../type
 import { copiedClipboardItems } from '../lib/editor/editorDecorationMutations';
 import { insertDecorations, settingsForScope, type InsertDraftSettings } from '../lib/editor/editorInsertSettings';
 import {
+  centeredMirroredCopiedDecorations,
   clipboardDecorationsFromSelection,
   mirroredCopiedDecorations,
   pasteBaseClipboardIntoRole,
@@ -88,11 +89,29 @@ export function useRoleClipboardCommands({
     commitRole(nextRole, copied.map((item) => item.id));
   }, [commitRole, insertDraftSettings, roleRef, stableSelectedDecorations]);
 
+  const centerMirrorCopyHorizontalSelected = useCallback(() => {
+    if (!stableSelectedDecorations.length) return;
+    const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.copy);
+    const copied = centeredMirroredCopiedDecorations(stableSelectedDecorations, 'horizontal');
+    const nextRole = insertDecorations(roleRef.current, copied, settings);
+    commitRole(nextRole, copied.map((item) => item.id));
+  }, [commitRole, insertDraftSettings, roleRef, stableSelectedDecorations]);
+
+  const centerMirrorCopyVerticalSelected = useCallback(() => {
+    if (!stableSelectedDecorations.length) return;
+    const settings = settingsForScope(insertDraftSettings, insertDraftSettings.scopes.copy);
+    const copied = centeredMirroredCopiedDecorations(stableSelectedDecorations, 'vertical');
+    const nextRole = insertDecorations(roleRef.current, copied, settings);
+    commitRole(nextRole, copied.map((item) => item.id));
+  }, [commitRole, insertDraftSettings, roleRef, stableSelectedDecorations]);
+
   return {
     clipboardCount: baseClipboard.length,
     copySelected,
     pasteClipboard,
     mirrorCopyHorizontalSelected,
-    mirrorCopyVerticalSelected
+    mirrorCopyVerticalSelected,
+    centerMirrorCopyHorizontalSelected,
+    centerMirrorCopyVerticalSelected
   };
 }
