@@ -19,13 +19,13 @@ import { useHistory } from './useHistory';
 import {
   applyRoleHistoryPatch,
   createHistoryIdPool,
-  makeBaseRoleHistoryEntry,
-  type HistoryIdPool,
-  type RoleHistoryBaseEntry
-} from '../lib/editor/editorTransformHistory';
+  makeBaseRoleHistoryEntry
+} from '../lib/editor/editorRoleHistoryPatch';
+import type { HistoryIdPool, RoleHistoryBaseEntry } from '../lib/editor/editorHistoryTypes';
+import { sameRole } from '../lib/editor/editorHistoryTypes';
 
 function sameRoleReference(a: RoleDocument, b: RoleDocument): boolean {
-  return a === b;
+  return sameRole(a, b);
 }
 
 export function useEditorState() {
@@ -41,14 +41,14 @@ export function useEditorState() {
     }),
     []
   );
-  const history = useHistory<RoleDocument, RoleHistoryBaseEntry>(createDefaultRole(), {
+  const roleHistory = useHistory<RoleDocument, RoleHistoryBaseEntry>(createDefaultRole(), {
     limit: EDITOR_BASE_HISTORY_LIMIT,
     // The patch codec performs the substantive change check. Avoid
     // serializing all decorations for every transient transform frame.
     isEqual: sameRoleReference,
     codec: roleHistoryCodec
   });
-  const { present: role, setPresent: setRole } = history;
+  const { present: role, setPresent: setRole } = roleHistory;
   const roleRef = useRef(role);
   const [selectedTab, setSelectedTab] = useState<PartTab>('deco');
   const [stageScale, setStageScaleState] = useState(EDITOR_STAGE_MIN_SCALE);
@@ -82,7 +82,7 @@ export function useEditorState() {
   }, []);
 
   return {
-    history,
+    roleHistory,
     role,
     setRole,
     roleRef,

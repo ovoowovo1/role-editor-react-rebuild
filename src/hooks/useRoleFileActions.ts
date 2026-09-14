@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { t } from '../i18n';
 import { downloadBlob } from '../lib/math';
-import { parseRoleFileWithWorkerFallback } from '../lib/serialization/roleSerialization';
+import { parseRoleFileWithWorkerFallback } from '../lib/serialization/roleSerializationImport';
 import { createRoleJsonBlobWithThumb, createTwroleBlobWithThumb } from '../lib/serialization/legacyTwroleExport';
 import type { RoleDocument } from '../types/role';
 

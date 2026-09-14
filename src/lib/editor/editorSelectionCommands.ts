@@ -2,7 +2,7 @@ import { HEAD_LAYER_ID } from '../../constants/layers';
 import type { DecorationLayer, RoleDocument } from '../../types/role';
 import { descendantLayerIdsForGroup } from './groupTree';
 import { layerIdsForRole } from './layerOrdering';
-import { roundPosition } from './editorTransformHistory';
+import { roundPosition } from './editorTransformUtils';
 
 export function selectedLayerIdsForGroup(role: RoleDocument, groupId: string): string[] {
   const group = role.groups?.find((item) => item.id === groupId);

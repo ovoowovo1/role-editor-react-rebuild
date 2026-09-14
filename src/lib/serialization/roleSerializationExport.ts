@@ -3,7 +3,7 @@ import {
   createRoleJsonBlobWithThumb,
   createTwroleBlobWithThumb
 } from './legacyTwroleExport';
-import { normalizeRoleDocument } from './roleSerializationImport';
+import { normalizeRoleDocument } from './roleSchemaV1';
 import {
   rotationRadiansForExport,
   type LegacyCompactDecoEntry,

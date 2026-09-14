@@ -22,7 +22,11 @@ export interface HistoryMeta {
 }
 
 export function defaultHistorySerialize<T>(value: T): string {
-  return (value as any).updatedAt ?? JSON.stringify(value);
+  if (typeof value === 'object' && value !== null && 'updatedAt' in value) {
+    const updatedAt = (value as { updatedAt?: unknown }).updatedAt;
+    if (typeof updatedAt === 'string') return updatedAt;
+  }
+  return JSON.stringify(value);
 }
 
 export function createHistoryState<T>(initialValue: T): HistoryState<T> {

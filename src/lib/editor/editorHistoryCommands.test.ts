@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { makeDecorationLayer, makeRoleDocument } from '../../test/roleFixtures';
-import { makeRoleHistoryEntry, type LocalHistoryEntry } from './editorTransformHistory';
-import { resolveLocalRedo, resolveLocalUndo } from './editorHistoryCommands';
+import { makeRoleHistoryEntry } from './editorRoleHistoryPatch';
+import type { LocalHistoryEntry } from './editorHistoryTypes';
+import { resolveLocalRedo, resolveLocalUndo, resolveRoleHistoryStack } from './editorHistoryCommands';
 
 describe('editor history commands', () => {
+  it('routes undo and redo to local history before base history', () => {
+    expect(resolveRoleHistoryStack(true, true)).toBe('local');
+    expect(resolveRoleHistoryStack(true, false)).toBe('local');
+    expect(resolveRoleHistoryStack(false, true)).toBe('base');
+    expect(resolveRoleHistoryStack(false, false)).toBeNull();
+  });
+
   it('undoes translate entries and moves them to future history', () => {
     const current = makeRoleDocument({
       decorations: [makeDecorationLayer('a', { x: 10, y: 20 })]

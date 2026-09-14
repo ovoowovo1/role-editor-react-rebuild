@@ -2,21 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { HEAD_LAYER_ID } from '../../constants/layers';
 import type { DecorationGroup, DecorationLayer, RoleDocument } from '../../types/role';
 import {
-  LOCAL_HISTORY_LIMIT,
   applyDecorationTransformTarget,
   applyTranslateDelta,
   captureDecorationTransforms,
-  applyRoleHistoryPatch,
-  createHistoryIdPool,
-  createRoleHistoryPatch,
-  makeRoleHistoryEntry,
   pushLocalFutureEntry,
   pushLocalHistoryEntry,
   removeSelectedDecos,
   sameTransformTarget,
-  validSelectionIds,
-  type LocalHistoryEntry
-} from './editorTransformHistory';
+  validSelectionIds
+} from './editorTransformUtils';
+import {
+  applyRoleHistoryPatch,
+  createHistoryIdPool,
+  createRoleHistoryPatch,
+  makeRoleHistoryEntry
+} from './editorRoleHistoryPatch';
+import { LOCAL_HISTORY_LIMIT, sameRole } from './editorHistoryTypes';
+import type { LocalHistoryEntry } from './editorHistoryTypes';
 
 function layer(id: string, patch: Partial<DecorationLayer> = {}): DecorationLayer {
   return {
@@ -65,6 +67,22 @@ function role(patch: Partial<RoleDocument> = {}): RoleDocument {
 }
 
 describe('editor transform history', () => {
+  it('compares persisted role fields without serializing updatedAt', () => {
+    const before = role();
+    expect(sameRole(before, { ...before, updatedAt: 'later' })).toBe(true);
+    expect(sameRole(before, { ...before, name: 'changed', updatedAt: 'later' })).toBe(false);
+    expect(sameRole(before, { ...before, schemaVersion: 2 } as unknown as RoleDocument)).toBe(false);
+    expect(sameRole(before, { ...before, camp: 'royal' })).toBe(false);
+    expect(sameRole(before, { ...before, gender: 'female' })).toBe(false);
+    expect(sameRole(before, { ...before, positionRange: 99 })).toBe(false);
+    expect(sameRole(before, { ...before, parts: { ...before.parts, hand: 'other' } })).toBe(false);
+    expect(sameRole(before, { ...before, partFrames: { ...before.partFrames, head: 2 } })).toBe(false);
+    expect(sameRole(before, { ...before, partScales: { ...before.partScales, cape: 2 } })).toBe(false);
+    expect(sameRole(before, { ...before, headLayer: { ...before.headLayer, opacity: 0.5 } })).toBe(false);
+    expect(sameRole(before, { ...before, decorations: [layer('a'), layer('c')] })).toBe(false);
+    expect(sameRole(before, { ...before, groups: [{ id: 'g', name: 'g', itemIds: ['a'], visible: true, collapsed: false }] })).toBe(false);
+  });
+
   it('applies translation only to real selected decoration ids', () => {
     const current = role({ decorations: [layer('a', { x: 1, y: 2 }), layer('b', { x: 3, y: 4 })] });
 

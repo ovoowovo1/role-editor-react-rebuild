@@ -1,6 +1,7 @@
 import type { DecorationLayer, HeadLayerTransform } from '../../types/role';
 import { SAFE_SCALE_FALLBACK } from '../../constants/legacy';
 import { normalizeDegrees, safeNumber } from '../math';
+import { asRecord, readProperty } from './rawInput';
 
 export interface LegacyCompactDecoEntry {
   c: string;
@@ -52,9 +53,10 @@ export function degreesToNormalized(raw: unknown): number {
   return normalizeDegrees(safeNumber(raw, 0));
 }
 
-export function readRotationDegrees(input: any): number {
-  if (input && Object.prototype.hasOwnProperty.call(input, 'r')) return radiansToDegrees(input.r);
-  return degreesToNormalized(input?.rotation);
+export function readRotationDegrees(input: unknown): number {
+  const record = asRecord(input);
+  if (record && Object.prototype.hasOwnProperty.call(record, 'r')) return radiansToDegrees(readProperty(record, 'r'));
+  return degreesToNormalized(readProperty(record, 'rotation'));
 }
 
 export function rememberLegacyDecorationRotation(id: string, rawRadians: unknown, rotationDegrees: number): void {

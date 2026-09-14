@@ -3,11 +3,26 @@ import {
   applyDecorationTransformTarget,
   applyTranslateDelta,
   captureDecorationTransforms,
-  applyRoleHistoryPatch,
   pushLocalFutureEntry,
   pushLocalHistoryEntry,
-  type LocalHistoryEntry
-} from './editorTransformHistory';
+} from './editorTransformUtils';
+import { applyRoleHistoryPatch } from './editorRoleHistoryPatch';
+import type { LocalHistoryEntry } from './editorHistoryTypes';
+
+export type RoleHistoryStack = 'local' | 'base';
+
+/**
+ * Local history entries carry selection-aware compact operations. The base
+ * history is the fallback for updates that do not need that metadata.
+ */
+export function resolveRoleHistoryStack(
+  localAvailable: boolean,
+  baseAvailable: boolean
+): RoleHistoryStack | null {
+  if (localAvailable) return 'local';
+  if (baseAvailable) return 'base';
+  return null;
+}
 
 export interface LocalHistoryCommandResult {
   localPast: LocalHistoryEntry[];

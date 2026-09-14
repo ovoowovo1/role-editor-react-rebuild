@@ -2,23 +2,19 @@ import { useCallback } from 'react';
 import type { MutableRefObject } from 'react';
 import { HEAD_LAYER_ID } from '../constants/layers';
 import { commandSelectionIdsForRole } from '../lib/editor/editorRoleCommands';
-import { applyTranslateDelta } from '../lib/editor/editorTransformHistory';
+import { applyTranslateDelta } from '../lib/editor/editorTransformUtils';
 import type { RoleDocument } from '../types/role';
-
-interface BaseHistoryReset {
-  reset(next: RoleDocument, keepHistory?: boolean): void;
-}
 
 export function useRoleDragCommands({
   roleRef,
-  history,
+  resetRole,
   stableSelectedIds,
   selectedIdsRef,
   recordLocalHistoryEntry,
   restoreSelection
 }: {
   roleRef: MutableRefObject<RoleDocument>;
-  history: BaseHistoryReset;
+  resetRole(next: RoleDocument, keepHistory?: boolean): void;
   stableSelectedIds: string[];
   selectedIdsRef: MutableRefObject<string[]>;
   recordLocalHistoryEntry(entry: { kind: 'translate'; ids: string[]; dx: number; dy: number; selectionIds: string[] }): void;
@@ -41,10 +37,10 @@ export function useRoleDragCommands({
       if (nextRole === roleRef.current) return;
 
       recordLocalHistoryEntry({ kind: 'translate', ids, dx, dy, selectionIds });
-      history.reset(nextRole);
+      resetRole(nextRole);
       restoreSelection(selectionIds);
     },
-    [history, recordLocalHistoryEntry, restoreSelection, roleRef, selectedIdsRef, stableSelectedIds]
+    [recordLocalHistoryEntry, resetRole, restoreSelection, roleRef, selectedIdsRef, stableSelectedIds]
   );
 
   return { commitDrag };

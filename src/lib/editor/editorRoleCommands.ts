@@ -6,13 +6,11 @@ import { pasteClipboardIntoRole } from './editorDecorationMutations';
 import { insertDecorations, type InsertDraftSettings } from './editorInsertSettings';
 import {
   captureDecorationTransforms,
-  makeRoleHistoryEntry,
   roundPosition,
-  validSelectionIds,
-  type DecorationTransformTarget,
-  type HistoryIdPool,
-  type LocalHistoryEntry
-} from './editorTransformHistory';
+} from './editorTransformUtils';
+import { makeRoleHistoryEntry } from './editorRoleHistoryPatch';
+import { validSelectionIds } from './editorTransformUtils';
+import type { DecorationTransformTarget, HistoryIdPool, LocalHistoryEntry } from './editorHistoryTypes';
 
 const BASE_CLIPBOARD_PASTE_OFFSET_STEP = 8;
 

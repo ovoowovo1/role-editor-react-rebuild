@@ -2,12 +2,36 @@ import { createDefaultRole, partOptions } from '../src/mock/options';
 import { cloneRole, syncGroups, touch } from '../src/lib/editor/editorRoleUtils';
 import { applyTransformUpdate } from '../src/lib/editor/editorTransformUpdates';
 import { nudgeSelectedRole, applySingleTransformPatchToSelectedRole } from '../src/lib/editor/editorGroupTransformCommands';
-import { captureDecorationTransforms } from '../src/lib/editor/editorTransformHistory';
+import { captureDecorationTransforms } from '../src/lib/editor/editorTransformUtils';
+import type { LocalHistoryEntry } from '../src/lib/editor/editorHistoryTypes';
 import { resolveLocalUndo, resolveLocalRedo } from '../src/lib/editor/editorHistoryCommands';
 import type { RoleDocument } from '../src/types/role';
 
 // Deliberately outside src: globals and controls exist only in benchmark builds.
-const bench = globalThis as any;
+interface BenchmarkEditor {
+  role: RoleDocument;
+  selectedDecorationIds: string[];
+  importRole(role: RoleDocument): void;
+  selectMultipleDecorations(ids: string[]): void;
+  nudgeSelected(dx: number, dy: number): void;
+  updateSelectedTransform(patch: { scale: number }, commit: boolean): void;
+  commitDrag(ids: string[], dx: number, dy: number): void;
+  undo(): void;
+  redo(): void;
+}
+
+interface RenderedBenchmarkState {
+  time: number;
+  role: RoleDocument;
+  selection: string[];
+}
+
+interface BenchmarkGlobals {
+  __benchEditor: BenchmarkEditor;
+  __benchRendered?: RenderedBenchmarkState;
+}
+
+const bench = globalThis as typeof globalThis & BenchmarkGlobals;
 const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 const summary = (samples: number[]) => {
   const sorted = [...samples].sort((a, b) => a - b);
@@ -61,7 +85,7 @@ bench.__runEditorBenchmark = async (count: number, scenarios = ['position', 'sca
     let current = role;
     const target = captureDecorationTransforms(role, selected);
     const changed = nudgeSelectedRole(role, selected, 1, 0);
-    let history = { nextRole: changed, localPast: [{ kind: 'transform' as const, target, selectionIds: selected }], localFuture: [] as any[] };
+    let history = { nextRole: changed, localPast: [{ kind: 'transform' as const, target, selectionIds: selected }] as LocalHistoryEntry[], localFuture: [] as LocalHistoryEntry[] };
     const samples: number[] = [];
     for (let round = -1; round < 5; round++) {
       for (let i = 0; i < 30; i++) {

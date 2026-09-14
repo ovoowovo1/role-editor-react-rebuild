@@ -3,14 +3,11 @@ import { gzip } from 'pako';
 import type { DecorationLayer, RoleDocument } from '../../types/role';
 import {
   createTwroleBlob,
-  decodeRolePayload,
-  exportOriginalLikeRoleConfig,
-  isMissingDecoAssetId,
-  makeMissingDecoAssetId,
-  normalizeImportedRole,
-  parseRoleBytes,
-  parseRoleFileWithWorkerFallback
-} from './roleSerialization';
+  exportOriginalLikeRoleConfig
+} from './roleSerializationExport';
+import { normalizeImportedRole, parseRoleBytes, parseRoleFileWithWorkerFallback } from './roleSerializationImport';
+import { decodeRolePayload } from './rolePayloadDecoder';
+import { isMissingDecoAssetId, makeMissingDecoAssetId } from './roleSerializationLegacy';
 
 vi.mock('../stage/fullRoleRenderer', () => ({
   renderFullRoleToDataUrl: vi.fn(async () => ({
@@ -105,6 +102,12 @@ afterEach(() => {
 });
 
 describe('role serialization', () => {
+  it('normalizes unknown and malformed envelopes without throwing', () => {
+    expect(normalizeImportedRole(null).role.decorations).toEqual([]);
+    expect(normalizeImportedRole(42).role.decorations).toEqual([]);
+    expect(normalizeImportedRole({ data: { schemaVersion: 1, parts: null, decorations: 'invalid' } }).role.schemaVersion).toBe(1);
+  });
+
   it('marks unknown deco ids as missing placeholders', () => {
     const assetId = makeMissingDecoAssetId('missing_deco');
 

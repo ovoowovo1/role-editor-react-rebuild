@@ -10,7 +10,7 @@ import {
 } from '../lib/editor/editorDecorationMutations';
 import { insertDecorations, settingsForScope, type InsertDraftSettings } from '../lib/editor/editorInsertSettings';
 import { toggleHeadVisibility } from '../lib/editor/headLayerMutations';
-import { removeSelectedDecos } from '../lib/editor/editorTransformHistory';
+import { removeSelectedDecos } from '../lib/editor/editorTransformUtils';
 import { makeCenteredDecoration } from '../lib/editor/editorImportMerge';
 import { cloneRole } from '../lib/editor/editorRoleUtils';
 import {
@@ -20,14 +20,10 @@ import {
 import { useRoleDragCommands } from './useRoleDragCommands';
 import { useRoleTransformCommands } from './useRoleTransformCommands';
 
-interface BaseHistoryReset {
-  reset(next: RoleDocument, keepHistory?: boolean): void;
-}
-
 interface UseRoleDecorationCommandsOptions {
   role: RoleDocument;
   roleRef: MutableRefObject<RoleDocument>;
-  history: BaseHistoryReset;
+  resetRole(next: RoleDocument, keepHistory?: boolean): void;
   insertDraftSettings: InsertDraftSettings;
   selectedDecorationIds: string[];
   stableSelectedIds: string[];
@@ -45,7 +41,7 @@ interface UseRoleDecorationCommandsOptions {
 export function useRoleDecorationCommands({
   role,
   roleRef,
-  history,
+  resetRole,
   insertDraftSettings,
   selectedDecorationIds,
   stableSelectedIds,
@@ -73,7 +69,7 @@ export function useRoleDecorationCommands({
   });
   const dragCommands = useRoleDragCommands({
     roleRef,
-    history,
+    resetRole,
     stableSelectedIds,
     selectedIdsRef,
     recordLocalHistoryEntry,

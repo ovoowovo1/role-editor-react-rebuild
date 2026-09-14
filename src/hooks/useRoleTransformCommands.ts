@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import type { MutableRefObject } from 'react';
 import { HEAD_LAYER_ID } from '../constants/layers';
 import type { DecorationLayer, RoleDocument, TransformValues } from '../types/role';
-import { transformValuesFromSingleDeco } from '../lib/editor/editorTransformHistory';
+import { transformValuesFromSingleDeco } from '../lib/editor/editorTransformUtils';
 import { patchDecorationForSelectionDrag } from '../lib/editor/editorSelectionCommands';
 import { selectionIdsForCommand } from '../lib/editor/editorRoleCommands';
 import { useEditorGroupTransform } from './useEditorGroupTransform';

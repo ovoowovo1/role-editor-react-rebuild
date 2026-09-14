@@ -3,7 +3,7 @@ import { HEAD_LAYER_ID } from '../../constants/layers';
 import { makeDecorationLayer, makeRoleDocument } from '../../test/roleFixtures';
 import type { ImportResult } from '../../types/role';
 import { applyLegacyPayloadMetadata, getLegacyCampGender } from './legacyGroupImport';
-import { normalizeImportedRole } from './roleSerialization';
+import { normalizeImportedRole } from './roleSerializationImport';
 
 function importResult(): ImportResult {
   return {

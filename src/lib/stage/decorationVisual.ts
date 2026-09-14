@@ -5,7 +5,7 @@ import { optionById } from '../../mock/options';
 import { applyGafAtlasToSprite } from '../runtime/gafAtlasSprite';
 import { createGafClip } from '../runtime/gafMovieClip';
 import { decorationRuntimeManifest } from '../runtime/gafRuntimeManifest';
-import { isMissingDecoAssetId } from '../serialization/roleSerialization';
+import { isMissingDecoAssetId } from '../serialization/roleSerializationLegacy';
 import { displayTransformPatchForDecoration } from './characterStageHelpers';
 
 const ALPHA_MASK_DECO_CODES: Set<string> = new Set();

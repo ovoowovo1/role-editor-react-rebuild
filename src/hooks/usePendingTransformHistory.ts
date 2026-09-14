@@ -5,9 +5,8 @@ import {
 import {
   captureDecorationTransforms,
   sameTransformTarget,
-  type DecorationTransformTarget,
-  type LocalHistoryEntry
-} from '../lib/editor/editorTransformHistory';
+} from '../lib/editor/editorTransformUtils';
+import type { DecorationTransformTarget, LocalHistoryEntry } from '../lib/editor/editorHistoryTypes';
 import type { RoleDocument } from '../types/role';
 
 export function usePendingTransformHistory({

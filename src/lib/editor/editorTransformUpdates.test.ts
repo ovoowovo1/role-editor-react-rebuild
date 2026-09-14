@@ -3,7 +3,7 @@ import { makeDecorationLayer, makeRoleDocument, makeDecorationGroup } from '../.
 import { applyTransformUpdate } from './editorTransformUpdates';
 import { applySingleTransformPatchToSelectedRole, nudgeSelectedRole, flipSelectedRole, applyGroupTransformToSelectedRole } from './editorGroupTransformCommands';
 import { snapshotGroupSelection, DECO_GROUP_IDENTITY } from './decoGroupTransform';
-import { createHistoryIdPool, makeBaseRoleHistoryEntry } from './editorTransformHistory';
+import { createHistoryIdPool, makeBaseRoleHistoryEntry } from './editorRoleHistoryPatch';
 
 function frozenRole() {
   const role = makeRoleDocument({

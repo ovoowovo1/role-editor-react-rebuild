@@ -11,7 +11,7 @@ import {
   decorationSelectionIndex, orderedIndexedDecorations, retainEqualArray,
   stableIndexedSelectionIds, validIndexedLayerIds, type DecorationSelectionIndex
 } from '../lib/editor/editorSelectionIndex';
-import type { DecorationTransformTarget } from '../lib/editor/editorTransformHistory';
+import type { DecorationTransformTarget } from '../lib/editor/editorHistoryTypes';
 import type { RoleDocument } from '../types/role';
 
 interface UseRoleSelectionOptions {

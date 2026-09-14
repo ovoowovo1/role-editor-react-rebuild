@@ -2,19 +2,16 @@ import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction 
 import { camps, createDefaultRole } from '../mock/options';
 import type { GenderCode, PartTab, RoleDocument } from '../types/role';
 import type { InsertDraftSettings } from '../lib/editor/editorInsertSettings';
-import { useHistory } from './useHistory';
 import { useRoleClipboardCommands } from './useRoleClipboardCommands';
 import { useRoleDecorationCommands } from './useRoleDecorationCommands';
-import { useRoleEditorHistory } from './useRoleEditorHistory';
+import { useRoleHistoryController, type RoleBaseHistoryApi } from './useRoleHistoryController';
 import { useRoleGroupCommands } from './useRoleGroupCommands';
 import { useRoleLayerCommands } from './useRoleLayerCommands';
 import { useRoleMergeCommands } from './useRoleMergeCommands';
 import { useRoleSelection } from './useRoleSelection';
 
-type EditorHistory = ReturnType<typeof useHistory<RoleDocument>>;
-
 export function useEditorCommands({
-  history,
+  roleHistory,
   role,
   roleRef,
   insertDraftSettings,
@@ -22,7 +19,7 @@ export function useEditorCommands({
   updateRole,
   updateTransformRole
 }: {
-  history: EditorHistory;
+  roleHistory: RoleBaseHistoryApi;
   role: RoleDocument;
   roleRef: MutableRefObject<RoleDocument>;
   insertDraftSettings: InsertDraftSettings;
@@ -50,6 +47,19 @@ export function useEditorCommands({
     selectGroup
   } = selection;
 
+  const roleHistoryController = useRoleHistoryController({
+    history: roleHistory,
+    role,
+    roleRef,
+    stableSelectedIds,
+    selectedIdsRef,
+    setSelectedLayerIds,
+    transientBeforeRef,
+    transientTransformBeforeRef,
+    transientSelectionBeforeRef,
+    restoreSelection
+  });
+
   const {
     canUndo,
     canRedo,
@@ -63,23 +73,11 @@ export function useEditorCommands({
     clearRedo,
     beginTransient,
     commitTransient
-  } = useRoleEditorHistory({
-    history,
-    role,
-    roleRef,
-    stableSelectedIds,
-    selectedIdsRef,
-    setSelectedLayerIds,
-    transientBeforeRef,
-    transientTransformBeforeRef,
-    transientSelectionBeforeRef,
-    restoreSelection
-  });
+  } = roleHistoryController;
 
   const decorationCommands = useRoleDecorationCommands({
     role,
     roleRef,
-    history,
     insertDraftSettings,
     selectedDecorationIds,
     stableSelectedIds,
@@ -91,7 +89,8 @@ export function useEditorCommands({
     restoreSelection,
     updateRole,
     updateTransformRole,
-    withTransformHistory
+    withTransformHistory,
+    resetRole: roleHistoryController.resetRole
   });
 
   const clipboardCommands = useRoleClipboardCommands({

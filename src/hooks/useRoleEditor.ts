@@ -12,7 +12,7 @@ export type { InsertDraftPlacement, InsertDraftScopes, InsertDraftSettings };
 
 export function useRoleEditor() {
   const {
-    history,
+    roleHistory,
     role,
     roleRef,
     selectedTab,
@@ -26,7 +26,7 @@ export function useRoleEditor() {
   } = useEditorState();
 
   const commands = useEditorCommands({
-    history,
+    roleHistory,
     role,
     roleRef,
     insertDraftSettings,
@@ -67,7 +67,7 @@ export function useRoleEditor() {
     canRedo: commands.canRedo,
     beginTransient: commands.beginTransient,
     commitTransient: commands.commitTransient,
-    cancelTransient: history.cancelTransient,
+    cancelTransient: roleHistory.cancelTransient,
     undo: commands.undo,
     redo: commands.redo,
     clearRedo: commands.clearRedo,

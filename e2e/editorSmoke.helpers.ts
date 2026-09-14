@@ -134,7 +134,8 @@ export function watchPageErrors(page: Page): PageErrorMonitor {
   page.on('console', (message) => {
     if (message.type() === 'error') {
       const text = message.text();
-      if (!isIgnorableConsoleError(text)) {
+      const sourceUrl = message.location().url;
+      if (!isIgnorableConsoleError(text, sourceUrl)) {
         monitor.errors.push(`console: ${text}`);
       }
     }
@@ -142,15 +143,18 @@ export function watchPageErrors(page: Page): PageErrorMonitor {
   return monitor;
 }
 
-function isIgnorableConsoleError(text: string): boolean {
+function isIgnorableConsoleError(text: string, sourceUrl = ''): boolean {
+  const details = `${text} ${sourceUrl}`;
   return (
-    text.includes('cloudflareinsights.com') ||
-    text.includes('/cdn-cgi/rum') ||
-    text.includes('/api/color-block-presets') ||
+    details.includes('cloudflareinsights.com') ||
+    details.includes('/cdn-cgi/rum') ||
+    details.includes('/api/color-block-presets') ||
+    details.includes('fonts.googleapis.com') ||
+    details.includes('fonts.gstatic.com') ||
     text.includes('Failed to load resource: net::ERR_FAILED') ||
     text.includes('Failed to load resource: net::ERR_CONNECTION_REFUSED') ||
     text.includes('Failed to load resource: the server responded with a status of 502') ||
-    text.includes('Access to XMLHttpRequest') && text.includes('cloudflareinsights.com')
+    text.includes('Access to XMLHttpRequest') && details.includes('cloudflareinsights.com')
   );
 }
 
