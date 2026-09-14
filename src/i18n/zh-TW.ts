@@ -109,7 +109,7 @@ export const zhTW: Record<string, string> = {
   'tabs.foot': '腳部',
   'tabs.cape': '披風',
   'tabs.colorBlock': '色塊',
-  'tabs.extra': '圖片轉 TWRole',
+  'tabs.extra': '額外功能',
   'tabs.autoCreate': '自動生成',
 
   // ChoiceGrid
@@ -127,7 +127,14 @@ export const zhTW: Record<string, string> = {
   'colorBlock.loadFailed': '無法載入色塊：{message}',
 
   // Extra panel
-  'extra.title': '圖片轉 TWRole',
+  'extra.title': '額外功能',
+  'extra.entry.prompt': '請選擇功能',
+  'extra.entry.referenceImage': '加入舞台圖片',
+  'extra.entry.imageToTwrole': '圖片轉 TWRole',
+  'extra.entry.back': '返回額外功能',
+  'extra.reference.upload': '拖放 JPG 或 PNG 圖片',
+  'extra.reference.choose': '選擇 JPG 或 PNG 圖片',
+  'extra.reference.adding': '加入中...',
   'extra.sourceCount': '{count} 個裝飾素材',
   'extra.method.label': '圖片轉 TWRole 方法',
   'extra.method.standard': '標準轉換',

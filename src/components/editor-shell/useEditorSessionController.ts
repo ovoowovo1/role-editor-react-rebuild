@@ -115,6 +115,7 @@ export function useEditorSessionController({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setStatus(message);
+      throw error instanceof Error ? error : new Error(message);
     }
   }, [clearSelection, reference.addImageFile, setStatus]);
 

@@ -78,6 +78,7 @@ test('keeps the empty Auto Create chart stable and renders the first MSE point',
   const monitor = watchPageErrors(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.locator('[data-tab-mode="extra"]').click();
+  await page.getByTestId('extra-entry-image-to-twrole-button').click();
 
   const autoCreateTab = page.locator('#extra-tool-tab-autoCreate');
   await expect(autoCreateTab).toHaveAttribute('aria-selected', 'false');
@@ -270,6 +271,7 @@ test('renders one canonical Pixi preview only at done, stopped, and resumed term
   const monitor = watchPageErrors(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.locator('[data-tab-mode="extra"]').click();
+  await page.getByTestId('extra-entry-image-to-twrole-button').click();
   await page.locator('#extra-tool-tab-autoCreate').click();
 
   await page.locator('#extra-panel-autoCreate input[type="file"]').setInputFiles({

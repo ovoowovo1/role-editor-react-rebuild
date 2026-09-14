@@ -410,6 +410,24 @@ input:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
 }
 
+.extra-entry-chooser .extra-entry-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.extra-entry-back {
+  margin-bottom: 12px;
+}
+
+.extra-reference-image-name {
+  margin-top: 8px;
+  overflow: hidden;
+  color: #d8f8ff;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .extra-dropzone {
   position: relative;
   min-height: 210px;

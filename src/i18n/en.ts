@@ -109,7 +109,7 @@ export const en: Record<string, string> = {
   'tabs.foot': 'Foot',
   'tabs.cape': 'Cape',
   'tabs.colorBlock': 'Color Block',
-  'tabs.extra': 'Image to TWRole',
+  'tabs.extra': 'Extra Features',
   'tabs.autoCreate': 'AutoCreate',
 
   // ChoiceGrid
@@ -127,7 +127,14 @@ export const en: Record<string, string> = {
   'colorBlock.loadFailed': 'Failed to load color blocks: {message}',
 
   // Extra panel
-  'extra.title': 'Image to TWRole',
+  'extra.title': 'Extra Features',
+  'extra.entry.prompt': 'Choose a feature',
+  'extra.entry.referenceImage': 'Add stage image',
+  'extra.entry.imageToTwrole': 'Image to TWRole',
+  'extra.entry.back': 'Back to extra features',
+  'extra.reference.upload': 'Drop a JPG or PNG image',
+  'extra.reference.choose': 'Choose a JPG or PNG image',
+  'extra.reference.adding': 'Adding...',
   'extra.sourceCount': '{count} deco assets',
   'extra.method.label': 'Image to TWRole methods',
   'extra.method.standard': 'Standard Conversion',
