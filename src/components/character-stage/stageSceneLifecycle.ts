@@ -111,7 +111,10 @@ export function useStageSceneLifecycle({
       const currentRole = roleRef.current;
       applyHeadLayerDisplayTransform(scene.headLayerClip, currentRole);
       drawBrushFillOverlay(scene, brushFillRef.current.mask);
-      setDecorationInteractionEnabled(scene, !brushFillRef.current.active);
+      setDecorationInteractionEnabled(
+        scene,
+        !brushFillRef.current.active && !stageRuntimeRefs.pinOutlineRef?.current.active
+      );
       syncDecorationDisplayRecords(scene, currentRole, decoOptions);
       if (stageRuntimeRefs.referenceImagesRef) {
         syncReferenceImages(
@@ -158,6 +161,19 @@ export function useStageSceneLifecycle({
         }
         scene.referenceImageDisplays.clear();
         scene.referenceImagesById.clear();
+        for (const graphic of scene.pinOutlinePins.values()) {
+          if (!graphic.destroyed) graphic.destroy();
+        }
+        scene.pinOutlinePins.clear();
+        for (const displays of scene.pinOutlineMaterialDisplays.values()) {
+          for (const display of displays) {
+            if (!display.destroyed) display.destroy({ children: true });
+          }
+        }
+        scene.pinOutlineMaterialDisplays.clear();
+        scene.pinOutlineMetricsCleanup?.();
+        scene.pinOutlineMetricsCleanup = null;
+        if (!scene.pinOutlineOverlay.destroyed) scene.pinOutlineOverlay.destroy({ children: true });
         if (!scene.referenceImagesOverlay.destroyed) scene.referenceImagesOverlay.destroy({ children: true });
         scene.lastDisguiseChildOrder = [];
         if (sceneRef.current === scene) {

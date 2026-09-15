@@ -419,6 +419,112 @@ input:disabled {
   margin-bottom: 12px;
 }
 
+.pin-outline-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.pin-outline-panel .extra-actions {
+  margin-top: 0;
+}
+
+.pin-outline-summary,
+.pin-outline-pin-list,
+.pin-outline-segments,
+.pin-outline-materials {
+  display: grid;
+  gap: 8px;
+}
+
+.pin-outline-summary {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  color: #d8f8ff;
+  font-size: 12px;
+}
+
+.pin-outline-summary span,
+.pin-outline-panel .extra-hint {
+  color: #a6dce8;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.pin-outline-pin-list {
+  margin: 0;
+  padding: 8px 8px 8px 28px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.pin-outline-pin-list li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  color: #d8f8ff;
+  font-size: 11px;
+}
+
+.pin-outline-pin-list li > span {
+  flex: 1 1 120px;
+}
+
+.pin-outline-reorder,
+.pin-outline-material-name {
+  padding: 3px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d8f8ff;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.pin-outline-segment,
+.pin-outline-material {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.pin-outline-segment label,
+.pin-outline-material label,
+.pin-outline-materials > label {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: #d8f8ff;
+  font-size: 11px;
+}
+
+.pin-outline-segment select,
+.pin-outline-segment input[type='text'],
+.pin-outline-materials > label select {
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: #0a3b4b;
+  color: #fff;
+}
+
+.pin-outline-segment input[type='text'] {
+  width: 100%;
+}
+
+.pin-outline-material {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.pin-outline-material label {
+  grid-column: 1 / -1;
+}
+
 .extra-reference-image-name {
   margin-top: 8px;
   overflow: hidden;

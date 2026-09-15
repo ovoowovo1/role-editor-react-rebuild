@@ -206,4 +206,43 @@ describe('stage pointer interactions', () => {
 
     expect(refs.callbacksRef.current.onClearSelection).not.toHaveBeenCalled();
   });
+
+  it('adds a pin only when the pin outline tool is active', () => {
+    const refs = makeRuntimeRefs();
+    const stage = {};
+    const onPinAdd = vi.fn();
+    refs.callbacksRef.current.onPinAdd = onPinAdd;
+    refs.pinOutlineRef = { current: { active: true, pins: [], segments: [], materials: [], selectedMaterialId: null } };
+    const disguiseRoot = { toLocal: vi.fn(({ x, y }) => ({ x: x - 10, y: y - 20 })) };
+    refs.sceneRef.current = { disguiseRoot } as unknown as import('./types').StageSceneState;
+    const handlers = createStagePointerHandlers(refs);
+
+    handlers.handlePointerDown(pointerEvent(30, 40, stage, stage));
+    handlers.handleUp(pointerEvent(30, 40, stage, stage));
+
+    expect(onPinAdd).toHaveBeenCalledWith(20, 20);
+    expect(refs.callbacksRef.current.onClearSelection).not.toHaveBeenCalled();
+  });
+
+  it('moves an active pin through the stage pointer handlers', () => {
+    const refs = makeRuntimeRefs();
+    const stage = {};
+    const onPinMove = vi.fn();
+    refs.callbacksRef.current.onPinMove = onPinMove;
+    refs.pinOutlineRef = { current: { active: true, pins: [], segments: [], materials: [], selectedMaterialId: null } };
+    const disguiseRoot = { toLocal: vi.fn(({ x, y }) => ({ x, y })) };
+    refs.sceneRef.current = {
+      disguiseRoot,
+      pinOutlineState: { active: true, pins: [{ id: 'pin-1', x: 10, y: 12 }], segments: [], materials: [], selectedMaterialId: null }
+    } as unknown as import('./types').StageSceneState;
+    refs.pinDragRef = { current: { id: 'pin-1', offsetX: 2, offsetY: 3 } };
+    const handlers = createStagePointerHandlers(refs);
+
+    handlers.handleMove(pointerEvent(30, 40, stage, stage));
+    raf.runNext();
+    handlers.handleUp(pointerEvent(30, 40, stage, stage));
+
+    expect(onPinMove).toHaveBeenCalledWith('pin-1', 28, 37);
+    expect(refs.pinDragRef.current).toBeNull();
+  });
 });

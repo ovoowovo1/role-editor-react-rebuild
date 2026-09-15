@@ -79,7 +79,13 @@ export function buildStageScene({
   brushFillOverlay.visible = false;
   brushFillOverlay.eventMode = 'none';
   brushFillOverlay.addChild(brushFillCommittedGraphic, brushFillDraftGraphic);
-  disguiseRoot.addChild(selectionDragController, brushFillOverlay, headLayerSelectionOverlay);
+
+  const pinOutlineOverlay = new Container();
+  const pinOutlinePathGraphic = new Graphics();
+  pinOutlineOverlay.visible = false;
+  pinOutlineOverlay.eventMode = 'none';
+  pinOutlineOverlay.addChild(pinOutlinePathGraphic);
+  disguiseRoot.addChild(pinOutlineOverlay, selectionDragController, brushFillOverlay, headLayerSelectionOverlay);
 
   const updatePosition = () => {
     const host = hostRef.current;
@@ -107,6 +113,11 @@ export function buildStageScene({
     brushFillOverlay,
     brushFillCommittedGraphic,
     brushFillDraftGraphic,
+    pinOutlineOverlay,
+    pinOutlinePathGraphic,
+    pinOutlinePins: new Map(),
+    pinOutlineMaterialDisplays: new Map(),
+    pinOutlineMetricsCleanup: null,
     selectionDragVisualKey: '',
     selectionDragVisualsById: new Map(),
     selectionDragVisualDisplayKeysById: new Map(),
@@ -118,6 +129,7 @@ export function buildStageScene({
     decorationsById: new Map(),
     referenceImageDisplays: new Map(),
     referenceImagesById: new Map(),
+    pinOutlineState: { active: false, pins: [], segments: [], materials: [], selectedMaterialId: null },
     layerOrder: [],
     decorationInteractionEnabled: true,
     lastDisguiseChildOrder: [],
@@ -126,6 +138,12 @@ export function buildStageScene({
 
   selectionDragController.on('pointerdown', (event: FederatedPointerEvent) => {
     onSelectionDragPointerDown(event, scene);
+  });
+
+  // Pin graphics are created during synchronization so their handlers can
+  // reference the current scene and runtime coordinate system.
+  pinOutlineOverlay.on('pointerdown', (event: FederatedPointerEvent) => {
+    if (event.target !== pinOutlineOverlay) event.stopPropagation();
   });
 
   return scene;

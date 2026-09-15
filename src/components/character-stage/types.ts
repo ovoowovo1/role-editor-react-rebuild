@@ -5,6 +5,7 @@ import type { ActorClip } from '../../lib/runtime/actorClip';
 import type { GafMovieClip } from '../../lib/runtime/gafMovieClip';
 import type { DecorationLayer, RoleDocument } from '../../types/role';
 import type { ReferenceImageLayer } from '../../types/referenceImage';
+import type { PinOutlineState } from '../../types/pinOutline';
 
 export interface StagePointerPosition {
   x: number;
@@ -60,11 +61,19 @@ export interface BrushDrawState {
   points: BrushFillPoint[];
 }
 
+export interface PinDragState {
+  id: string;
+  offsetX: number;
+  offsetY: number;
+}
+
 export interface StageCallbacks {
   onCommitDrag(selectionIds: readonly string[], dx: number, dy: number): void;
   onCommitReferenceImageDrag?(id: string, dx: number, dy: number): void;
   onClearSelection(): void;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
+  onPinAdd?(x: number, y: number): void;
+  onPinMove?(id: string, x: number, y: number): void;
 }
 
 export interface BrushFillState {
@@ -84,6 +93,10 @@ export interface DisguiseDecoOptions {
 }
 
 export interface ReferenceImageOptions {
+  onPointerDown(id: string, global: StagePointerPosition, disguiseRoot: Container): void;
+}
+
+export interface PinOutlineOptions {
   onPointerDown(id: string, global: StagePointerPosition, disguiseRoot: Container): void;
 }
 
@@ -107,6 +120,11 @@ export interface StageSceneState {
   disguiseRoot: Container;
   headLayerClip: GafMovieClip;
   referenceImagesOverlay: Container;
+  pinOutlineOverlay: Container;
+  pinOutlinePathGraphic: Graphics;
+  pinOutlinePins: Map<string, Graphics>;
+  pinOutlineMaterialDisplays: Map<string, Container[]>;
+  pinOutlineMetricsCleanup: (() => void) | null;
   headLayerSelectionOverlay: Container;
   headLayerSelectionVisual: GafMovieClip;
   selectionDragController: Container;
@@ -126,6 +144,7 @@ export interface StageSceneState {
   decorationsById: Map<string, DecorationLayer>;
   referenceImageDisplays: Map<string, ReferenceImageDisplayRecord>;
   referenceImagesById: Map<string, ReferenceImageLayer>;
+  pinOutlineState: PinOutlineState;
   layerOrder: string[];
   decorationInteractionEnabled: boolean;
   lastDisguiseChildOrder: Container[];
@@ -141,6 +160,8 @@ export interface StageRuntimeRefs {
   sceneRef: MutableRefObject<StageSceneState | null>;
   dragRef: MutableRefObject<DragState | null>;
   brushDrawRef: MutableRefObject<BrushDrawState | null>;
+  pinDragRef?: MutableRefObject<PinDragState | null>;
   referenceImagesRef?: MutableRefObject<ReferenceImageLayer[]>;
   layerOrderRef?: MutableRefObject<string[]>;
+  pinOutlineRef?: MutableRefObject<PinOutlineState>;
 }

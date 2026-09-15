@@ -4,12 +4,14 @@ import type { useRoleEditor } from '../../hooks/useRoleEditor';
 import { EditControls } from '../EditControls';
 import type { useEditorShellUiState } from './useEditorShellUiState';
 import type { useReferenceImageLayers } from '../../hooks/useReferenceImageLayers';
+import type { usePinOutlineTool } from '../../hooks/usePinOutlineTool';
 
 const CharacterStage = lazy(async () => import('../CharacterStage').then((module) => ({ default: module.CharacterStage })));
 
 type EditorApi = ReturnType<typeof useRoleEditor>;
 type ShellState = ReturnType<typeof useEditorShellUiState>;
 type ReferenceState = ReturnType<typeof useReferenceImageLayers>;
+type PinOutlineState = ReturnType<typeof usePinOutlineTool>;
 
 interface EditorStagePanelProps {
   editor: EditorApi;
@@ -17,9 +19,10 @@ interface EditorStagePanelProps {
   reference: ReferenceState;
   onClearSelection(): void;
   onCommitReferenceImageDrag(id: string, dx: number, dy: number): void;
+  pinOutline: PinOutlineState;
 }
 
-export function EditorStagePanel({ editor, shell, reference, onClearSelection, onCommitReferenceImageDrag }: EditorStagePanelProps) {
+export function EditorStagePanel({ editor, shell, reference, pinOutline, onClearSelection, onCommitReferenceImageDrag }: EditorStagePanelProps) {
   return (
     <section className="edit-block">
       <Suspense fallback={<div className="stage-panel" />}>
@@ -36,6 +39,9 @@ export function EditorStagePanel({ editor, shell, reference, onClearSelection, o
           referenceImages={reference.images}
           layerOrder={reference.layerOrder}
           onCommitReferenceImageDrag={onCommitReferenceImageDrag}
+          pinOutline={pinOutline.state}
+          onPinAdd={pinOutline.addPin}
+          onPinMove={pinOutline.movePin}
           onClearSelection={onClearSelection}
           brushFillActive={shell.brushFillActive}
           brushFillBrushSize={shell.brushFillBrushSize}

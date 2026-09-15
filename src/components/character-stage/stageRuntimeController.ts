@@ -3,6 +3,7 @@ import type { Application } from 'pixi.js';
 import type { BrushFillMask } from '../../lib/conversion/brushFillToDeco';
 import type { RoleDocument } from '../../types/role';
 import type { ReferenceImageLayer } from '../../types/referenceImage';
+import type { PinOutlineState } from '../../types/pinOutline';
 import { beginDecorationDrag, beginReferenceImageDrag } from './dragInteractions';
 import type {
   BrushDrawState,
@@ -28,10 +29,13 @@ interface StageRuntimeControllerOptions {
   headGlowAlwaysOn: boolean;
   referenceImages: ReferenceImageLayer[];
   layerOrder: string[];
+  pinOutline: PinOutlineState;
   onCommitDrag(selectionIds: readonly string[], dx: number, dy: number): void;
   onCommitReferenceImageDrag(id: string, dx: number, dy: number): void;
   onClearSelection(): void;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
+  onPinAdd?(x: number, y: number): void;
+  onPinMove?(id: string, x: number, y: number): void;
 }
 
 export function useStageRuntimeController({
@@ -47,14 +51,18 @@ export function useStageRuntimeController({
   headGlowAlwaysOn,
   referenceImages,
   layerOrder,
+  pinOutline,
   onCommitDrag,
   onCommitReferenceImageDrag,
   onClearSelection,
-  onBrushFillMaskChange
+  onBrushFillMaskChange,
+  onPinAdd,
+  onPinMove
 }: StageRuntimeControllerOptions) {
   const appRef = useRef<Application | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const brushDrawRef = useRef<BrushDrawState | null>(null);
+  const pinDragRef = useRef<import('./types').PinDragState | null>(null);
   const sceneRef = useRef<StageSceneState | null>(null);
   const roleRef = useRef(role);
   const selectedIdsRef = useRef(selectedIds);
@@ -62,11 +70,14 @@ export function useStageRuntimeController({
   const headGlowAlwaysOnRef = useRef(headGlowAlwaysOn);
   const referenceImagesRef = useRef(referenceImages);
   const layerOrderRef = useRef(layerOrder);
+  const pinOutlineRef = useRef(pinOutline);
   const callbacksRef = useRef<StageCallbacks>({
     onCommitDrag,
     onCommitReferenceImageDrag,
     onClearSelection,
-    onBrushFillMaskChange
+    onBrushFillMaskChange,
+    onPinAdd,
+    onPinMove
   });
   const brushFillRef = useRef<BrushFillState>({
     active: brushFillActive,
@@ -91,11 +102,14 @@ export function useStageRuntimeController({
     headGlowAlwaysOnRef.current = headGlowAlwaysOn;
     referenceImagesRef.current = referenceImages;
     layerOrderRef.current = layerOrder;
+    pinOutlineRef.current = pinOutline;
     callbacksRef.current = {
       onCommitDrag,
       onCommitReferenceImageDrag,
       onClearSelection,
-      onBrushFillMaskChange
+      onBrushFillMaskChange,
+      onPinAdd,
+      onPinMove
     };
     brushFillRef.current = {
       active: brushFillActive,
@@ -125,7 +139,8 @@ export function useStageRuntimeController({
     selectedIds,
     selectedReferenceImageId,
     stageScale,
-    layerOrder
+    layerOrder,
+    pinOutline
   ]);
 
   const stageRuntimeRefs = useMemo<StageRuntimeRefs>(
@@ -138,8 +153,10 @@ export function useStageRuntimeController({
       sceneRef,
       dragRef,
       brushDrawRef,
+      pinDragRef,
       referenceImagesRef,
-      layerOrderRef
+      layerOrderRef,
+      pinOutlineRef
     }),
     []
   );
@@ -163,12 +180,34 @@ export function useStageRuntimeController({
     [stageRuntimeRefs]
   );
 
+  const pinOutlineOptions = useMemo(
+    () => ({
+      onPointerDown: (id: string, global: { x: number; y: number }, root: import('pixi.js').Container) => {
+        const scene = stageRuntimeRefs.sceneRef.current;
+        if (!scene || !stageRuntimeRefs.pinOutlineRef?.current.active) return;
+        const pinDragRef = stageRuntimeRefs.pinDragRef;
+        if (!pinDragRef) return;
+        const pin = scene.pinOutlineState.pins.find((item) => item.id === id);
+        if (!pin) return;
+        const local = root.toLocal(global);
+        pinDragRef.current = {
+          id,
+          offsetX: local.x - pin.x,
+          offsetY: local.y - pin.y
+        };
+      }
+    }),
+    [stageRuntimeRefs]
+  );
+
   return {
     appRef,
     dragRef,
     brushDrawRef,
     referenceImagesRef,
     layerOrderRef,
+    pinDragRef,
+    pinOutlineRef,
     sceneRef,
     roleRef,
     selectedIdsRef,
@@ -181,6 +220,7 @@ export function useStageRuntimeController({
     sceneBuildConfigRef,
     stageRuntimeRefs,
     decoOptions,
-    referenceImageOptions
+    referenceImageOptions,
+    pinOutlineOptions
   };
 }

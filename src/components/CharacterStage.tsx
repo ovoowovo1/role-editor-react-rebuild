@@ -3,6 +3,7 @@ import type { BrushFillMask } from '../lib/conversion/brushFillToDeco';
 import { actorSceneKey } from '../lib/stage/characterStageHelpers';
 import type { RoleDocument } from '../types/role';
 import type { ReferenceImageLayer } from '../types/referenceImage';
+import type { PinOutlineState } from '../types/pinOutline';
 import {
   useBodyAnimationPlayback,
   useDeferredStageSync,
@@ -28,6 +29,9 @@ interface CharacterStageProps {
   referenceImages: ReferenceImageLayer[];
   layerOrder: string[];
   onCommitReferenceImageDrag(id: string, dx: number, dy: number): void;
+  pinOutline: PinOutlineState;
+  onPinAdd(x: number, y: number): void;
+  onPinMove(id: string, x: number, y: number): void;
   onClearSelection(): void;
   brushFillActive?: boolean;
   brushFillBrushSize?: number;
@@ -49,6 +53,9 @@ export function CharacterStage({
   referenceImages,
   layerOrder,
   onCommitReferenceImageDrag,
+  pinOutline,
+  onPinAdd,
+  onPinMove,
   onClearSelection,
   brushFillActive = false,
   brushFillBrushSize = 18,
@@ -75,8 +82,11 @@ export function CharacterStage({
     headGlowAlwaysOn,
     referenceImages,
     layerOrder,
+    pinOutline,
     onCommitDrag,
     onCommitReferenceImageDrag,
+    onPinAdd,
+    onPinMove,
     onClearSelection,
     onBrushFillMaskChange
   });
@@ -120,6 +130,9 @@ export function CharacterStage({
     selectedIds,
     brushFillActive,
     brushFillMask,
+    pinOutline,
+    pinOutlineRef: stageRuntime.pinOutlineRef,
+    pinOutlineOptions: stageRuntime.pinOutlineOptions,
     sceneVersion,
     appRef: stageRuntime.appRef,
     roleRef: stageRuntime.roleRef,

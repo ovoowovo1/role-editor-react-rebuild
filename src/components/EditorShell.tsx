@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { t } from '../i18n';
 import { LayerList } from './layers/LayerListFixed';
 import { TabBar } from './TabBar';
@@ -15,6 +15,8 @@ import { useEditorShellShortcuts } from './editor-shell/useEditorShellShortcuts'
 import { useEditorShellUiState } from './editor-shell/useEditorShellUiState';
 import { useEditorSessionController } from './editor-shell/useEditorSessionController';
 import { useLayerStackController } from './editor-shell/useLayerStackController';
+import { usePinOutlineTool } from '../hooks/usePinOutlineTool';
+import { DEFAULT_POSITION_RANGE } from '../constants/editor';
 
 export function EditorShell() {
   const editor = useRoleEditor();
@@ -36,6 +38,20 @@ export function EditorShell() {
     redo
   } = session;
   const layerStack = useLayerStackController({ editor, reference });
+  const pinOutline = usePinOutlineTool({
+    positionRange: editor.role.positionRange ?? DEFAULT_POSITION_RANGE,
+    singleMaterial: !editor.role.camp.trim()
+  });
+  const insertPinOutline = useCallback(async () => {
+    // Keep the insertion path behind the same lazy boundary as the stage
+    // renderer. The helper shares alpha-trimmed GAF metrics with the preview,
+    // but importing it from the shell would preload Pixi/GAF for every edit.
+    const { buildPinOutlineDecorationLayers } = await import('../lib/editor/pinOutlineInsertion');
+    const decorations = buildPinOutlineDecorationLayers(pinOutline.state);
+    if (!decorations.length) return;
+    const count = editor.insertDecorationBatch(decorations, t('extra.pinOutline.groupName'));
+    if (count > 0) setStatus(t('status.pinOutlineInserted', { count }));
+  }, [editor.insertDecorationBatch, pinOutline.state]);
   const reorderLayer = layerStack.reorderLayer;
   const colorBlockPresets = useColorBlockPresets(editor.role.camp, setStatus);
   const {
@@ -88,9 +104,18 @@ export function EditorShell() {
             selectedOptionId={selectedOptionId}
             setStatus={setStatus}
             onAddReferenceImage={addReferenceImage}
+            onInsertPinOutline={insertPinOutline}
+            pinOutline={pinOutline}
           />
 
-          <EditorStagePanel editor={editor} shell={shell} reference={reference} onClearSelection={clearSelection} onCommitReferenceImageDrag={commitReferenceImageDrag} />
+          <EditorStagePanel
+            editor={editor}
+            shell={shell}
+            reference={reference}
+            pinOutline={pinOutline}
+            onClearSelection={clearSelection}
+            onCommitReferenceImageDrag={commitReferenceImageDrag}
+          />
 
           <LayerList
             decorations={editor.role.decorations}

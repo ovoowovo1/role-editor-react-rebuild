@@ -106,6 +106,7 @@ export function syncDisguiseChildOrder(
   // render above the role children while the original deco containers keep
   // their role-defined z-order.
   const fullOrder = orderedChildren.concat(
+    scene.pinOutlineOverlay ? [scene.pinOutlineOverlay] : [],
     scene.selectionDragController ? [scene.selectionDragController] : [],
     scene.brushFillOverlay ? [scene.brushFillOverlay] : [],
     scene.headLayerSelectionOverlay ? [scene.headLayerSelectionOverlay] : []

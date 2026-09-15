@@ -13,11 +13,12 @@ import {
   ImageImportPanel
 } from './ExtraPanelParts';
 import { ReferenceImagePanel } from './ReferenceImagePanel';
+import { PinOutlinePanel } from './PinOutlinePanel';
 import { formatNumber } from './extraPanelModels';
 import { useExtraPanelController, type ExtraPanelProps } from './useExtraPanelController';
 
 type ExtraPanelToolTab = 'standard' | 'autoCreate';
-type ExtraEntry = 'chooser' | 'referenceImage' | 'imageToTwrole';
+type ExtraEntry = 'chooser' | 'referenceImage' | 'imageToTwrole' | 'pinOutline';
 
 const toolTabs: ExtraPanelToolTab[] = ['standard', 'autoCreate'];
 
@@ -33,7 +34,9 @@ export function ExtraPanel({
   onBrushFillClear,
   onInsert,
   onStatus,
-  onAddReferenceImage
+  onAddReferenceImage,
+  onInsertPinOutline,
+  pinOutline
 }: ExtraPanelProps) {
   const [entry, setEntry] = useState<ExtraEntry>('chooser');
   const [toolTab, setToolTab] = useState<ExtraPanelToolTab>('standard');
@@ -49,7 +52,9 @@ export function ExtraPanel({
     onBrushFillClear,
     onInsert,
     onStatus,
-    onAddReferenceImage
+    onAddReferenceImage,
+    onInsertPinOutline,
+    pinOutline
   });
 
   useEffect(() => {
@@ -101,6 +106,14 @@ export function ExtraPanel({
               >
                 {t('extra.entry.imageToTwrole')}
               </button>
+              <button
+                type="button"
+                className="primary-button"
+                data-testid="extra-entry-pin-outline-button"
+                onClick={() => setEntry('pinOutline')}
+              >
+                {t('extra.entry.pinOutline')}
+              </button>
             </div>
           </div>
         ) : entry === 'referenceImage' ? (
@@ -109,6 +122,26 @@ export function ExtraPanel({
               {t('extra.entry.back')}
             </button>
             <ReferenceImagePanel onAddReferenceImage={onAddReferenceImage ?? (async () => undefined)} />
+          </div>
+        ) : entry === 'pinOutline' ? (
+          <div id="extra-panel-pin-outline" role="tabpanel" aria-label={t('extra.entry.pinOutline')}>
+            <button type="button" className="primary-button extra-entry-back" onClick={() => setEntry('chooser')}>
+              {t('extra.entry.back')}
+            </button>
+            <PinOutlinePanel
+              roleCamp={role.camp}
+              decoOptions={decoOptions}
+              state={pinOutline.state}
+              onToggleActive={pinOutline.toggleActive}
+              onClear={pinOutline.clear}
+              onRemovePin={pinOutline.removePin}
+              onReorderPins={pinOutline.reorderPins}
+              onUpdateSegment={pinOutline.updateSegment}
+              onAddMaterial={pinOutline.addMaterial}
+              onRemoveMaterial={pinOutline.removeMaterial}
+              onSelectMaterial={pinOutline.selectMaterial}
+              onInsert={onInsertPinOutline}
+            />
           </div>
         ) : (
           <div id="extra-panel-image-to-twrole" role="tabpanel" aria-label={t('extra.entry.imageToTwrole')}>

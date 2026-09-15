@@ -8,10 +8,12 @@ import { ChoiceGrid } from '../ChoiceGrid';
 import { ColorBlockGrid } from '../ColorBlockGrid';
 import { ExtraPanel } from '../extra/ExtraPanel';
 import type { useEditorShellUiState } from './useEditorShellUiState';
+import type { usePinOutlineTool } from '../../hooks/usePinOutlineTool';
 
 type EditorApi = ReturnType<typeof useRoleEditor>;
 type ShellState = ReturnType<typeof useEditorShellUiState>;
 type ColorBlockPresetState = ReturnType<typeof useColorBlockPresets>;
+type PinOutlineState = ReturnType<typeof usePinOutlineTool>;
 
 interface EditorSourcePanelProps {
   editor: EditorApi;
@@ -20,6 +22,8 @@ interface EditorSourcePanelProps {
   selectedOptionId?: string;
   setStatus(message: string): void;
   onAddReferenceImage(file: File): Promise<void>;
+  onInsertPinOutline(): void | Promise<void>;
+  pinOutline: PinOutlineState;
 }
 
 export function EditorSourcePanel({
@@ -28,7 +32,9 @@ export function EditorSourcePanel({
   colorBlockPresets,
   selectedOptionId,
   setStatus,
-  onAddReferenceImage
+  onAddReferenceImage,
+  onInsertPinOutline,
+  pinOutline
 }: EditorSourcePanelProps) {
   if (shell.topBarMode === 'extra') {
     return (
@@ -45,6 +51,8 @@ export function EditorSourcePanel({
         onInsert={editor.insertDecorationBatch}
         onStatus={setStatus}
         onAddReferenceImage={onAddReferenceImage}
+        onInsertPinOutline={onInsertPinOutline}
+        pinOutline={pinOutline}
       />
     );
   }

@@ -15,6 +15,8 @@ import {
 import { drawBrushFillOverlay } from './stageOverlayVisuals';
 import type { BrushDrawState, DisguiseDecoOptions, DragState, ReferenceImageOptions, StageSceneState } from './types';
 import type { ReferenceImageLayer } from '../../types/referenceImage';
+import type { PinOutlineState } from '../../types/pinOutline';
+import { syncPinOutlineOverlay } from './pinOutlineVisuals';
 
 interface StageDisplaySyncOptions {
   role: RoleDocument;
@@ -24,6 +26,9 @@ interface StageDisplaySyncOptions {
   headGlowAlwaysOn: boolean;
   referenceImages: ReferenceImageLayer[];
   layerOrder: string[];
+  pinOutline: PinOutlineState;
+  pinOutlineRef: MutableRefObject<PinOutlineState>;
+  pinOutlineOptions: import('./types').PinOutlineOptions;
   referenceImageOptions: ReferenceImageOptions;
   sceneVersion: number;
   appRef: MutableRefObject<Application | null>;
@@ -49,6 +54,9 @@ export function useStageDisplaySync({
   headGlowAlwaysOn,
   referenceImages,
   layerOrder,
+  pinOutline,
+  pinOutlineRef,
+  pinOutlineOptions,
   referenceImageOptions,
   sceneVersion,
   appRef,
@@ -66,10 +74,10 @@ export function useStageDisplaySync({
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
-    setDecorationInteractionEnabled(scene, !brushFillActive && !dragRef.current);
+    setDecorationInteractionEnabled(scene, !brushFillActive && !pinOutline.active && !dragRef.current);
     const canvas = appRef.current?.view as HTMLCanvasElement | undefined;
-    if (canvas) canvas.style.cursor = brushFillActive ? 'crosshair' : '';
-  }, [appRef, brushFillActive, dragRef, sceneRef, sceneVersion]);
+    if (canvas) canvas.style.cursor = brushFillActive || pinOutline.active ? 'crosshair' : '';
+  }, [appRef, brushFillActive, dragRef, pinOutline.active, sceneRef, sceneVersion]);
 
   useEffect(() => {
     const syncDisplays = (repairDependentPaths: boolean) => {
@@ -85,6 +93,7 @@ export function useStageDisplaySync({
         activeDecorationDragIds(activeDrag)
       );
       syncReferenceImages(currentScene, referenceImages, referenceImageOptions);
+      syncPinOutlineOverlay(currentScene, pinOutlineRef.current, pinOutlineOptions);
 
       // Selection/order effects may have run before a deferred display update.
       // Repair them from current refs without turning ordinary selection changes
@@ -128,6 +137,9 @@ export function useStageDisplaySync({
     scheduleDeferredStageSync,
     selectedIdsRef,
     headGlowAlwaysOn,
+    pinOutlineOptions,
+    pinOutlineRef,
+    pinOutline,
     sceneVersion
   ]);
 
@@ -158,4 +170,12 @@ export function useStageDisplaySync({
     if (!scene) return;
     syncDisguiseChildOrder(scene, role, layerOrder);
   }, [dragRef, layerOrder, referenceImages, role.decorations, role.headLayerIndex, sceneRef, sceneVersion]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    pinOutlineRef.current = pinOutline;
+    syncPinOutlineOverlay(scene, pinOutline, pinOutlineOptions);
+    setDecorationInteractionEnabled(scene, !brushFillActive && !pinOutline.active && !dragRef.current);
+  }, [brushFillActive, dragRef, pinOutline, pinOutlineOptions, pinOutlineRef, sceneRef, sceneVersion]);
 }

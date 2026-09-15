@@ -11,6 +11,9 @@ import {
 } from './extraPanelModels';
 import { useExtraBrushConversion } from './useExtraBrushConversion';
 import { useExtraImageConversion } from './useExtraImageConversion';
+import type { usePinOutlineTool } from '../../hooks/usePinOutlineTool';
+
+type PinOutlineState = ReturnType<typeof usePinOutlineTool>;
 
 export interface ExtraPanelProps {
   decoOptions: PartOption[];
@@ -25,6 +28,8 @@ export interface ExtraPanelProps {
   onInsert(decorations: DecorationLayer[], groupName: string): number;
   onStatus(message: string): void;
   onAddReferenceImage?(file: File): Promise<void>;
+  onInsertPinOutline(): void | Promise<void>;
+  pinOutline: PinOutlineState;
 }
 
 export function useExtraPanelController({

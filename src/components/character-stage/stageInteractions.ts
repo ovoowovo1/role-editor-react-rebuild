@@ -31,10 +31,18 @@ export function createStagePointerHandlers(refs: StageRuntimeRefs) {
   };
 
   const hasActivePointerOperation = (): boolean => Boolean(
-    refs.brushDrawRef.current || refs.dragRef.current
+    refs.brushDrawRef.current || refs.dragRef.current || Boolean(refs.pinDragRef?.current)
   );
 
   const applyPointerMove = (position: StagePointerPosition): boolean => {
+    if (refs.pinDragRef?.current) {
+      const scene = refs.sceneRef.current;
+      if (!scene) return false;
+      const local = scene.disguiseRoot.toLocal(position);
+      const drag = refs.pinDragRef.current;
+      refs.callbacksRef.current.onPinMove?.(drag.id, local.x - drag.offsetX, local.y - drag.offsetY);
+      return true;
+    }
     if (refs.brushDrawRef.current) {
       return appendBrushFillPoint(position, refs);
     }
@@ -78,6 +86,18 @@ export function createStagePointerHandlers(refs: StageRuntimeRefs) {
       emptyStageTarget: event.target === event.currentTarget
     };
 
+    if (refs.pinOutlineRef?.current?.active) {
+      if (event.target === event.currentTarget) {
+        const scene = refs.sceneRef.current;
+        if (scene) {
+          const local = scene.disguiseRoot.toLocal(pointerPosition(event));
+          refs.callbacksRef.current.onPinAdd?.(local.x, local.y);
+          pointerDown.emptyStageTarget = false;
+        }
+      }
+      return;
+    }
+
     if (refs.brushFillRef.current.active) {
       beginBrushFillDraw(pointerPosition(event), refs);
     }
@@ -98,6 +118,10 @@ export function createStagePointerHandlers(refs: StageRuntimeRefs) {
       flushScheduledMove(pointerPosition(event));
     }
     if (commitBrushFillDraw(refs)) return true;
+    if (refs.pinDragRef?.current) {
+      refs.pinDragRef.current = null;
+      return true;
+    }
     return commitDecorationDrag(refs);
   };
 
@@ -124,6 +148,7 @@ export function createStagePointerHandlers(refs: StageRuntimeRefs) {
   const dispose = () => {
     pointerDown = null;
     cancelScheduledMove();
+    if (refs.pinDragRef) refs.pinDragRef.current = null;
   };
 
   return {
