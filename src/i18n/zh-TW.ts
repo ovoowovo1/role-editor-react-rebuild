@@ -128,6 +128,7 @@ export const zhTW: Record<string, string> = {
 
   // Extra panel
   'extra.title': '額外功能',
+  'extra.loading': '正在載入工具…',
   'extra.entry.prompt': '請選擇功能',
   'extra.entry.referenceImage': '加入舞台圖片',
   'extra.entry.imageToTwrole': '圖片轉 TWRole',

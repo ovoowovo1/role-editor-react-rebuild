@@ -1,24 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { gzip } from 'pako';
+import type { RoleThumbnailCapture } from '../stage/fullRoleRenderer';
 import type { DecorationLayer, RoleDocument } from '../../types/role';
 import {
   createTwroleBlob,
   exportOriginalLikeRoleConfig
 } from './roleSerializationExport';
-import { normalizeImportedRole, parseRoleBytes, parseRoleFileWithWorkerFallback } from './roleSerializationImport';
+import { parseRoleFileWithWorkerFallback } from './roleImportClient';
+import { normalizeImportedRole, parseRoleBytes } from './roleSerializationImport';
 import { decodeRolePayload } from './rolePayloadDecoder';
 import { isMissingDecoAssetId, makeMissingDecoAssetId } from './roleSerializationLegacy';
 
 vi.mock('../stage/fullRoleRenderer', () => ({
-  renderFullRoleToDataUrl: vi.fn(async () => ({
-    dataUrl: 'data:image/png;base64,cm9sZS1zZXJpYWxpemF0aW9u',
-    width: 256,
-    height: 256,
-    alphaPixels: 4,
-    nonTransparentBounds: { minX: 100, minY: 100, maxX: 101, maxY: 101 },
-    warnings: [],
-    missingTextureCount: 0
-  }))
+  captureRoleThumbnail: vi.fn(async (_role: unknown, capture: (rendered: RoleThumbnailCapture) => unknown) =>
+    capture({
+      encodeSourcePng: () => 'data:image/png;base64,cm9sZS1zZXJpYWxpemF0aW9u',
+      imageData: null,
+      width: 256,
+      height: 256,
+      nonTransparentBounds: { minX: 100, minY: 100, maxX: 101, maxY: 101 }
+    }))
 }));
 
 function layer(id: string, patch: Partial<DecorationLayer> = {}): DecorationLayer {

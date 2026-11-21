@@ -4,17 +4,16 @@ import { HEAD_LAYER_ID } from '../constants/layers';
 import { findOptionByCode, optionById, partOptions } from '../mock/options';
 import type { BodyPartTab, DecorationLayer, PartOption, PartTab, RoleDocument } from '../types/role';
 import {
-  deleteDecorationFromRole,
-  setSelectedVisibleInRole,
-  toggleDecorationVisibilityInRole
+  roleWithDeletedDecoration,
+  roleWithSelectedVisibility,
+  roleWithToggledDecorationVisibility
 } from '../lib/editor/editorDecorationMutations';
 import { insertDecorations, settingsForScope, type InsertDraftSettings } from '../lib/editor/editorInsertSettings';
 import { toggleHeadVisibility } from '../lib/editor/headLayerMutations';
 import { removeSelectedDecos } from '../lib/editor/editorTransformUtils';
 import { makeCenteredDecoration } from '../lib/editor/editorImportMerge';
-import { cloneRole } from '../lib/editor/editorRoleUtils';
 import {
-  roleWithChosenBodyPart,
+  type BaseRoleAppearanceUpdate,
   selectionIdsForCommand
 } from '../lib/editor/editorRoleCommands';
 import { useRoleDragCommands } from './useRoleDragCommands';
@@ -34,6 +33,7 @@ interface UseRoleDecorationCommandsOptions {
   recordLocalHistoryEntry(entry: { kind: 'translate'; ids: string[]; dx: number; dy: number; selectionIds: string[] }): void;
   restoreSelection(ids: string[]): void;
   updateRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
+  updateBaseRoleAppearance(update: BaseRoleAppearanceUpdate): void;
   updateTransformRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
   withTransformHistory(action: () => void, restoreIds?: string[]): void;
 }
@@ -52,6 +52,7 @@ export function useRoleDecorationCommands({
   recordLocalHistoryEntry,
   restoreSelection,
   updateRole,
+  updateBaseRoleAppearance,
   updateTransformRole,
   withTransformHistory
 }: UseRoleDecorationCommandsOptions) {
@@ -85,9 +86,9 @@ export function useRoleDecorationCommands({
         commitRole(nextRole, [deco.id]);
         return;
       }
-      updateRole((current) => roleWithChosenBodyPart(current, tab as BodyPartTab, option));
+      updateBaseRoleAppearance({ type: 'part', tab, option });
     },
-    [commitRole, insertDraftSettings, restoreSelection, roleRef, updateRole]
+    [commitRole, insertDraftSettings, roleRef, updateBaseRoleAppearance]
   );
 
   const updatePartById = useCallback(
@@ -100,9 +101,7 @@ export function useRoleDecorationCommands({
 
   const setSelectedVisible = useCallback(
     (visible: boolean) => {
-      const nextRole = cloneRole(roleRef.current);
-      setSelectedVisibleInRole(nextRole, selectedDecorationIds, visible);
-      commitRole(nextRole);
+      commitRole(roleWithSelectedVisibility(roleRef.current, selectedDecorationIds, visible));
     },
     [commitRole, roleRef, selectedDecorationIds]
   );
@@ -113,17 +112,14 @@ export function useRoleDecorationCommands({
         commitRole(toggleHeadVisibility(roleRef.current));
         return;
       }
-      const nextRole = cloneRole(roleRef.current);
-      toggleDecorationVisibilityInRole(nextRole, id);
-      commitRole(nextRole);
+      commitRole(roleWithToggledDecorationVisibility(roleRef.current, id));
     },
     [commitRole, roleRef]
   );
 
   const deleteDecoration = useCallback(
     (id: string) => {
-      const nextRole = cloneRole(roleRef.current);
-      deleteDecorationFromRole(nextRole, id);
+      const nextRole = roleWithDeletedDecoration(roleRef.current, id);
       commitRole(nextRole, selectedIdsRef.current.filter((item) => item !== id));
     },
     [commitRole, roleRef, selectedIdsRef]

@@ -128,6 +128,14 @@ describe('editor transform history', () => {
     expect(validSelectionIds(role(), ['a', 'missing', HEAD_LAYER_ID, 'a', 'b'])).toEqual(['a', HEAD_LAYER_ID, 'b']);
   });
 
+  it('validates sparse selections in their original order on large roles', () => {
+    const current = role({ decorations: Array.from({ length: 100 }, (_, index) => layer(`layer-${index}`)) });
+    expect(validSelectionIds(current, ['layer-99', 'missing', HEAD_LAYER_ID, 'layer-0', 'layer-99']))
+      .toEqual(['layer-99', HEAD_LAYER_ID, 'layer-0']);
+    expect(validSelectionIds(current, [HEAD_LAYER_ID, HEAD_LAYER_ID])).toEqual([HEAD_LAYER_ID]);
+    expect(validSelectionIds(current, [])).toEqual([]);
+  });
+
   it('bounds local history and future entries to the history limit', () => {
     let past: LocalHistoryEntry[] = [];
     let future: LocalHistoryEntry[] = [];
@@ -153,7 +161,8 @@ describe('editor transform history', () => {
     expect(patch).not.toHaveProperty('role');
     expect(patch?.decorations.fields).toEqual([]);
     expect(patch?.decorations.presence).toEqual([]);
-    expect(patch?.decorations.visibility?.indices).toEqual(new Uint32Array([0, 2]));
+    expect(patch?.decorations.visibility?.indices).toBeInstanceOf(Uint32Array);
+    expect(Array.from(patch!.decorations.visibility!.indices, (index) => patch!.idPool.ids[index])).toEqual(['a', 'c']);
     expect(patch?.decorations.visibility?.before).toEqual(new Uint8Array([1, 1]));
     expect(patch?.decorations.visibility?.after).toEqual(new Uint8Array([0, 0]));
   });
@@ -180,6 +189,50 @@ describe('editor transform history', () => {
     const restoredAfter = applyRoleHistoryPatch(restoredBefore, patch!, 'after');
     expect(restoredBefore).toEqual(before);
     expect(restoredAfter).toEqual(after);
+  });
+
+  it('stores sparse field edits without interning unrelated IDs and preserves unchanged references', () => {
+    const before = role({ groups: [group('g', [{ type: 'layer', id: 'a' }])] });
+    const after = {
+      ...before,
+      decorations: [before.decorations[0], { ...before.decorations[1], x: 4, visible: false }, before.decorations[2]]
+    };
+    const patch = createRoleHistoryPatch(before, after)!;
+    expect(patch.idPool.ids).toEqual(['b']);
+    expect(patch.decorations.order).toBeNull();
+
+    const undone = applyRoleHistoryPatch(after, patch, 'before');
+    const redone = applyRoleHistoryPatch(undone, patch, 'after');
+    expect(undone).toEqual(before);
+    expect(redone).toEqual(after);
+    expect(redone.decorations[0]).toBe(before.decorations[0]);
+    expect(redone.decorations[2]).toBe(before.decorations[2]);
+    expect(redone.groups).toBe(before.groups);
+  });
+
+  it('round-trips reorder-only edits that retain item references', () => {
+    const before = role({
+      groups: [group('g1', [{ type: 'layer', id: 'a' }]), group('g2', [{ type: 'layer', id: 'b' }])]
+    });
+    const after = { ...before, decorations: before.decorations.slice().reverse(), groups: before.groups.slice().reverse() };
+    const patch = createRoleHistoryPatch(before, after)!;
+    expect(patch.decorations.fields).toEqual([]);
+    expect(patch.groups.fields).toEqual([]);
+    expect(patch.decorations.order).not.toBeNull();
+    expect(patch.groups.order).not.toBeNull();
+    expect(applyRoleHistoryPatch(after, patch, 'before')).toEqual(before);
+    expect(applyRoleHistoryPatch(before, patch, 'after')).toEqual(after);
+  });
+
+  it('keeps collection identities on scalar-only history changes', () => {
+    const before = role();
+    const after = { ...before, name: 'new name' };
+    const patch = createRoleHistoryPatch(before, after)!;
+    expect(patch.idPool.ids).toEqual([]);
+    const undone = applyRoleHistoryPatch(after, patch, 'before');
+    expect(undone).toEqual(before);
+    expect(undone.decorations).toBe(before.decorations);
+    expect(undone.groups).toBe(before.groups);
   });
 
   it('does not create a patch for updatedAt-only changes', () => {
@@ -235,4 +288,19 @@ describe('editor transform history', () => {
     );
     expect(compactVisibilityBytes).toBe(layerCount * historyCount * (Uint32Array.BYTES_PER_ELEMENT + 2));
   });
+});
+
+it('keeps field-by-field layer equality, even for shared malformed records', () => {
+  const first = layer('a');
+  const base = role({ decorations: [first] });
+  const changes: Partial<DecorationLayer>[] = [
+    { id: 'another' }, { code: 'another' }, { assetId: 'another' }, { name: 'another' },
+    { x: 42 }, { y: 42 }, { scaleX: 2 }, { scaleY: 2 }, { rotation: 45 }, { visible: false }, { opacity: 0.5 }
+  ];
+  expect(sameRole(base, { ...base, decorations: [{ ...first }] })).toBe(true);
+  for (const change of changes) {
+    expect(sameRole(base, { ...base, decorations: [{ ...first, ...change }] })).toBe(false);
+  }
+  const invalid = role({ decorations: [{ ...first, x: Number.NaN }] });
+  expect(sameRole(invalid, { ...invalid })).toBe(false);
 });

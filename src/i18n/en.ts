@@ -128,6 +128,7 @@ export const en: Record<string, string> = {
 
   // Extra panel
   'extra.title': 'Extra Features',
+  'extra.loading': 'Loading tools…',
   'extra.entry.prompt': 'Choose a feature',
   'extra.entry.referenceImage': 'Add stage image',
   'extra.entry.imageToTwrole': 'Image to TWRole',

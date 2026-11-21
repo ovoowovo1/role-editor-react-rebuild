@@ -145,7 +145,10 @@ npm run generate:gaf
 ```text
 src/generated/gafManifest.json
 src/generated/gafRuntimeManifest.json
+src/generated/gafWeaponRuntimeManifest.json
 ```
+
+Pixi 預覽的 runtime 以共享矩陣表和緊湊格式儲存 animation frames，只在實際顯示時解碼該幀；圖片轉換 worker 使用獨立的 decoration manifest，格式不變。 武器 runtime 是獨立的 JSON，只有選到需要武器圖集的動畫時才會與圖集一併載入。
 
 `npm run dev` 與 `npm run build` 會透過 npm lifecycle script 自動執行 manifest generation。
 

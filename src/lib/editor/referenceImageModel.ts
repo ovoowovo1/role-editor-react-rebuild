@@ -84,48 +84,57 @@ export function reconcileReferenceImageLayerOrder(
   roleLayerOrder: readonly string[],
   imageIds: ReadonlySet<string>
 ): string[] {
-  const imageTokens = new Set([...imageIds].map(referenceImageLayerToken));
-  const validRoleTokens = new Set(roleLayerOrder);
-  const existing = currentOrder.filter((token, index, entries) =>
-    (imageTokens.has(token) || validRoleTokens.has(token)) && entries.indexOf(token) === index
-  );
-  if (!existing.length) {
-    return [...roleLayerOrder, ...imageTokens];
-  }
-  const buckets = Array.from({ length: roleLayerOrder.length + 1 }, () => [] as string[]);
-  existing.forEach((token, index) => {
-    if (!imageTokens.has(token)) return;
-    let previousRole: string | undefined;
-    let nextRole: string | undefined;
-    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-      if (validRoleTokens.has(existing[cursor])) {
-        previousRole = existing[cursor];
-        break;
-      }
-    }
-    for (let cursor = index + 1; cursor < existing.length; cursor += 1) {
-      if (validRoleTokens.has(existing[cursor])) {
-        nextRole = existing[cursor];
-        break;
-      }
-    }
-    const previousIndex = previousRole ? roleLayerOrder.indexOf(previousRole) : -1;
-    const nextIndex = nextRole ? roleLayerOrder.indexOf(nextRole) : -1;
-    const slot = previousIndex >= 0
-      ? Math.min(roleLayerOrder.length, previousIndex + 1)
-      : nextIndex >= 0
-        ? nextIndex
-        : roleLayerOrder.length;
-    buckets[slot].push(token);
+  if (!imageIds.size) return [...roleLayerOrder];
+
+  const imageTokens = new Set(Array.from(imageIds, referenceImageLayerToken));
+  const roleIndexByToken = new Map<string, number>();
+  roleLayerOrder.forEach((token, index) => {
+    if (!roleIndexByToken.has(token)) roleIndexByToken.set(token, index);
   });
+
+  const seen = new Set<string>();
+  const existing: string[] = [];
+  for (const token of currentOrder) {
+    if (seen.has(token) || (!imageTokens.has(token) && !roleIndexByToken.has(token))) continue;
+    seen.add(token);
+    existing.push(token);
+  }
+  if (!existing.length) return [...roleLayerOrder, ...imageTokens];
+
+  // Track adjacent surviving role tokens, preferring the prior one. An
+  // empty role token blocks the search but does not provide an anchor.
+  const nextRoleIndexByImage = new Map<string, number>();
+  let nextRoleIndex: number | undefined;
+  for (let index = existing.length - 1; index >= 0; index -= 1) {
+    const token = existing[index];
+    if (imageTokens.has(token) && nextRoleIndex !== undefined) {
+      nextRoleIndexByImage.set(token, nextRoleIndex);
+    }
+    if (roleIndexByToken.has(token)) nextRoleIndex = token ? roleIndexByToken.get(token) : undefined;
+  }
+
+  const buckets = new Map<number, string[]>();
+  let previousRoleIndex: number | undefined;
+  for (const token of existing) {
+    if (imageTokens.has(token)) {
+      const slot = previousRoleIndex === undefined
+        ? nextRoleIndexByImage.get(token) ?? roleLayerOrder.length
+        : previousRoleIndex + 1;
+      const bucket = buckets.get(slot);
+      if (bucket) bucket.push(token);
+      else buckets.set(slot, [token]);
+    }
+    if (roleIndexByToken.has(token)) previousRoleIndex = token ? roleIndexByToken.get(token) : undefined;
+  }
+
   const nextOrder: string[] = [];
   for (let index = 0; index <= roleLayerOrder.length; index += 1) {
-    nextOrder.push(...buckets[index]);
+    const bucket = buckets.get(index);
+    if (bucket) for (const token of bucket) nextOrder.push(token);
     if (index < roleLayerOrder.length) nextOrder.push(roleLayerOrder[index]);
   }
-  const present = new Set(nextOrder);
   for (const token of imageTokens) {
-    if (!present.has(token)) nextOrder.push(token);
+    if (!seen.has(token) && !roleIndexByToken.has(token)) nextOrder.push(token);
   }
   return nextOrder;
 }

@@ -9,6 +9,7 @@ import { normalizeImportedRole } from '../src/lib/serialization/roleSerializatio
 import type { DecorationLayer, RoleDocument } from '../src/types/role';
 
 type ScenarioName = 'patch-create' | 'patch-undo-redo' | 'transform-snapshot' | 'no-op-equality' | 'import-normalization';
+type EditScope = 'all-layers' | 'single-layer';
 type Summary = { median: number; p95: number; min: number; max: number; samples: number[] };
 
 interface BenchmarkResult {
@@ -27,6 +28,7 @@ interface BenchmarkOptions {
   warmup: number;
   runs: number;
   iterations: number;
+  editScope: EditScope;
   output?: string;
 }
 
@@ -41,6 +43,7 @@ function parseOptions(argv: string[]): BenchmarkOptions {
     warmup: Math.max(0, Number(value('warmup', '1')) || 1),
     runs: Math.max(1, Number(value('runs', '5')) || 5),
     iterations: Math.max(1, Number(value('iterations', '30')) || 30),
+    editScope: argv.includes('--single-layer') ? 'single-layer' : 'all-layers',
     output: argv.includes('--output') ? value('output', '') : undefined
   };
 }
@@ -87,11 +90,10 @@ function summarize(samples: number[]): Summary {
   };
 }
 
-function makeScenario(role: RoleDocument, scenario: ScenarioName) {
-  const changed = applyTranslateDelta(role, role.decorations.map((item) => item.id), 1, -1);
+function makeScenario(role: RoleDocument, scenario: ScenarioName, selectedIds: string[]) {
+  const changed = applyTranslateDelta(role, selectedIds, 1, -1);
   const pool = createHistoryIdPool();
   const patch = createRoleHistoryPatch(role, changed, pool);
-  const target = captureDecorationTransforms(role, role.decorations.map((item) => item.id));
   const imported = JSON.parse(JSON.stringify(role)) as unknown;
   return () => {
     switch (scenario) {
@@ -104,7 +106,7 @@ function makeScenario(role: RoleDocument, scenario: ScenarioName) {
         applyRoleHistoryPatch(undone, patch, 'after');
         return;
       case 'transform-snapshot':
-        captureDecorationTransforms(changed, role.decorations.map((item) => item.id));
+        captureDecorationTransforms(changed, selectedIds);
         return;
       case 'no-op-equality':
         sameRole(role, { ...role, updatedAt: `${role.updatedAt}-changed` });
@@ -118,10 +120,15 @@ function makeScenario(role: RoleDocument, scenario: ScenarioName) {
 
 function runLayerBenchmark(count: number, options: BenchmarkOptions): BenchmarkResult {
   const role = fixture(count);
+  // Use the center layer for the sparse edit and snapshot, not an early-exit edge case.
+  // Whole-document equality and import normalization still measure the full role in either mode.
+  const selectedIds = options.editScope === 'single-layer'
+    ? [role.decorations[Math.floor(role.decorations.length / 2)].id]
+    : role.decorations.map((item) => item.id);
   const scenarios: ScenarioName[] = ['patch-create', 'patch-undo-redo', 'transform-snapshot', 'no-op-equality', 'import-normalization'];
   const result = {} as Record<ScenarioName, Summary>;
   for (const scenario of scenarios) {
-    const run = makeScenario(role, scenario);
+    const run = makeScenario(role, scenario, selectedIds);
     for (let warmup = 0; warmup < options.warmup; warmup += 1) {
       for (let iteration = 0; iteration < options.iterations; iteration += 1) run();
     }

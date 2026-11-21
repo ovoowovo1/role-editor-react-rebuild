@@ -22,15 +22,17 @@ export const StageViewport = memo(function StageViewport({
   viewportSize,
   stageScale
 }: StageViewportProps) {
+  const isZoomed = stageScale > 1;
+
   return (
     <section className="stage-panel">
-      <div ref={viewportRef} className="stage-viewport">
+      <div ref={viewportRef} className={`stage-viewport${isZoomed ? ' stage-viewport-zoomed' : ''}`}>
         <div
           className="stage-scroll-surface"
-          style={{
+          style={isZoomed ? {
             width: `${surfaceSize.width}px`,
             height: `${surfaceSize.height}px`
-          }}
+          } : undefined}
         >
           <div
             ref={stageBgRef}

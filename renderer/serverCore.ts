@@ -205,6 +205,13 @@ export function createRendererApp(options: CreateRendererAppOptions): express.Ex
 
   if (staticDir && existsSync(staticDir)) {
     app.use(express.static(staticDir));
+    const rendererPage = path.join(staticDir, 'batch-render.html');
+    if (existsSync(rendererPage)) {
+      app.get('/batch-render', (request, response, next) => {
+        if (request.path !== '/batch-render') return next();
+        response.sendFile(rendererPage);
+      });
+    }
     app.get(/.*/, (_request, response) => {
       response.sendFile(path.join(staticDir, 'index.html'));
     });

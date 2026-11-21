@@ -1,6 +1,7 @@
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { Application } from 'pixi.js';
-import { gafSources } from '../../mock/gafManifest';
+import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../../lib/runtime/actorBodyAnimation';
+import { weaponAtlasNeedsLoad } from '../../lib/runtime/weaponAtlasAvailability';
 import {
   collectAtlasTextureUrlsForRole,
   partitionAtlasTextureUrls
@@ -15,6 +16,7 @@ import {
   syncSelectionControllerForIds
 } from './sceneSync';
 import { createStagePointerHandlers } from './stageInteractions';
+import { destroyReferenceImageDisplay } from './referenceImageVisuals';
 import { drawBrushFillOverlay } from './stageOverlayVisuals';
 import { buildStageScene } from './stageSceneBuilder';
 import type {
@@ -75,7 +77,6 @@ export function useStageSceneLifecycle({
     let cancelled = false;
     const buildRole = roleRef.current;
     const urls = collectAtlasTextureUrlsForRole(buildRole);
-    urls.push(gafSources.assetsTexture);
 
     partitionAtlasTextureUrls(urls).then(({ failed: failedTextures }) => {
       if (cancelled || buildId !== stageBuildGenerationRef.current) return;
@@ -94,7 +95,11 @@ export function useStageSceneLifecycle({
         failedTextures,
         stageScale,
         facingQuarterTurns,
-        bodyAnimationLabel,
+        // Render the current role immediately if a newly selected weapon
+        // still needs its optional atlas; playback applies the label when ready.
+        bodyAnimationLabel: weaponAtlasNeedsLoad(bodyAnimationLabel)
+          ? DEFAULT_ACTOR_BODY_ANIMATION_LABEL
+          : bodyAnimationLabel,
         onSelectionDragPointerDown: (event, currentScene) => {
           const targetId = currentScene.selectionDragTargetId;
           if (!targetId) return;
@@ -140,6 +145,11 @@ export function useStageSceneLifecycle({
         pointerHandlers.dispose();
         dragRef.current = null;
         stageRuntimeRefs.brushDrawRef.current = null;
+        for (const record of scene.referenceImageDisplays.values()) {
+          destroyReferenceImageDisplay(record);
+        }
+        scene.referenceImageDisplays.clear();
+        scene.referenceImagesById.clear();
         if (stage.destroyed) return;
         stage.off('pointerdown', pointerHandlers.handlePointerDown);
         stage.off('pointermove', pointerHandlers.handleMove);
@@ -153,11 +163,6 @@ export function useStageSceneLifecycle({
         scene.decorationsById.clear();
         scene.selectionDragVisualsById.clear();
         scene.selectionDragVisualDisplayKeysById.clear();
-        for (const record of scene.referenceImageDisplays.values()) {
-          if (!record.container.destroyed) record.container.destroy({ children: true });
-        }
-        scene.referenceImageDisplays.clear();
-        scene.referenceImagesById.clear();
         if (!scene.referenceImagesOverlay.destroyed) scene.referenceImagesOverlay.destroy({ children: true });
         scene.lastDisguiseChildOrder = [];
         if (sceneRef.current === scene) {

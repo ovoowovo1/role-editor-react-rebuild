@@ -47,12 +47,46 @@ function arraysEqual<T>(a: readonly T[], b: readonly T[]): boolean {
   return a.every((value, index) => value === b[index]);
 }
 
-function typedArraysEqual(a: Uint32Array, b: Uint32Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let index = 0; index < a.length; index += 1) {
-    if (a[index] !== b[index]) return false;
+const EMPTY_GROUPS: readonly DecorationGroup[] = [];
+
+function sameIdOrder<T extends { id: string }>(before: readonly T[], after: readonly T[]): boolean {
+  if (before.length !== after.length) return false;
+  for (let index = 0; index < before.length; index += 1) {
+    if (before[index] !== after[index] && before[index].id !== after[index].id) return false;
   }
   return true;
+}
+
+/** Ordinary edits retain membership and order; only structural edits need ID maps and order arrays. */
+function diffHistoryCollection<T extends { id: string }>(
+  before: readonly T[],
+  after: readonly T[],
+  idPool: HistoryIdPool,
+  update: (before: T, after: T) => void,
+  presence: (before: T | undefined, after: T | undefined, index: number) => void
+): HistoryValueChange<Uint32Array> | null {
+  if (before === after) return null;
+  if (sameIdOrder(before, after)) {
+    for (let index = 0; index < before.length; index += 1) {
+      if (before[index] !== after[index]) update(before[index], after[index]);
+    }
+    return null;
+  }
+
+  const remaining = new Map(after.map((value) => [value.id, value]));
+  for (const previous of before) {
+    const next = remaining.get(previous.id);
+    if (!next) presence(previous, undefined, internHistoryId(idPool, previous.id));
+    else if (next !== previous) update(previous, next);
+    remaining.delete(previous.id);
+  }
+  for (const added of remaining.values()) {
+    presence(undefined, added, internHistoryId(idPool, added.id));
+  }
+  return {
+    before: Uint32Array.from(before, (item) => internHistoryId(idPool, item.id)),
+    after: Uint32Array.from(after, (item) => internHistoryId(idPool, item.id))
+  };
 }
 
 function membersEqual(a: DecorationGroup['members'], b: DecorationGroup['members']): boolean {
@@ -168,28 +202,12 @@ export function createRoleHistoryPatch(
     }
   }
 
-  const beforeDecorations = new Map(before.decorations.map((layer) => [layer.id, layer]));
-  const afterDecorations = new Map(after.decorations.map((layer) => [layer.id, layer]));
-  const allDecorationIds = new Set([...beforeDecorations.keys(), ...afterDecorations.keys()]);
   const visibilityIndices: number[] = [];
   const visibilityBefore: number[] = [];
   const visibilityAfter: number[] = [];
-
-  for (const id of allDecorationIds) {
-    const beforeLayer = beforeDecorations.get(id);
-    const afterLayer = afterDecorations.get(id);
-    const index = internHistoryId(idPool, id);
-    if (!beforeLayer || !afterLayer) {
-      patch.decorations.presence.push({
-        index,
-        before: beforeLayer ? cloneLayer(beforeLayer) : null,
-        after: afterLayer ? cloneLayer(afterLayer) : null
-      });
-      continue;
-    }
-
+  patch.decorations.order = diffHistoryCollection(before.decorations, after.decorations, idPool, (beforeLayer, afterLayer) => {
     if (beforeLayer.visible !== afterLayer.visible) {
-      visibilityIndices.push(index);
+      visibilityIndices.push(internHistoryId(idPool, beforeLayer.id));
       visibilityBefore.push(beforeLayer.visible ? 1 : 0);
       visibilityAfter.push(afterLayer.visible ? 1 : 0);
     }
@@ -197,12 +215,18 @@ export function createRoleHistoryPatch(
     const changedKeys = DECORATION_FIELD_KEYS.filter((key) => beforeLayer[key] !== afterLayer[key]);
     if (changedKeys.length) {
       patch.decorations.fields.push({
-        index,
+        index: internHistoryId(idPool, beforeLayer.id),
         before: copyDecorationFields(beforeLayer, changedKeys),
         after: copyDecorationFields(afterLayer, changedKeys)
       });
     }
-  }
+  }, (beforeLayer, afterLayer, index) => {
+    patch.decorations.presence.push({
+      index,
+      before: beforeLayer ? cloneLayer(beforeLayer) : null,
+      after: afterLayer ? cloneLayer(afterLayer) : null
+    });
+  });
 
   if (visibilityIndices.length) {
     patch.decorations.visibility = {
@@ -212,42 +236,22 @@ export function createRoleHistoryPatch(
     };
   }
 
-  const beforeDecorationOrder = Uint32Array.from(before.decorations.map((layer) => internHistoryId(idPool, layer.id)));
-  const afterDecorationOrder = Uint32Array.from(after.decorations.map((layer) => internHistoryId(idPool, layer.id)));
-  if (!typedArraysEqual(beforeDecorationOrder, afterDecorationOrder)) {
-    patch.decorations.order = { before: beforeDecorationOrder, after: afterDecorationOrder };
-  }
-
-  const beforeGroups = new Map((before.groups ?? []).map((group) => [group.id, group]));
-  const afterGroups = new Map((after.groups ?? []).map((group) => [group.id, group]));
-  const allGroupIds = new Set([...beforeGroups.keys(), ...afterGroups.keys()]);
-  for (const id of allGroupIds) {
-    const beforeGroup = beforeGroups.get(id);
-    const afterGroup = afterGroups.get(id);
-    const index = internHistoryId(idPool, id);
-    if (!beforeGroup || !afterGroup) {
-      patch.groups.presence.push({
-        index,
-        before: beforeGroup ? cloneGroupValue(beforeGroup) : null,
-        after: afterGroup ? cloneGroupValue(afterGroup) : null
-      });
-      continue;
-    }
+  patch.groups.order = diffHistoryCollection(before.groups ?? EMPTY_GROUPS, after.groups ?? EMPTY_GROUPS, idPool, (beforeGroup, afterGroup) => {
     const changedKeys = GROUP_FIELD_KEYS.filter((key) => !groupFieldEqual(beforeGroup, afterGroup, key));
     if (changedKeys.length) {
       patch.groups.fields.push({
-        index,
+        index: internHistoryId(idPool, beforeGroup.id),
         before: copyGroupFields(beforeGroup, changedKeys),
         after: copyGroupFields(afterGroup, changedKeys)
       });
     }
-  }
-
-  const beforeGroupOrder = Uint32Array.from((before.groups ?? []).map((group) => internHistoryId(idPool, group.id)));
-  const afterGroupOrder = Uint32Array.from((after.groups ?? []).map((group) => internHistoryId(idPool, group.id)));
-  if (!typedArraysEqual(beforeGroupOrder, afterGroupOrder)) {
-    patch.groups.order = { before: beforeGroupOrder, after: afterGroupOrder };
-  }
+  }, (beforeGroup, afterGroup, index) => {
+    patch.groups.presence.push({
+      index,
+      before: beforeGroup ? cloneGroupValue(beforeGroup) : null,
+      after: afterGroup ? cloneGroupValue(afterGroup) : null
+    });
+  });
 
   if (!hasSubstantivePatchChanges(patch)) return null;
   if (before.updatedAt !== after.updatedAt) patch.updatedAt = { before: before.updatedAt, after: after.updatedAt };
@@ -309,23 +313,48 @@ function applyGroupFields(
 }
 
 function orderedByHistoryIds<T extends { id: string }>(
-  values: Map<number, T>,
+  values: Map<string, T>,
   order: Uint32Array | null,
   idPool: HistoryIdPool
 ): T[] {
   if (!order) return Array.from(values.values());
   const ordered: T[] = [];
-  const used = new Set<number>();
   for (const index of order) {
-    const value = values.get(index);
+    const id = idPool.ids[index];
+    const value = values.get(id);
     if (!value) continue;
     ordered.push(value);
-    used.add(index);
+    values.delete(id);
   }
-  values.forEach((value, index) => {
-    if (!used.has(index) && idPool.ids[index] === value.id) ordered.push(value);
-  });
+  for (const value of values.values()) ordered.push(value);
   return ordered;
+}
+
+/** Lazily copy only the changed collection; unrelated item references remain stable. */
+function applyFieldOnlyChanges<T extends { id: string }, C>(
+  items: T[],
+  changes: Map<string, C>,
+  update: (item: T, change: C) => T
+): T[] {
+  if (changes.size === 0) return items;
+  if (changes.size === 1) {
+    const [id, change] = changes.entries().next().value!;
+    const index = items.findIndex((item) => item.id === id);
+    if (index === -1) return items;
+    const next = items.slice();
+    next[index] = update(items[index], change);
+    return next;
+  }
+  let next: T[] | undefined;
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    const change = changes.get(item.id);
+    if (change !== undefined) {
+      next ??= items.slice();
+      next[index] = update(item, change);
+    }
+  }
+  return next ?? items;
 }
 
 export function applyRoleHistoryPatch(
@@ -357,45 +386,71 @@ export function applyRoleHistoryPatch(
     next.headLayer = headLayer;
   }
 
-  const decorationValues = new Map<number, DecorationLayer>();
-  for (const layer of role.decorations) {
-    const index = patch.idPool.indexById.get(layer.id);
-    if (index !== undefined) decorationValues.set(index, layer);
+  const decorations = patch.decorations;
+  const visibility = decorations.visibility;
+  if (!decorations.order && decorations.presence.length === 0) {
+    if (decorations.fields.length || visibility) {
+      type DecorationChange = Partial<Omit<DecorationLayer, 'id'>>;
+      const changes = new Map<string, DecorationChange>();
+      for (const change of decorations.fields) {
+        changes.set(patch.idPool.ids[change.index], historyValue(change, direction));
+      }
+      if (visibility) {
+        const values = visibility[direction];
+        visibility.indices.forEach((index, position) => {
+          const id = patch.idPool.ids[index];
+          changes.set(id, { ...changes.get(id), visible: values[position] === 1 });
+        });
+      }
+      next.decorations = applyFieldOnlyChanges(role.decorations, changes, (layer, change) => ({ ...layer, ...change }));
+    }
+  } else {
+    const decorationValues = new Map(role.decorations.map((layer) => [layer.id, layer]));
+    for (const presence of decorations.presence) {
+      const id = patch.idPool.ids[presence.index];
+      const value = historyValue(presence, direction);
+      if (value) decorationValues.set(id, cloneLayer(value));
+      else decorationValues.delete(id);
+    }
+    for (const change of decorations.fields) {
+      const id = patch.idPool.ids[change.index];
+      const layer = decorationValues.get(id);
+      if (layer) decorationValues.set(id, applyDecorationFields(layer, historyValue(change, direction)));
+    }
+    if (visibility) {
+      const values = visibility[direction];
+      visibility.indices.forEach((index, position) => {
+        const id = patch.idPool.ids[index];
+        const layer = decorationValues.get(id);
+        if (layer) decorationValues.set(id, { ...layer, visible: values[position] === 1 });
+      });
+    }
+    next.decorations = orderedByHistoryIds(decorationValues, decorations.order?.[direction] ?? null, patch.idPool);
   }
-  for (const presence of patch.decorations.presence) {
-    const value = historyValue(presence, direction);
-    if (value) decorationValues.set(presence.index, cloneLayer(value));
-    else decorationValues.delete(presence.index);
-  }
-  for (const change of patch.decorations.fields) {
-    const layer = decorationValues.get(change.index);
-    if (layer) decorationValues.set(change.index, applyDecorationFields(layer, historyValue(change, direction)));
-  }
-  if (patch.decorations.visibility) {
-    const visibility = patch.decorations.visibility;
-    const values = direction === 'before' ? visibility.before : visibility.after;
-    visibility.indices.forEach((index, position) => {
-      const layer = decorationValues.get(index);
-      if (layer) decorationValues.set(index, { ...layer, visible: values[position] === 1 });
-    });
-  }
-  next.decorations = orderedByHistoryIds(decorationValues, patch.decorations.order?.[direction] ?? null, patch.idPool);
 
-  const groupValues = new Map<number, DecorationGroup>();
-  for (const group of role.groups ?? []) {
-    const index = patch.idPool.indexById.get(group.id);
-    if (index !== undefined) groupValues.set(index, group);
+  const groups = patch.groups;
+  if (!groups.order && groups.presence.length === 0) {
+    if (groups.fields.length) {
+      const changes = new Map(groups.fields.map((change) => [
+        patch.idPool.ids[change.index], historyValue(change, direction)
+      ]));
+      next.groups = applyFieldOnlyChanges(role.groups ?? [], changes, applyGroupFields);
+    }
+  } else {
+    const groupValues = new Map((role.groups ?? []).map((group) => [group.id, group]));
+    for (const presence of groups.presence) {
+      const id = patch.idPool.ids[presence.index];
+      const value = historyValue(presence, direction);
+      if (value) groupValues.set(id, cloneGroupValue(value));
+      else groupValues.delete(id);
+    }
+    for (const change of groups.fields) {
+      const id = patch.idPool.ids[change.index];
+      const group = groupValues.get(id);
+      if (group) groupValues.set(id, applyGroupFields(group, historyValue(change, direction)));
+    }
+    next.groups = orderedByHistoryIds(groupValues, groups.order?.[direction] ?? null, patch.idPool);
   }
-  for (const presence of patch.groups.presence) {
-    const value = historyValue(presence, direction);
-    if (value) groupValues.set(presence.index, cloneGroupValue(value));
-    else groupValues.delete(presence.index);
-  }
-  for (const change of patch.groups.fields) {
-    const group = groupValues.get(change.index);
-    if (group) groupValues.set(change.index, applyGroupFields(group, historyValue(change, direction)));
-  }
-  next.groups = orderedByHistoryIds(groupValues, patch.groups.order?.[direction] ?? null, patch.idPool);
 
   if (patch.updatedAt) next.updatedAt = historyValue(patch.updatedAt, direction);
   return next;

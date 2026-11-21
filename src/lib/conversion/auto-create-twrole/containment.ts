@@ -27,6 +27,26 @@ export function erodeContainmentMask(
     output.set(containmentMask);
     return output;
   }
+  if (2 * safeRadius >= width || 2 * safeRadius >= height) return output;
+
+  // Auto Create always uses a 3×3 window. Skip the guaranteed-zero border
+  // and avoid coordinate checks and nested neighbor loops for each pixel.
+  if (safeRadius === 1 && Number.isInteger(width) && Number.isInteger(height)) {
+    const lastRow = (height - 1) * width;
+    for (let row = width; row < lastRow; row += width) {
+      const end = row + width - 1;
+      for (let pixel = row + 1; pixel < end; pixel += 1) {
+        const top = pixel - width;
+        const bottom = pixel + width;
+        if (containmentMask[pixel] && containmentMask[pixel - 1] && containmentMask[pixel + 1] &&
+            containmentMask[top - 1] && containmentMask[top] && containmentMask[top + 1] &&
+            containmentMask[bottom - 1] && containmentMask[bottom] && containmentMask[bottom + 1]) {
+          output[pixel] = 1;
+        }
+      }
+    }
+    return output;
+  }
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {

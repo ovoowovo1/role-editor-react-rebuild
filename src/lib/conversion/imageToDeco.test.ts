@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makePartOption } from '../../test/roleFixtures';
 import {
@@ -6,6 +7,7 @@ import {
   buildDecoPalette,
   convertImageFileToDecos,
   visualWidthForOption,
+  type ColorMatchAlgorithm,
   type DecoPaletteEntry,
   type ImageToDecoConversionOptions
 } from './imageToDeco';
@@ -92,6 +94,50 @@ function paletteEntry(id: string, r: number, g: number, b: number): DecoPaletteE
   };
 }
 
+const MATCH_MODES: readonly ColorMatchAlgorithm[] = ['rgb', 'weighted-rgb', 'luminance', 'cielab', 'hsv', 'hsl', 'brightness-color'];
+type MatchFn = typeof bestPaletteMatch;
+
+function matchFixtureDigest(match: MatchFn): string {
+  // Stable golden of the previous matcher over high-entropy, fractional,
+  // atypical/non-finite input, hue-wrap and near-duplicate color candidates.
+  let seed = 0x5ac7fd1;
+  const value = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed;
+  };
+  const query: Array<[number, number, number]> = [
+    [0, 0, 0], [255, 255, 255], [128, 128, 128], [255, 1, 0], [255, 0, 1],
+    [10.313726, 19.3125, 9.625], [Number.NaN, 12, 35], [Infinity, 1, 2], [-Infinity, 1, 2]
+  ];
+  for (let i = 0; i < 180; i++) {
+    query.push([(value() >>> 10) / 16384, (value() >>> 11) / 8192, (value() >>> 12) / 4096]);
+  }
+  const palettes = Array.from({ length: 6 }, (_, index) => {
+    const entries = Array.from({ length: 8 * (index + 1) }, (_, i): DecoPaletteEntry => {
+      const entry = paletteEntry(`${index}-${i}`, (value() >>> 8) / 65536, (value() >>> 8) / 65536, (value() >>> 8) / 65536);
+      entry.hsv = { h: value() % 360, s: (value() % 128) / 128, v: (value() % 256) / 256 };
+      entry.hsl = { h: value() % 360, s: (value() % 128) / 128, l: (value() % 256) / 256 };
+      entry.lab = { l: (value() % 1000) / 10, a: (value() % 2560) / 10 - 128, b: (value() % 2560) / 10 - 128 };
+      return entry;
+    });
+    const middle = entries[Math.floor(entries.length / 2)];
+    entries.unshift({ ...middle, option: { ...middle.option, id: `tie-${index}` } });
+    entries.push({ ...middle, r: middle.r + 2 ** -42, option: { ...middle.option, id: `near-${index}` } });
+    entries.push({
+      ...middle,
+      option: { ...middle.option, id: `nonfinite-${index}` },
+      r: NaN, luminance: Infinity, lab: { ...middle.lab, a: NaN },
+      hsv: { ...middle.hsv, h: NaN }, hsl: { ...middle.hsl, s: NaN }
+    });
+    return entries;
+  });
+
+  const matches = MATCH_MODES.flatMap((mode) =>
+    palettes.flatMap((palette) => query.map(([r, g, b]) => match(r, g, b, palette, mode)?.option.id))
+  );
+  return createHash('sha256').update(JSON.stringify(matches)).digest('hex');
+}
+
 describe('image to deco helpers', () => {
   it('uses atlas runtime display width before atlas width and fallback size', () => {
     expect(visualWidthForOption(makePartOption('plain'))).toBe(50);
@@ -147,6 +193,24 @@ describe('image to deco helpers', () => {
     }
   });
 
+  it('matches the previous production matcher across all seven color spaces', () => {
+    expect(matchFixtureDigest(bestPaletteMatch)).toBe('d051cf2ebfff78e00248ea7caf109aae9367ac50467aa74c0e1783cbb17da493');
+  });
+
+  it('keeps the first entry when no candidate has a comparable distance', () => {
+    const first = paletteEntry('first', NaN, NaN, NaN);
+    const second = paletteEntry('second', NaN, NaN, NaN);
+    for (const entry of [first, second]) {
+      entry.lab = { l: NaN, a: NaN, b: NaN };
+      entry.hsv = { h: NaN, s: NaN, v: NaN };
+      entry.hsl = { h: NaN, s: NaN, l: NaN };
+    }
+    for (const mode of MATCH_MODES) {
+      expect(bestPaletteMatch(10, 20, 30, [first, second], mode)).toBe(first);
+      expect(bestPaletteMatch(10, 20, 30, [], mode)).toBeUndefined();
+    }
+  });
+
   it('builds a palette, skips transparent and broken sources, and reports progress', async () => {
     installImageCanvasMock({
       'red.png': { width: 1, height: 1, pixels: new Uint8ClampedArray([250, 10, 10, 255]) },
@@ -166,7 +230,7 @@ describe('image to deco helpers', () => {
     expect(progress).toHaveBeenLastCalledWith({ stage: 'palette', done: 3, total: 3 });
   });
 
-  it('caches atlas readback by option identity and alpha threshold while applying minimum pixels per build', async () => {
+  it('reuses atlas readback across thresholds while applying minimum pixels per build', async () => {
     const mock = installImageCanvasMock({
       'mixed.png': {
         width: 2,
@@ -185,7 +249,79 @@ describe('image to deco helpers', () => {
     expect(first[0]).toMatchObject({ r: 0, g: 255, b: 0, opaquePixels: 1 });
     expect(filtered).toEqual([]);
     expect(otherThreshold).toEqual([]);
-    expect(mock.getImageData).toHaveBeenCalledTimes(2);
+    expect(mock.getImageData).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one raster between concurrent thresholds without changing accepted colors or progress', async () => {
+    const pixels = Uint8ClampedArray.of(1, 30, 90, 0, 5, 10, 15, 100, 80, 90, 100, 255);
+    const mock = installImageCanvasMock({
+      'concurrent-alpha.png': { width: 3, height: 1, pixels }
+    });
+    const option = makePartOption('concurrent-alpha', { icon: 'concurrent-alpha.png' });
+    const base = { ...IMAGE_TO_DECO_PRESETS.performance, minSourceOpaquePixels: 1 };
+    const progress = vi.fn();
+    const results = await Promise.all([Number.NaN, -0.5, 0, 99.99, 100, 254.9, 255, Infinity].map((alphaThreshold) =>
+      buildDecoPalette([option], { ...base, alphaThreshold }, progress)
+    ));
+    const channels = results.map((palette) => palette.map(({ r, g, b, opaquePixels }) => [r, g, b, opaquePixels]));
+    expect(channels).toEqual([
+      [[86 / 3, 130 / 3, 205 / 3, 3]],
+      [[86 / 3, 130 / 3, 205 / 3, 3]],
+      [[42.5, 50, 57.5, 2]], [[42.5, 50, 57.5, 2]],
+      [[80, 90, 100, 1]], [[80, 90, 100, 1]], [], []
+    ]);
+    expect(mock.getImageData).toHaveBeenCalledTimes(1);
+    expect(progress.mock.calls).toEqual(Array.from({ length: 8 }, () => [{ stage: 'palette', done: 1, total: 1 }]));
+  });
+
+  it('bounds retained palettes and only rerasterizes an option evicted from the cache', async () => {
+    const pixels = Uint8ClampedArray.of(34, 56, 78, 255);
+    const mock = installImageCanvasMock({
+      'alpha-limit.png': { width: 1, height: 1, pixels }
+    });
+    const options = Array.from({ length: 513 }, (_, index) =>
+      makePartOption(`alpha-limit-${index}`, { icon: 'alpha-limit.png' })
+    );
+    const base = { ...IMAGE_TO_DECO_PRESETS.performance, minSourceOpaquePixels: 1 };
+    await buildDecoPalette(options, base);
+    await buildDecoPalette([options[512]], { ...base, alphaThreshold: 100 });
+    expect(mock.getImageData).toHaveBeenCalledTimes(513);
+    await buildDecoPalette([options[0]], base);
+    expect(mock.getImageData).toHaveBeenCalledTimes(514);
+  });
+
+  it('bounds retained raw pixel bytes before any threshold-table promotion', async () => {
+    const images: Record<string, FakeImageData> = {};
+    const options = Array.from({ length: 3 }, (_, index) => {
+      const icon = `alpha-byte-limit-${index}.png`;
+      images[icon] = { width: 1024, height: 1024, pixels: new Uint8ClampedArray(4 * 1024 * 1024) };
+      images[icon].pixels.set([34, 56, 78, 255]);
+      return makePartOption(`alpha-byte-limit-${index}`, { icon });
+    });
+    const mock = installImageCanvasMock(images);
+    const base = { ...IMAGE_TO_DECO_PRESETS.performance, minSourceOpaquePixels: 1 };
+
+    await expect(buildDecoPalette(options, base)).resolves.toHaveLength(3);
+    await expect(buildDecoPalette([options[2]], { ...base, alphaThreshold: 100 })).resolves.toHaveLength(1);
+    expect(mock.getImageData).toHaveBeenCalledTimes(3);
+    await expect(buildDecoPalette([options[0]], base)).resolves.toHaveLength(1);
+    expect(mock.getImageData).toHaveBeenCalledTimes(4);
+  });
+
+  it('retries a failed canvas readback on the same option even under a new threshold', async () => {
+    const pixels = Uint8ClampedArray.of(34, 56, 78, 200);
+    const { getImageData } = installImageCanvasMock({
+      'alpha-readback-retry.png': { width: 1, height: 1, pixels }
+    });
+    getImageData.mockImplementationOnce(() => { throw new Error('transient readback'); });
+    const option = makePartOption('alpha-readback-retry', { icon: 'alpha-readback-retry.png' });
+    const base = { ...IMAGE_TO_DECO_PRESETS.performance, minSourceOpaquePixels: 1 };
+
+    await expect(buildDecoPalette([option], base)).resolves.toEqual([]);
+    await expect(buildDecoPalette([option], { ...base, alphaThreshold: 180 })).resolves.toMatchObject([
+      { r: 34, g: 56, b: 78, opaquePixels: 1 }
+    ]);
+    expect(getImageData).toHaveBeenCalledTimes(2);
   });
 
   it('evicts rejected image and palette promises so a transient source failure can retry', async () => {
@@ -224,6 +360,43 @@ describe('image to deco helpers', () => {
     expect(result.warnings).toHaveLength(2);
     expect(result.previewDataUrl).toBe('data:image/png;base64,mock');
     expect(progress).toHaveBeenCalledWith({ stage: 'image', done: 1, total: 1 });
+  });
+
+  it('keeps row-major asset IDs and fractional geometry in the converted output', async () => {
+    installImageCanvasMock({
+      'geometry-red.png': { width: 1, height: 1, pixels: Uint8ClampedArray.of(255, 0, 0, 255) },
+      'geometry-blue.png': { width: 1, height: 1, pixels: Uint8ClampedArray.of(0, 0, 255, 255) },
+      'blob:target': {
+        width: 3, height: 2,
+        pixels: Uint8ClampedArray.of(
+          255, 0, 0, 255, 0, 0, 255, 255, 255, 0, 0, 0,
+          0, 0, 255, 255, 255, 0, 0, 255, 0, 0, 255, 255
+        )
+      }
+    });
+    const options = {
+      ...IMAGE_TO_DECO_PRESETS.performance, minSourceOpaquePixels: 1, gapFactor: 0.7,
+      targetScaleMultiplier: 1.5, targetRatio: 0.25, maxLayers: 4
+    };
+    const result = await convertImageFileToDecos(new File(['x'], 'geometry.png'), [
+      makePartOption('red', { icon: 'geometry-red.png' }),
+      makePartOption('blue', { icon: 'geometry-blue.png' })
+    ], options);
+
+    const scaleX = (0.7 / 50) * 1.5;
+    expect(result).toMatchObject({
+      opaquePixels: 5, skippedPixels: 1, generatedPixels: 4, truncated: true,
+      previewDataUrl: 'data:image/png;base64,mock',
+      warnings: ['Layer limit reached. Generated 4 of 5 visible pixels.']
+    });
+    expect(result.decorations.map(({ assetId, name, x, y, scaleX, scaleY }) =>
+      ({ assetId, name, x, y, scaleX, scaleY })
+    )).toEqual([
+      { assetId: 'red', name: 'geometry 0001', x: -0.7, y: -0.35, scaleX, scaleY: scaleX * 0.25 },
+      { assetId: 'blue', name: 'geometry 0002', x: 0, y: -0.35, scaleX, scaleY: scaleX * 0.25 },
+      { assetId: 'blue', name: 'geometry 0003', x: -0.7, y: 0.35, scaleX, scaleY: scaleX * 0.25 },
+      { assetId: 'red', name: 'geometry 0004', x: 0, y: 0.35, scaleX, scaleY: scaleX * 0.25 }
+    ]);
   });
 
   it('reuses a palette readback across conversions without changing decoration order, stats, or warnings', async () => {
@@ -277,5 +450,56 @@ describe('image to deco helpers', () => {
     expect({ ...first, decorations: [] }).toEqual({ ...second, decorations: [] });
     expect(mock.getImageData.mock.calls.length - firstReadCount).toBe(1);
     expect(algorithmReads).toBe(4);
+  });
+
+  it('preserves every progress notification without forcing a frame for each cheap stripe', async () => {
+    const pixels = new Uint8ClampedArray(256 * 4);
+    for (let offset = 0; offset < pixels.length; offset += 4) pixels.set([255, 0, 0, 255], offset);
+    installImageCanvasMock({
+      'frame-budget.png': { width: 1, height: 1, pixels: Uint8ClampedArray.of(255, 0, 0, 255) },
+      'blob:target': { width: 1, height: 256, pixels }
+    });
+    const options = {
+      ...IMAGE_TO_DECO_PRESETS.performance, maxSize: 256, maxLayers: 3, minSourceOpaquePixels: 1
+    };
+    const decoOptions = Array.from({ length: 65 }, (_, i) => makePartOption(`frame-budget-${i}`, { icon: 'frame-budget.png' }));
+    const frame = vi.fn((callback: FrameRequestCallback) => { callback(0); return 1; });
+    Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: frame });
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      const progress = vi.fn();
+      const result = await convertImageFileToDecos(new File(['x'], 'frame-budget.png'), decoOptions, options, progress);
+      expect(frame).toHaveBeenCalledTimes(2);
+      expect(progress.mock.calls.flatMap(([item]) => item.stage === 'palette' ? [item.done] : []))
+        .toEqual([1, 17, 33, 49, 65]);
+      expect(progress.mock.calls.flatMap(([item]) => item.stage === 'pixels' ? [item.done] : []))
+        .toEqual([...Array.from({ length: 32 }, (_, i) => 1 + i * 8), 256]);
+      expect(result).toMatchObject({ opaquePixels: 256, generatedPixels: 3, truncated: true });
+      expect(result.decorations.map(({ assetId, y }) => [assetId, y])).toEqual([
+        ['frame-budget-0', -255], ['frame-budget-0', -253], ['frame-budget-0', -251]
+      ]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('still yields between expensive palette entries before the next progress boundary', async () => {
+    const pixels = Uint8ClampedArray.of(10, 20, 30, 255);
+    const { getImageData } = installImageCanvasMock({
+      'frame-budget-slow.png': { width: 1, height: 1, pixels }
+    });
+    let clock = 0;
+    getImageData.mockImplementation(() => { clock += 9; });
+    const now = vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const frame = vi.fn((callback: FrameRequestCallback) => { callback(clock); return 1; });
+    Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: frame });
+    const options = { ...IMAGE_TO_DECO_PRESETS.performance, minSourceOpaquePixels: 1 };
+    const decoOptions = Array.from({ length: 3 }, (_, i) => makePartOption(`slow-${i}`, { icon: 'frame-budget-slow.png' }));
+    try {
+      await expect(buildDecoPalette(decoOptions, options)).resolves.toHaveLength(3);
+      expect(frame).toHaveBeenCalledTimes(3);
+    } finally {
+      now.mockRestore();
+    }
   });
 });

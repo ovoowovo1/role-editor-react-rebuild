@@ -113,7 +113,12 @@ function sameMembers(a: DecorationGroup['members'], b: DecorationGroup['members'
 }
 
 function sameDecoration(a: DecorationLayer, b: DecorationLayer): boolean {
-  return sameRecord(a, b, ['id', 'code', 'assetId', 'name', 'x', 'y', 'scaleX', 'scaleY', 'rotation', 'visible', 'opacity']);
+  // Hot for equality checks on big roles. Compare the same fields in order
+  // without constructing a key array/callback for every layer. Keep strict
+  // comparison even when records share identity (e.g. malformed NaN input).
+  return a.id === b.id && a.code === b.code && a.assetId === b.assetId && a.name === b.name &&
+    a.x === b.x && a.y === b.y && a.scaleX === b.scaleX && a.scaleY === b.scaleY &&
+    a.rotation === b.rotation && a.visible === b.visible && a.opacity === b.opacity;
 }
 
 function sameGroup(a: DecorationGroup, b: DecorationGroup): boolean {

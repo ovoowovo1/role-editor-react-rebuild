@@ -12,10 +12,12 @@ import {
   type DisplayTransformPatch
 } from './characterStageHelpers';
 import { createDecorationVisual } from './decorationVisual';
+import { scanAlphaCoverage } from './renderMetrics';
 import { getBodyPartOption } from '../../mock/options';
 import { actorAtlasFrames, gafSources } from '../../mock/gafManifest';
 import { actorRuntimeManifest } from '../runtime/gafRuntimeManifest';
 import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../runtime/actorBodyAnimation';
+import { prepareWeaponAtlasForAnimation, recordWeaponAtlasResult } from '../runtime/weaponAtlasAvailability';
 
 export type RenderBackground = 'transparent' | string;
 export type RenderPart = BodyPartTab;
@@ -273,55 +275,46 @@ function readCanvasImageData(canvas: HTMLCanvasElement): ImageData | null {
 function alphaStats(canvas: HTMLCanvasElement, imageData?: ImageData | null): Pick<FullRoleRenderResult, 'alphaPixels' | 'nonTransparentBounds'> {
   const data = (imageData ?? readCanvasImageData(canvas))?.data;
   if (!data) return { alphaPixels: 0, nonTransparentBounds: null };
-  let alphaPixels = 0;
-  let minX = Number.POSITIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-
-  for (let y = 0; y < canvas.height; y += 1) {
-    for (let x = 0; x < canvas.width; x += 1) {
-      const alpha = data[(y * canvas.width + x) * 4 + 3];
-      if (alpha <= 0) continue;
-      alphaPixels += 1;
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x);
-      maxY = Math.max(maxY, y);
-    }
-  }
-
-  return {
-    alphaPixels,
-    nonTransparentBounds: alphaPixels
-      ? { minX, minY, maxX, maxY }
-      : null
-  };
+  return scanAlphaCoverage({ width: canvas.width, height: canvas.height, data });
 }
 
-async function prepareRoleAssets(rawRole: unknown): Promise<{
+interface RoleCaptureInput {
   role: RoleDocument;
   warnings: string[];
-  failedTextures: Set<string>;
-}> {
+  urls: string[];
+}
+
+function describeRoleForCapture(rawRole: unknown): RoleCaptureInput {
   const { role, warnings } = normalizeImportedRole(rawRole);
-  const urls = collectAtlasTextureUrlsForRole(role);
-  urls.push(gafSources.assetsTexture);
+  return { role, warnings, urls: collectAtlasTextureUrlsForRole(role) };
+}
+
+async function prepareRoleAssets({ urls }: RoleCaptureInput, bodyAnimationLabel: string): Promise<Set<string>> {
+  const weaponAtlas = prepareWeaponAtlasForAnimation(bodyAnimationLabel);
   const { failed } = await partitionAtlasTextureUrls(urls);
   const okUrls = [...new Set(urls.filter((url) => url && !failed.has(url)))];
   if (okUrls.length) {
     await Assets.load(okUrls);
   }
-  return { role, warnings, failedTextures: failed };
+  if (weaponAtlas) recordWeaponAtlasResult(failed, await weaponAtlas);
+  return failed;
 }
 
-export async function renderFullRoleToDataUrl(
-  rawRole: unknown,
-  renderOptions: FullRoleRenderOptions = {}
-): Promise<FullRoleRenderResult> {
-  const options = normalizeRenderOptions(renderOptions);
+interface RenderedRoleCanvas {
+  canvas: HTMLCanvasElement;
+  warnings: string[];
+  missingTextureCount: number;
+}
+
+async function withRenderedRoleCanvas<T>(
+  describeRole: () => RoleCaptureInput,
+  options: NormalizedRenderOptions,
+  capture: (rendered: RenderedRoleCanvas) => T
+): Promise<T> {
   const background = parseBackground(options.background);
-  const { role, warnings, failedTextures } = await prepareRoleAssets(rawRole);
+  const input = describeRole();
+  const failedTextures = await prepareRoleAssets(input, options.bodyAnimationLabel);
+  const { role, warnings } = input;
 
   const app = new Application({
     antialias: true,
@@ -339,8 +332,18 @@ export async function renderFullRoleToDataUrl(
     app.renderer.render(app.stage);
     await waitForNextFrame();
     app.renderer.render(app.stage);
+    return capture({ canvas: app.view as HTMLCanvasElement, warnings, missingTextureCount: failedTextures.size });
+  } finally {
+    app.destroy(true, { children: true, texture: false });
+  }
+}
 
-    const canvas = app.view as HTMLCanvasElement;
+export async function renderFullRoleToDataUrl(
+  rawRole: unknown,
+  renderOptions: FullRoleRenderOptions = {}
+): Promise<FullRoleRenderResult> {
+  const options = normalizeRenderOptions(renderOptions);
+  return withRenderedRoleCanvas(() => describeRoleForCapture(rawRole), options, ({ canvas, warnings, missingTextureCount }) => {
     const imageData = readCanvasImageData(canvas);
     const stats = alphaStats(canvas, imageData);
     return {
@@ -351,9 +354,81 @@ export async function renderFullRoleToDataUrl(
       alphaPixels: stats.alphaPixels,
       nonTransparentBounds: stats.nonTransparentBounds,
       warnings,
-      missingTextureCount: failedTextures.size
+      missingTextureCount
     };
-  } finally {
-    app.destroy(true, { children: true, texture: false });
-  }
+  });
+}
+
+export interface RoleThumbnailCapture {
+  imageData: ImageData | null;
+  width: number;
+  height: number;
+  nonTransparentBounds: FullRoleRenderResult['nonTransparentBounds'];
+  encodeSourcePng(): string;
+}
+
+/** Finish capture synchronously while the underlying WebGL canvas is alive.
+ * On the normal cropped path, the encoder for the discarded source is never called.
+ */
+export async function captureRoleThumbnail<T>(rawRole: unknown, capture: (rendered: RoleThumbnailCapture) => T): Promise<T> {
+  const options = normalizeRenderOptions({ imageSize: 256, background: 'transparent' });
+  return withRenderedRoleCanvas(() => describeRoleForCapture(rawRole), options, ({ canvas }) => {
+    const imageData = readCanvasImageData(canvas);
+    return capture({
+      imageData,
+      width: canvas.width,
+      height: canvas.height,
+      nonTransparentBounds: alphaStats(canvas, imageData).nonTransparentBounds,
+      encodeSourcePng: () => canvas.toDataURL('image/png')
+    });
+  });
+}
+
+type BatchCaptureMode = 'png' | 'pixels' | 'both';
+
+export type FullRoleBatchCapture = Omit<FullRoleRenderResult, 'alphaPixels' | 'nonTransparentBounds'>;
+
+/**
+ * Internal batch endpoints either return a PNG or score raw pixels. Use the
+ * identical render lifecycle but omit captures/statistics no caller consumes.
+ */
+export async function captureFullRoleForBatch(
+  rawRole: unknown,
+  renderOptions: FullRoleRenderOptions,
+  mode: BatchCaptureMode
+): Promise<FullRoleBatchCapture> {
+  return captureDescribedRoleForBatch(() => describeRoleForCapture(rawRole), renderOptions, mode);
+}
+
+/** Reuse static role inputs only. Each capture prepares textures and owns
+ * its own Pixi app, including the existing retry behavior of missing atlases.
+ */
+export function createBatchRoleCapture(rawRole: unknown): BatchRoleCapture {
+  let input: RoleCaptureInput | undefined;
+  return (options, mode) =>
+    captureDescribedRoleForBatch(() => (input ??= describeRoleForCapture(rawRole)), options, mode);
+}
+
+type BatchRoleCapture = (
+  options: FullRoleRenderOptions,
+  mode: BatchCaptureMode
+) => Promise<FullRoleBatchCapture>;
+
+async function captureDescribedRoleForBatch(
+  describeRole: () => RoleCaptureInput,
+  renderOptions: FullRoleRenderOptions,
+  mode: BatchCaptureMode
+): Promise<FullRoleBatchCapture> {
+  const options = normalizeRenderOptions(renderOptions);
+  return withRenderedRoleCanvas(describeRole, options, ({ canvas, warnings, missingTextureCount }) => {
+    const imageData = mode === 'png' ? undefined : readCanvasImageData(canvas) ?? undefined;
+    return {
+      dataUrl: mode === 'pixels' ? '' : canvas.toDataURL('image/png'),
+      imageData,
+      width: canvas.width,
+      height: canvas.height,
+      warnings,
+      missingTextureCount
+    };
+  });
 }

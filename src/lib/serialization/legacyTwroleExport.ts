@@ -1,9 +1,8 @@
 import { gzip } from 'pako';
-import { HEAD_LAYER_ID } from '../../constants/layers';
 import { DEFAULT_LEGACY_DR } from '../../constants/legacy';
 import type { DecorationLayer, HeadLayerTransform, RoleDocument } from '../../types/role';
 import { getHeadLayerIndex } from '../editor/layerOrdering';
-import type { FullRoleRenderResult } from '../stage/fullRoleRenderer';
+import type { RoleThumbnailCapture } from '../stage/fullRoleRenderer';
 import { exportLegacyDecoGroups, type LegacyDecoGroup } from './legacyDecoGroups';
 import { md5Hex } from './md5';
 
@@ -41,10 +40,6 @@ interface LegacyTwrolePayload {
   thumb: LegacyTwroleThumb | null;
   decoGroups: LegacyDecoGroup[];
 }
-
-type VirtualLayer =
-  | { kind: 'head'; layer: HeadLayerTransform; id: typeof HEAD_LAYER_ID }
-  | { kind: 'deco'; layer: DecorationLayer; id: string };
 
 const TWROLE_HEADER = [0, 1] as const;
 
@@ -90,16 +85,6 @@ function getPartScale(role: RoleDocument, part: 'head' | 'cape' | 'hand' | 'foot
   return asFiniteNumber(role.partScales?.[part], 1);
 }
 
-function getTopFirstVirtualLayers(role: RoleDocument): VirtualLayer[] {
-  const layers: VirtualLayer[] = role.decorations.map((layer) => ({ kind: 'deco', layer, id: layer.id }));
-  layers.splice(getHeadLayerIndex(role), 0, { kind: 'head', layer: role.headLayer, id: HEAD_LAYER_ID });
-  return layers;
-}
-
-function getBottomToTopVirtualLayers(role: RoleDocument): VirtualLayer[] {
-  return getTopFirstVirtualLayers(role).slice().reverse();
-}
-
 function exportDeco(layer: DecorationLayer): LegacyCompactDecoEntry | null {
   if (layer.visible === false) return null;
   return {
@@ -125,9 +110,18 @@ function exportHead(layer: HeadLayerTransform): LegacyCompactDecoEntry | null {
 }
 
 function exportLegacyDecos(role: RoleDocument): LegacyCompactDecoEntry[] {
-  return getBottomToTopVirtualLayers(role)
-    .map((item) => (item.kind === 'head' ? exportHead(item.layer) : exportDeco(item.layer)))
-    .filter((item): item is LegacyCompactDecoEntry => item !== null);
+  const entries: LegacyCompactDecoEntry[] = [];
+  const headIndex = getHeadLayerIndex(role);
+  const head = exportHead(role.headLayer);
+  // Walk the stack in legacy order directly (without making and reversing
+  // intermediate virtual layer objects).
+  for (let index = role.decorations.length; index >= 0; index -= 1) {
+    if (index === headIndex && head) entries.push(head);
+    if (index === 0) break;
+    const entry = exportDeco(role.decorations[index - 1]);
+    if (entry) entries.push(entry);
+  }
+  return entries;
 }
 
 export function buildLegacyCompactPayload(role: RoleDocument): LegacyTwrolePayload {
@@ -148,7 +142,7 @@ export function buildLegacyCompactPayload(role: RoleDocument): LegacyTwrolePaylo
   };
 }
 
-function cropRenderedDataUrl(rendered: FullRoleRenderResult): string | null {
+function cropRenderedDataUrl(rendered: RoleThumbnailCapture): string | null {
   const bounds = rendered.nonTransparentBounds;
   if (!bounds || !rendered.imageData || typeof document === 'undefined') return null;
 
@@ -172,17 +166,17 @@ function cropRenderedDataUrl(rendered: FullRoleRenderResult): string | null {
   return canvas.toDataURL('image/png');
 }
 
-function thumbFromRenderedRole(rendered: FullRoleRenderResult): LegacyTwroleThumb {
+function thumbFromRenderedRole(rendered: RoleThumbnailCapture): LegacyTwroleThumb {
   const bounds = rendered.nonTransparentBounds;
   if (!bounds) {
     return {
-      dataUrl: rendered.dataUrl,
+      dataUrl: rendered.encodeSourcePng(),
       pivot: { x: 0, y: 0 }
     };
   }
 
   return {
-    dataUrl: cropRenderedDataUrl(rendered) ?? rendered.dataUrl,
+    dataUrl: cropRenderedDataUrl(rendered) ?? rendered.encodeSourcePng(),
     pivot: {
       x: rendered.width / 2 - bounds.minX,
       y: rendered.height / 2 - bounds.minY
@@ -191,13 +185,8 @@ function thumbFromRenderedRole(rendered: FullRoleRenderResult): LegacyTwroleThum
 }
 
 export async function renderLegacyExportThumb(role: RoleDocument): Promise<LegacyTwroleThumb> {
-  const { renderFullRoleToDataUrl } = await import('../stage/fullRoleRenderer');
-  const rendered = await renderFullRoleToDataUrl(role, {
-    imageSize: 256,
-    background: 'transparent',
-    includeImageData: true
-  });
-  return thumbFromRenderedRole(rendered);
+  const { captureRoleThumbnail } = await import('../stage/fullRoleRenderer');
+  return captureRoleThumbnail(role, thumbFromRenderedRole);
 }
 
 export async function buildLegacyCompactPayloadWithThumb(role: RoleDocument): Promise<LegacyTwrolePayload> {

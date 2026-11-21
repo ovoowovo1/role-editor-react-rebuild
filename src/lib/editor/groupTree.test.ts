@@ -6,6 +6,7 @@ import {
   descendantLayerIdsForGroup,
   isGroupDescendant,
   normalizeGroupsForRole,
+  removeMembersFromAllGroups,
   topLevelMembersForRole
 } from './groupTree';
 
@@ -138,6 +139,70 @@ describe('group tree utils', () => {
     ]);
   });
 
+  it('preserves mixed child/HEAD layer order and repeated child references without aliasing input', () => {
+    const child = { ...group('child', []), members: undefined, itemIds: ['b', 'a'] };
+    const parent = group('parent', [
+      { type: 'layer', id: 'c' },
+      { type: 'group', id: 'child' },
+      { type: 'layer', id: HEAD_LAYER_ID },
+      { type: 'group', id: 'child' },
+      { type: 'layer', id: 'c' }
+    ]);
+    const [nextParent, nextChild] = normalizeGroupsForRole(role([parent, child]));
+
+    expect(nextParent.itemIds).toEqual(['c', 'b', 'a', HEAD_LAYER_ID, 'b', 'a']);
+    expect(nextParent.members).toEqual(parent.members!.slice(0, 4));
+    expect(nextChild.itemIds).toEqual(['b', 'a']);
+    expect(nextChild.members).toEqual([{ type: 'layer', id: 'b' }, { type: 'layer', id: 'a' }]);
+    expect(nextParent.members).not.toBe(parent.members);
+    expect(nextParent.members![0]).not.toBe(parent.members![0]);
+    expect(nextParent.members![1]).not.toBe(nextParent.members![3]);
+    expect(nextChild.itemIds).not.toBe(child.itemIds);
+    nextParent.members![0].id = 'changed';
+    expect(parent.members![0].id).toBe('c');
+  });
+
+  it('keeps a descendant overlap when the parent direct layer was accepted first', () => {
+    const child = group('child', [{ type: 'layer', id: 'a' }, { type: 'layer', id: 'b' }]);
+    const parent = group('parent', [{ type: 'layer', id: 'a' }, { type: 'group', id: 'child' }]);
+    const [parentFirst] = normalizeGroupsForRole(role([parent, child]));
+    expect(parentFirst.itemIds).toEqual(['a', 'a', 'b']);
+    expect(parentFirst.members).toEqual(parent.members);
+
+    const [, childFirstParent] = normalizeGroupsForRole(role([child, parent]));
+    expect(childFirstParent.itemIds).toEqual(['a', 'b']);
+    expect(childFirstParent.members).toEqual([{ type: 'group', id: 'child' }]);
+  });
+
+  it('retains the sparse decoration ID-set semantics for malformed legacy data', () => {
+    const decorations = new Array<DecorationLayer>(3);
+    decorations[0] = layer('a');
+    decorations[2] = layer('b');
+    const legacy = { ...group('legacy', []), members: undefined, itemIds: ['a', undefined as unknown as string, 'b'] };
+    const result = normalizeGroupsForRole({ ...role([legacy]), decorations });
+
+    // The old map+Set passed a hole through as undefined, so an unsanitized
+    // legacy itemIds entry can match it. Do not silently change that fallback.
+    expect(result[0].itemIds).toEqual(legacy.itemIds);
+  });
+
+  it('removes bulk membership by both type and ID and updates nested legacy order', () => {
+    const groups = [
+      group('child', [{ type: 'layer', id: 'a' }, { type: 'layer', id: HEAD_LAYER_ID }]),
+      group('parent', [{ type: 'group', id: 'child' }, { type: 'layer', id: 'child' }, { type: 'layer', id: 'b' }]),
+      group('kept', [{ type: 'layer', id: 'a' }, { type: 'layer', id: 'b' }])
+    ];
+    const next = removeMembersFromAllGroups(groups, [
+      { type: 'layer', id: 'a' },
+      { type: 'layer', id: 'a' },
+      { type: 'layer', id: 'child' },
+      { type: 'group', id: 'missing' }
+    ], new Set(['kept']));
+    expect(next.map((value) => value.itemIds)).toEqual([[HEAD_LAYER_ID], [HEAD_LAYER_ID, 'b'], ['a', 'b']]);
+    expect(next[1].members).toEqual([{ type: 'group', id: 'child' }, { type: 'layer', id: 'b' }]);
+    expect(groups[0].itemIds).toEqual(['a', HEAD_LAYER_ID]);
+  });
+
   it('returns top-level members in role layer order', () => {
     const groups = [
       group('pair', [
@@ -152,4 +217,14 @@ describe('group tree utils', () => {
       { type: 'layer', id: 'c' }
     ]);
   });
+});
+
+it('does not walk all decoration IDs for a document with no groups', () => {
+  const emptyGroups = role([]);
+  Object.defineProperty(emptyGroups, 'decorations', {
+    get() { throw new Error('No decoration lookup is needed.'); }
+  });
+  const first = normalizeGroupsForRole(emptyGroups);
+  expect(first).toEqual([]);
+  expect(normalizeGroupsForRole(emptyGroups)).not.toBe(first);
 });

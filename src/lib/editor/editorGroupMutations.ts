@@ -1,7 +1,10 @@
 import type { DecorationGroup, RoleDocument } from '../../types/role';
 import { createId } from '../math';
+import { syncGroups, touch } from './editorRoleUtils';
 import {
+  cloneGroup,
   descendantLayerIdsForGroup,
+  descendantLayerIdsFromIndex,
   directParentGroup,
   groupForLayer,
   membersForGroup,
@@ -84,25 +87,64 @@ export function renameGroupInRole(current: RoleDocument, groupId: string, name: 
   );
 }
 
-export function setGroupVisibleInRole(current: RoleDocument, groupId: string, visible: boolean): void {
-  const group = current.groups?.find((item) => item.id === groupId);
-  if (!group) return;
-  const groups = current.groups ?? [];
-  const itemIds = new Set(descendantLayerIdsForGroup(groups, groupId));
-  const groupIds = new Set<string>([groupId]);
-  const collectGroups = (id: string) => {
-    const currentGroup = groups.find((item) => item.id === id);
-    if (!currentGroup) return;
-    for (const member of membersForGroup(currentGroup)) {
-      if (member.type === 'group' && !groupIds.has(member.id)) {
-        groupIds.add(member.id);
-        collectGroups(member.id);
-      }
+export type GroupMetadataUpdate =
+  | { type: 'toggle-collapsed'; groupId: string }
+  | { type: 'rename'; groupId: string; name: string };
+
+/** Preserve base-history normalization without cloning untouched layers. */
+export function applyGroupMetadataUpdate(role: RoleDocument, update: GroupMetadataUpdate): RoleDocument {
+  // Keep cloneRole's group pre-normalization for legacy itemIds-only groups.
+  const draft = { ...role, groups: (role.groups ?? []).map(cloneGroup) };
+  if (update.type === 'toggle-collapsed') toggleGroupCollapsedInRole(draft, update.groupId);
+  else renameGroupInRole(draft, update.groupId, update.name);
+  return syncGroups(touch(draft));
+}
+
+export type GroupRoleUpdate = GroupMetadataUpdate | { type: 'set-visibility'; groupId: string; visible: boolean };
+
+/** Shared by ordinary and HEAD-inclusive visibility; apply only to a fresh draft. */
+export function applyGroupVisibilityToDraft(
+  draft: RoleDocument,
+  groupId: string,
+  visible: boolean
+): ReadonlySet<string> | null {
+  const groups = draft.groups ?? [];
+  const firstById = new Map<string, DecorationGroup>();
+  const lastById = new Map<string, DecorationGroup>();
+  for (const group of groups) {
+    if (!firstById.has(group.id)) firstById.set(group.id, group);
+    lastById.set(group.id, group);
+  }
+  if (!firstById.has(groupId)) return null;
+
+  // Group flags used Array.find (first wins), while member layer IDs used a
+  // Map (last wins). Keep both behaviors for duplicate or malformed legacy IDs.
+  const layerIds = new Set(descendantLayerIdsFromIndex(lastById, groupId));
+  const groupIds = new Set([groupId]);
+  const pending = [groupId];
+  while (pending.length) {
+    const current = firstById.get(pending.pop()!);
+    if (!current) continue;
+    for (const member of membersForGroup(current)) {
+      if (member.type !== 'group' || groupIds.has(member.id)) continue;
+      groupIds.add(member.id);
+      pending.push(member.id);
     }
-  };
-  collectGroups(groupId);
-  current.groups = groups.map((item) => (groupIds.has(item.id) ? { ...item, visible } : item));
-  current.decorations = current.decorations.map((item) => (itemIds.has(item.id) ? { ...item, visible } : item));
+  }
+
+  draft.groups = groups.map((item) => (groupIds.has(item.id) && item.visible !== visible ? { ...item, visible } : item));
+  draft.decorations = draft.decorations.map((item) => (layerIds.has(item.id) && item.visible !== visible ? { ...item, visible } : item));
+  return layerIds;
+}
+
+export function setGroupVisibleInRole(current: RoleDocument, groupId: string, visible: boolean): void {
+  applyGroupVisibilityToDraft(current, groupId, visible);
+}
+
+export function applyBaseGroupVisibilityUpdate(role: RoleDocument, groupId: string, visible: boolean): RoleDocument {
+  const draft = { ...role, groups: (role.groups ?? []).map(cloneGroup) };
+  setGroupVisibleInRole(draft, groupId, visible);
+  return syncGroups(touch(draft));
 }
 
 export function ungroupInRole(current: RoleDocument, groupId: string): void {

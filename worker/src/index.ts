@@ -13,6 +13,10 @@ export interface Env {
 async function listColorBlockPresets(request: Request, env: Env) {
   const url = new URL(request.url);
   const camp = url.searchParams.get('camp')?.trim();
+  const allCamps = !camp || COLOR_BLOCK_ALL_CAMPS.has(camp);
+  if (!allCamps && !COLOR_BLOCK_SPECIFIC_CAMPS.has(camp)) {
+    return jsonResponse(request, env, []);
+  }
   const client = new Client({ connectionString: env.HYPERDRIVE.connectionString });
 
   try {
@@ -27,13 +31,9 @@ async function listColorBlockPresets(request: Request, env: Env) {
       deco: colorBlockPresets.deco
     };
 
-    if (!camp || COLOR_BLOCK_ALL_CAMPS.has(camp)) {
+    if (allCamps) {
       const rows = await db.select(columns).from(colorBlockPresets).orderBy(asc(colorBlockPresets.sortOrder), asc(colorBlockPresets.id));
       return jsonResponse(request, env, rows);
-    }
-
-    if (!COLOR_BLOCK_SPECIFIC_CAMPS.has(camp)) {
-      return jsonResponse(request, env, []);
     }
 
     const rows = await db

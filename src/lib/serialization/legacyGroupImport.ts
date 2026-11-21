@@ -1,5 +1,6 @@
 import type { ImportResult } from '../../types/role';
-import { parseRoleFile, parseRoleFileInWorker } from './roleSerializationImport';
+import { parseRoleFileInWorker } from './roleImportClient';
+import { parseRoleFile } from './roleSerializationImport';
 
 export { applyLegacyPayloadMetadata, getLegacyCampGender } from './legacyImportMetadata';
 

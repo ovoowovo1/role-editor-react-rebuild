@@ -9,10 +9,11 @@ import {
 import { createLargeMultiDragPreview } from './stageOverlayVisuals';
 import { getDisplayRootPosition } from './sceneGeometry';
 import {
+  isDecorationDisplaySyncCurrent,
   setDecorationInteractionEnabled,
   syncDisguiseChildOrder
 } from './sceneSync';
-import type { DraggedDisplayItem, StagePointerPosition, StageRuntimeRefs } from './types';
+import type { DraggedDisplayItem, StagePointerPosition, StageRuntimeRefs, StageSceneState } from './types';
 
 function selectedDecorationsForDrag(
   decorations: DecorationLayer[],
@@ -80,6 +81,34 @@ export function beginReferenceImageDrag(
       startX: start.x,
       startY: start.y
     }
+  };
+}
+
+function summarizePreviewDrag(
+  scene: StageSceneState,
+  selected: readonly DecorationLayer[]
+): NonNullable<ReturnType<typeof summarizeMultiDragPositions>> {
+  let totalX = 0;
+  let totalY = 0;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const deco of selected) {
+    const record = scene.decoDisplays.get(deco.id);
+    const position = record ? getDisplayRootPosition(record.container, scene.disguiseRoot) : deco;
+    totalX += position.x;
+    totalY += position.y;
+    minX = Math.min(minX, position.x);
+    minY = Math.min(minY, position.y);
+    maxX = Math.max(maxX, position.x);
+    maxY = Math.max(maxY, position.y);
+  }
+  return {
+    count: selected.length,
+    centerX: totalX / selected.length,
+    centerY: totalY / selected.length,
+    minX, minY, maxX, maxY
   };
 }
 
@@ -169,10 +198,16 @@ export function beginDecorationDrag(
   const scene = refs.sceneRef.current;
   if (!scene) return;
 
-  const selectedDecorations = selectedDecorationsForDrag(
-    refs.roleRef.current.decorations,
-    refs.selectedIdsRef.current
-  );
+  const role = refs.roleRef.current;
+  const selectedIds = refs.selectedIdsRef.current;
+  if (selectedIds.length === 1 && selectedIds[0] !== id) return;
+  // A single selected ID can't be affected by the document's layer order.
+  // While display synchronization is deferred, read the live document instead.
+  const indexedSelection = selectedIds.length === 1 && isDecorationDisplaySyncCurrent(scene, role);
+  const selectedLayer = indexedSelection ? scene.decorationsById.get(id) : undefined;
+  const selectedDecorations = indexedSelection
+    ? selectedLayer ? [selectedLayer] : []
+    : selectedDecorationsForDrag(role.decorations, selectedIds);
   const selectionIds = selectedDecorations.map((deco) => deco.id);
   if (!selectionIds.includes(id)) return;
 
@@ -183,6 +218,14 @@ export function beginDecorationDrag(
 
   if (selectedDecorations.length < 2) {
     beginDirectDrag(id, global, root, selectionIds, refs);
+    return;
+  }
+
+  // A preview never translates individual Pixi children during the drag, so
+  // reduce its bounds immediately instead of keeping a Map and an Array of all
+  // selected positions alive until the pointer-down handler finishes.
+  if (multiDragStartMode(selectedDecorations.length, 0) === 'preview') {
+    beginPreviewDrag(global, root, selectionIds, summarizePreviewDrag(scene, selectedDecorations), refs);
     return;
   }
 
@@ -204,11 +247,6 @@ export function beginDecorationDrag(
   if (!summary) return;
 
   const mode = multiDragStartMode(selectedDecorations.length, displayCount);
-  if (mode === 'preview') {
-    beginPreviewDrag(global, root, selectionIds, summary, refs);
-    return;
-  }
-
   if (
     mode === 'multi' &&
     beginMultiDrag(global, root, selectionIds, selectedDecorations, displayPositions, summary, refs)

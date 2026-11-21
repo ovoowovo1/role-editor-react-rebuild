@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { HEAD_LAYER_ID } from '../../constants/layers';
 import {
   createReferenceImageLayer,
   isReferenceImageFile,
@@ -47,6 +48,37 @@ describe('reference image model', () => {
       new Set(['one', 'two'])
     );
     expect(next).toEqual(['c', 'b', 'reference-image:one', 'a', 'reference-image:two']);
+  });
+
+  it('uses the first surviving role anchor and preserves first-seen image order', () => {
+    const order = [
+      'reference-image:leading', 'missing-role', 'reference-image:leading',
+      HEAD_LAYER_ID, 'reference-image:after-head', 'reference-image:removed',
+      'a', 'reference-image:after-a'
+    ];
+    const next = reconcileReferenceImageLayerOrder(
+      order,
+      ['a', 'new-role', HEAD_LAYER_ID],
+      new Set(['leading', 'after-head', 'after-a', 'new'])
+    );
+    expect(next).toEqual([
+      'a', 'reference-image:after-a', 'new-role',
+      'reference-image:leading', HEAD_LAYER_ID, 'reference-image:after-head', 'reference-image:new'
+    ]);
+  });
+
+  it('keeps current role order when no reference images remain and appends unanchored images', () => {
+    expect(reconcileReferenceImageLayerOrder(['stale', 'a'], [HEAD_LAYER_ID, 'a', 'a'], new Set()))
+      .toEqual([HEAD_LAYER_ID, 'a', 'a']);
+    expect(reconcileReferenceImageLayerOrder(
+      ['stale', 'reference-image:old'], ['a'], new Set(['new', 'old'])
+    )).toEqual(['a', 'reference-image:old', 'reference-image:new']);
+  });
+
+  it('retains the fallback slot when an empty token blocks an otherwise valid anchor', () => {
+    expect(reconcileReferenceImageLayerOrder(
+      ['a', '', 'reference-image:one'], ['a', '', 'b'], new Set(['one'])
+    )).toEqual(['a', '', 'b', 'reference-image:one']);
   });
 
   it('reorders an image token before or after another stack token', () => {

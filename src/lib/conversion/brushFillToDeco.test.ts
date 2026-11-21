@@ -274,4 +274,107 @@ describe('brush fill to deco helpers', () => {
 
     expect(normalizeDecorationIds(actual)).toEqual(reference);
   });
+
+  it('preserves the legacy grid across fractional gaps, disjoint cells, and wide-circle fallback', async () => {
+    const option = makePartOption('asset');
+    const source = { type: 'deco', assetId: option.id } as const;
+    const random = seededRandom(0x8374bd03);
+    const gaps = [0.41, 0.51, 0.6, 0.7, 1.1, 1.3333333333, 2.7];
+    for (let run = 0; run < 56; run += 1) {
+      const points = Array.from({ length: 2 + Math.floor(random() * 10) }, () => ({
+        x: (random() * 30) - 15,
+        y: (random() * 26) - 13,
+        radius: random() * 2 + 0.01
+      }));
+      if (run % 7 === 0) points.push({ x: -18, y: 6, radius: 23 });
+      if (run % 7 === 1) points.push({ x: 2, y: 0, radius: -1.49 });
+      if (run % 7 === 2) points.push({ x: 28, y: 28, radius: 0 });
+      const mask = { points };
+      const options = {
+        ...conversionOptions,
+        gapFactor: gaps[run % gaps.length],
+        maxLayers: [0, 1, 17, 400][run % 4]
+      };
+      const result = await convertBrushFillToDecos(mask, source, [option], options);
+      expect(normalizeDecorationIds(result), `run ${run}`).toEqual(referenceBrushConversion(mask, option, options));
+    }
+  });
+
+  it('preserves row-major output and exact counts across widely separated strokes', async () => {
+    const option = makePartOption('asset');
+    const mask = { points: [
+      { x: -500, y: -500, radius: 10 },
+      { x: 500, y: 500, radius: 10 }
+    ] };
+    const options = { ...conversionOptions, gapFactor: 0.5, maxLayers: 1_258 };
+    const actual = await convertBrushFillToDecos(mask, { type: 'deco', assetId: option.id }, [option], options);
+    expect(actual.sampledPixels).toBe(2_514);
+    expect(actual.truncated).toBe(true);
+    expect(actual.decorations[1_256]).toMatchObject({ x: -500, y: -490 });
+    expect(actual.decorations[1_257]).toMatchObject({ x: 500, y: 490 });
+  });
+
+  it('matches the full scan on sparse mixed-radius strokes with wide overlaps and fractional grids', async () => {
+    const option = makePartOption('wide');
+    const source = { type: 'deco', assetId: option.id } as const;
+    const random = seededRandom(0xb8e94da2);
+    for (let run = 0; run < 28; run += 1) {
+      const points = [
+        { x: -86, y: -94, radius: 14 },
+        { x: -72, y: -88, radius: 19 },
+        { x: 90 + random() * 5, y: 85 + random() * 5, radius: 14 },
+        { x: -0.4, y: 0.3, radius: run % 3 === 0 ? -12 : 12 },
+        ...Array.from({ length: 12 }, () => ({
+          x: (random() * 155) - 77,
+          y: (random() * 166) - 83,
+          radius: (random() * 0.8) + 0.2
+        }))
+      ];
+      const mask = { points };
+      const options = {
+        ...conversionOptions,
+        gapFactor: [0.5, 0.51, 0.7, 1.1][run % 4],
+        maxLayers: [0, 5, 200, 5_000][run % 4]
+      };
+      const result = await convertBrushFillToDecos(mask, source, [option], options);
+      expect(normalizeDecorationIds(result), `sparse wide run ${run}`)
+        .toEqual(referenceBrushConversion(mask, option, options));
+    }
+  });
+
+  it('keeps exact tangent samples from a wide circle across mixed row spans', async () => {
+    const option = makePartOption('wide');
+    const source = { type: 'deco', assetId: option.id } as const;
+    const points = [
+      { x: 0, y: 0, radius: 10 },
+      { x: 180, y: 180, radius: 10 },
+      ...Array.from({ length: 9 }, (_, i) => ({ x: i + 0.5, y: -2, radius: 0.25 }))
+    ];
+    const mask = { points };
+    const options = { ...conversionOptions, gapFactor: 0.5, maxLayers: 10_000 };
+    const result = await convertBrushFillToDecos(mask, source, [option], options);
+    expect(normalizeDecorationIds(result)).toEqual(referenceBrushConversion(mask, option, options));
+    expect(result.decorations.some(({ x, y }) => x === 6 && y === 8)).toBe(true);
+    expect(result.decorations.some(({ x, y }) => x === 6.5 && y === 8)).toBe(false);
+  });
+
+  it('keeps the indexed point tester behavior for an infinite-radius circle', () => {
+    const containsPoint = createBrushMaskPointTester({ points: [{ x: 0, y: 0, radius: Infinity }] }, 1);
+    expect(containsPoint(30, 70)).toBe(true);
+  });
+
+  it('does not loop on invalid or inexact grids where adding the gap cannot advance', async () => {
+    const option = makePartOption('bad-bounds');
+    const source = { type: 'deco', assetId: option.id } as const;
+    const options = { ...conversionOptions, gapFactor: 0.5 };
+    for (const mask of [
+      { points: [{ x: Infinity, y: 0, radius: 3 }] },
+      { points: [{ x: Number.MAX_VALUE, y: 0, radius: 3 }] },
+      { points: [{ x: 1e18, y: 0, radius: 3 }] },
+      { points: [{ x: 10, y: -Infinity, radius: 3 }] }
+    ]) {
+      await expect(convertBrushFillToDecos(mask, source, [option], options))
+        .resolves.toMatchObject({ sampledPixels: 0, generatedPixels: 0, truncated: false });
+    }
+  });
 });

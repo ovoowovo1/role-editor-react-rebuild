@@ -81,6 +81,8 @@ export class ColorLearningCollage {
   private readonly cumulativeScoreScratch: Float64Array;
   private readonly candidateScratch: [Candidate | null, Candidate | null] = [null, null];
   private patchScratch = new Float32Array(0);
+  private readonly spatialQueryScratch: number[] = [];
+  private readonly activeIndicesScratch: number[] = [];
   private activeTileCount = 0;
   private previewCanvas: AutoCreateCanvas | null = null;
   private previewPixels: Uint8ClampedArray | null = null;
@@ -282,9 +284,27 @@ export class ColorLearningCollage {
     seed: number,
     target: Pick<TargetImageData, 'width' | 'height' | 'sourceWidth' | 'sourceHeight'>,
     targetSignature: string,
-    warnings: string[]
+    warnings: string[],
+    signatures?: Pick<AutoCreateTwroleSnapshot, 'sourceSignature' | 'settingsSignature'>
   ): AutoCreateTwroleSnapshot {
     const rng = this.rng.snapshot();
+    const tiles: AutoCreateTwroleSnapshot['tiles'] = [];
+    for (const tile of this.tiles) {
+      if (!tile.active) continue;
+      tiles.push({
+        active: true,
+        sourceId: tile.sourceId,
+        sxInternal: tile.sxInternal,
+        syInternal: tile.syInternal,
+        rDeg: tile.rDeg,
+        centerX: tile.centerX,
+        centerY: tile.centerY,
+        bbox: [...tile.bbox],
+        decoration: { ...tile.decoration },
+        legacy: { ...tile.legacy },
+        gainMse: tile.gainMse
+      });
+    }
     return {
       version: AUTO_CREATE_SNAPSHOT_VERSION,
       targetWidth: target.width,
@@ -292,9 +312,9 @@ export class ColorLearningCollage {
       sourceWidth: target.sourceWidth,
       sourceHeight: target.sourceHeight,
       sourceCount: this.sources.length,
-      sourceSignature: sourceSignatureForTiles(this.sources),
+      sourceSignature: signatures?.sourceSignature ?? sourceSignatureForTiles(this.sources),
       targetSignature,
-      settingsSignature: autoCreateSnapshotSettingsSignature(this.settings),
+      settingsSignature: signatures?.settingsSignature ?? autoCreateSnapshotSettingsSignature(this.settings),
       experienceState: this.memory.snapshotState(),
       step: Math.max(0, Math.round(step)),
       totalSteps: Math.max(1, Math.round(totalSteps)),
@@ -307,21 +327,7 @@ export class ColorLearningCollage {
       pruned: this.pruned,
       replaced: this.replaced,
       mse: this.currentMse(),
-      tiles: this.tiles
-        .filter((tile) => tile.active)
-        .map((tile) => ({
-          active: true,
-          sourceId: tile.sourceId,
-          sxInternal: tile.sxInternal,
-          syInternal: tile.syInternal,
-          rDeg: tile.rDeg,
-          centerX: tile.centerX,
-          centerY: tile.centerY,
-          bbox: [...tile.bbox] as [number, number, number, number],
-          decoration: { ...tile.decoration },
-          legacy: { ...tile.legacy },
-          gainMse: tile.gainMse
-        })),
+      tiles,
       warnings: [...warnings]
     };
   }
@@ -332,15 +338,30 @@ export class ColorLearningCollage {
     // decorations in top-first order and reverses them when drawing/exporting.
     // Reverse only the in-memory DecorationLayer[] used for insertion; keep
     // exportLegacyDeco() in Python's original bottom-to-top order.
-    return this.tiles
-      .filter((tile) => tile.active)
-      .slice()
-      .reverse()
-      .map((tile) => tile.decoration);
+    const decorations: DecorationLayer[] = [];
+    for (let index = this.tiles.length - 1; index >= 0; index--) {
+      const tile = this.tiles[index];
+      if (tile.active) decorations.push(tile.decoration);
+    }
+    return decorations;
   }
 
   exportLegacyDeco(): AutoCreateTwroleLegacyDecoEntry[] {
-    return this.tiles.filter((tile) => tile.active).map((tile) => tile.legacy);
+    const legacy: AutoCreateTwroleLegacyDecoEntry[] = [];
+    for (const tile of this.tiles) if (tile.active) legacy.push(tile.legacy);
+    return legacy;
+  }
+
+  exportResultTiles(): { decorations: DecorationLayer[]; legacy: AutoCreateTwroleLegacyDecoEntry[] } {
+    const decorations: DecorationLayer[] = [];
+    const legacy: AutoCreateTwroleLegacyDecoEntry[] = [];
+    for (const tile of this.tiles) {
+      if (!tile.active) continue;
+      decorations.push(tile.decoration);
+      legacy.push(tile.legacy);
+    }
+    // The role editor is top-first, whereas legacy export is draw order.
+    return { decorations: decorations.reverse(), legacy };
   }
 
   saveMemory(): void {
@@ -768,7 +789,12 @@ export class ColorLearningCollage {
   }
 
   private activeIndices(): number[] {
-    return this.tiles.map((tile, index) => (tile.active ? index : -1)).filter((index) => index >= 0);
+    const active = this.activeIndicesScratch;
+    active.length = 0;
+    for (let index = 0; index < this.tiles.length; index += 1) {
+      if (this.tiles[index].active) active.push(index);
+    }
+    return active;
   }
 
   private tileRgba(tile: TileRecord): TransformedImage {
@@ -829,7 +855,7 @@ export class ColorLearningCollage {
     const [left, top, right, bottom] = bbox;
     const patchWidth = right - left;
     const out = this.acquirePatchBuffer(patchWidth * (bottom - top) * 4);
-    const tileIndices = this.spatialIndex.query(bbox);
+    const tileIndices = this.spatialIndex.query(bbox, this.spatialQueryScratch);
     if (
       replaceIndex != null &&
       replacement &&
@@ -945,10 +971,15 @@ export class ColorLearningCollage {
   }
 
   private tryPruneOnceCore(): boolean {
-    let active = this.activeIndices();
+    const active = this.activeIndices();
     if (!active.length) return false;
     const sampleSize = Math.max(1, Math.round(this.settings.pruneSampleSize));
-    if (active.length > sampleSize) active = this.rng.shuffle(active).slice(0, sampleSize);
+    if (active.length > sampleSize) {
+      // Shuffle the full active set to keep seeded candidate selection and
+      // RNG state identical, then truncate the scratch buffer in place.
+      this.rng.shuffle(active);
+      active.length = sampleSize;
+    }
     active.sort((a, b) => this.tiles[a].gainMse - this.tiles[b].gainMse);
 
     for (const index of active) {

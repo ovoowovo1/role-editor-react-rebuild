@@ -2,10 +2,8 @@ import { useCallback } from 'react';
 import type { MutableRefObject } from 'react';
 import type { RoleDocument } from '../types/role';
 import {
-  renameGroupInRole,
-  setGroupVisibleInRole,
-  toggleGroupCollapsedInRole,
-  ungroupInRole
+  ungroupInRole,
+  type GroupRoleUpdate
 } from '../lib/editor/editorGroupMutations';
 import {
   createGroupFromLayerSelection,
@@ -20,6 +18,7 @@ interface UseRoleGroupCommandsOptions {
   selectedLayerIds: string[];
   commitRole(nextRole: RoleDocument, afterSelectionIds?: string[]): void;
   updateRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
+  updateGroupRole(update: GroupRoleUpdate): void;
 }
 
 export function useRoleGroupCommands({
@@ -27,7 +26,8 @@ export function useRoleGroupCommands({
   roleRef,
   selectedLayerIds,
   commitRole,
-  updateRole
+  updateRole,
+  updateGroupRole
 }: UseRoleGroupCommandsOptions) {
   const groupSelected = useCallback(() => {
     const nextRole = createGroupFromLayerSelection(roleRef.current, selectedLayerIds);
@@ -36,33 +36,13 @@ export function useRoleGroupCommands({
   }, [commitRole, roleRef, selectedLayerIds]);
 
   const toggleGroupCollapsed = useCallback(
-    (groupId: string) => {
-      updateRole((current) => {
-        toggleGroupCollapsedInRole(current, groupId);
-        return current;
-      });
-    },
-    [updateRole]
+    (groupId: string) => updateGroupRole({ type: 'toggle-collapsed', groupId }),
+    [updateGroupRole]
   );
 
   const renameGroup = useCallback(
-    (groupId: string, name: string) => {
-      updateRole((current) => {
-        renameGroupInRole(current, groupId, name);
-        return current;
-      });
-    },
-    [updateRole]
-  );
-
-  const setGroupVisible = useCallback(
-    (groupId: string, visible: boolean) => {
-      updateRole((current) => {
-        setGroupVisibleInRole(current, groupId, visible);
-        return current;
-      });
-    },
-    [updateRole]
+    (groupId: string, name: string) => updateGroupRole({ type: 'rename', groupId, name }),
+    [updateGroupRole]
   );
 
   const toggleGroupVisibility = useCallback(
@@ -73,9 +53,9 @@ export function useRoleGroupCommands({
         commitRole(setGroupVisibilityIncludingHead(roleRef.current, groupId, group.visible === false));
         return;
       }
-      setGroupVisible(groupId, group.visible === false);
+      updateGroupRole({ type: 'set-visibility', groupId, visible: group.visible === false });
     },
-    [commitRole, role.groups, roleRef, setGroupVisible]
+    [commitRole, role.groups, roleRef, updateGroupRole]
   );
 
   const ungroup = useCallback(

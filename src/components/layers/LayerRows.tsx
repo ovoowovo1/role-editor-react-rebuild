@@ -11,7 +11,6 @@ import { t } from '../../i18n';
 import { HEAD_LAYER_ID } from '../../constants/layers';
 import { optionById } from '../../mock/options';
 import type { HeadLayerTransform } from '../../types/role';
-import type { ReferenceImageLayer } from '../../types/referenceImage';
 import { AssetPreview } from '../AssetPreview';
 import type { LayerRowModel } from './layerListModels';
 
@@ -96,7 +95,7 @@ export function ReferenceImageRow({
   onToggleVisibility(id: string): void;
   onDelete(id: string): void;
 }) {
-  const image = row.referenceImage as ReferenceImageLayer;
+  const image = row.referenceImage!;
   return (
     <div
       className={`layer-row reference-image-row ${row.selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${!image.visible ? 'muted' : ''}`}

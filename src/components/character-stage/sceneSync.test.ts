@@ -93,6 +93,48 @@ describe('stage scene synchronization', () => {
     expect(mocks.applyDecorationDisplayTransform).toHaveBeenCalledOnce();
   });
 
+  it('does no decoration lookups on selection-only updates and touches only changed visual records', () => {
+    const scene = makeScene();
+    const decorations = Array.from({ length: 500 }, (_, index) => makeDecorationLayer(`deco-${index}`));
+    const role = makeRoleDocument({ decorations });
+    const order = decorations.map((layer) => layer.id).reverse();
+    syncDecorationDisplayRecords(scene, role, decoOptions);
+    syncDisguiseChildOrder(scene, role, order);
+    const displayLookup = vi.spyOn(scene.decoDisplays, 'get');
+    const roleLookup = vi.spyOn(scene.decorationsById, 'get');
+    const lookupSet = vi.spyOn(scene.decorationsById, 'set');
+
+    expect(isDecorationDisplaySyncCurrent(scene, { ...role })).toBe(true);
+    syncDecorationDisplayRecords(scene, role, decoOptions);
+    expect(roleLookup).not.toHaveBeenCalled();
+    expect(displayLookup).not.toHaveBeenCalled();
+
+    const next = { ...role, decorations: [...role.decorations] };
+    next.decorations[100] = { ...next.decorations[100], x: 100 };
+    expect(isDecorationDisplaySyncCurrent(scene, next)).toBe(false);
+    syncDecorationDisplayRecords(scene, next, decoOptions);
+    syncDisguiseChildOrder(scene, next, order);
+    expect(isDecorationDisplaySyncCurrent(scene, next)).toBe(true);
+    expect(roleLookup).toHaveBeenCalledExactlyOnceWith('deco-100');
+    expect(displayLookup).toHaveBeenCalledExactlyOnceWith('deco-100');
+    expect(lookupSet).toHaveBeenCalledExactlyOnceWith('deco-100', next.decorations[100]);
+  });
+
+  it('does not cache a missing visual and inserts it into explicit order when it becomes available', () => {
+    const scene = makeScene();
+    const deco = makeDecorationLayer('a');
+    const role = makeRoleDocument({ decorations: [deco] });
+    const order = ['a', '__head_layer__'];
+    mocks.createDisguiseEntryDisplay.mockReturnValueOnce(null);
+    syncDecorationDisplayRecords(scene, role, decoOptions);
+    syncDisguiseChildOrder(scene, role, order);
+    expect(scene.decoDisplays.has('a')).toBe(false);
+
+    syncDecorationDisplayRecords(scene, role, decoOptions);
+    syncDisguiseChildOrder(scene, role, order);
+    expect(scene.disguiseRoot.children[0]).toBe(scene.decoDisplays.get('a')!.container);
+  });
+
   it('defers transforms for active drag items until the role reference catches up', () => {
     const scene = makeScene();
     const role = makeRoleDocument({ decorations: [makeDecorationLayer('a')] });
@@ -275,6 +317,106 @@ describe('stage scene synchronization', () => {
     expect(scene.disguiseRoot.children.indexOf(scene.headLayerSelectionOverlay)).toBe(
       scene.disguiseRoot.children.length - 1
     );
+  });
+
+  it('visits each decoration once for complete explicit or canonical order', () => {
+    const scene = makeScene();
+    const role = makeRoleDocument({
+      decorations: Array.from({ length: 500 }, (_, index) => makeDecorationLayer(`deco-${index}`)),
+      headLayerIndex: 500
+    });
+    syncDecorationDisplayRecords(scene, role, decoOptions);
+    const lookup = vi.spyOn(scene.decoDisplays, 'get');
+    const explicit = [...role.decorations.map(({ id }) => id), '__head_layer__'];
+
+    syncDisguiseChildOrder(scene, role, explicit);
+    expect(lookup).toHaveBeenCalledTimes(500);
+    expect(scene.disguiseRoot.children.slice(0, explicit.length)).toEqual([
+      ...role.decorations.map(({ id }) => scene.decoDisplays.get(id)!.container), scene.headLayerClip
+    ]);
+
+    lookup.mockClear();
+    syncDisguiseChildOrder(scene, role);
+    expect(lookup).toHaveBeenCalledTimes(500);
+    expect(scene.disguiseRoot.children[0]).toBe(scene.headLayerClip);
+  });
+
+  it('repairs incomplete explicit ordering with canonical layers and unlisted images', () => {
+    const scene = makeScene();
+    const role = makeRoleDocument({
+      decorations: ['a', 'b', 'c'].map((id) => makeDecorationLayer(id)),
+      headLayerIndex: 1
+    });
+    syncDecorationDisplayRecords(scene, role, decoOptions);
+    const image = new Container();
+    scene.referenceImageDisplays = new Map([
+      ['ref', { container: image, sprite: {} as never, displayKey: 'blob:ref' }]
+    ]);
+    syncDisguiseChildOrder(scene, role, ['b', 'b', 'gone']);
+
+    expect(scene.disguiseRoot.children).toEqual([
+      scene.decoDisplays.get('b')!.container,
+      scene.decoDisplays.get('c')!.container,
+      scene.headLayerClip,
+      scene.decoDisplays.get('a')!.container,
+      image,
+      scene.selectionDragController,
+      scene.brushFillOverlay,
+      scene.headLayerSelectionOverlay
+    ]);
+  });
+
+  it('moves one reference image in either direction without detaching unaffected visuals', () => {
+    const scene = makeScene();
+    const role = makeRoleDocument({
+      decorations: ['a', 'b', 'c', 'd'].map((id) => makeDecorationLayer(id))
+    });
+    syncDecorationDisplayRecords(scene, role, decoOptions);
+    const reference = new Container();
+    scene.referenceImageDisplays = new Map([
+      ['ref', { container: reference, sprite: {} as never, displayKey: 'blob:ref' }]
+    ]);
+    const head = '__head_layer__';
+    const original = ['reference-image:ref', 'a', 'b', head, 'c', 'd'];
+    syncDisguiseChildOrder(scene, role, original);
+    const originalChildren = [...scene.disguiseRoot.children];
+    const remove = vi.spyOn(scene.disguiseRoot, 'removeChildren');
+    const add = vi.spyOn(scene.disguiseRoot, 'addChild');
+    const move = vi.spyOn(scene.disguiseRoot, 'setChildIndex');
+    const removed = vi.fn();
+    reference.on('removed', removed);
+
+    syncDisguiseChildOrder(scene, role, ['a', 'b', head, 'c', 'd', 'reference-image:ref']);
+    expect(scene.disguiseRoot.children).toEqual([
+      ...originalChildren.slice(1, 6), reference, ...originalChildren.slice(6)
+    ]);
+    expect(move).toHaveBeenNthCalledWith(1, reference, 5);
+
+    syncDisguiseChildOrder(scene, role, original);
+    expect(scene.disguiseRoot.children).toEqual(originalChildren);
+    expect(move).toHaveBeenNthCalledWith(2, reference, 0);
+    expect(remove).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+    expect(removed).not.toHaveBeenCalled();
+  });
+
+  it('uses the full rebuild when a permutation needs multiple moves', () => {
+    const scene = makeScene();
+    const role = makeRoleDocument({
+      decorations: ['a', 'b', 'c', 'd'].map((id) => makeDecorationLayer(id))
+    });
+    syncDecorationDisplayRecords(scene, role, decoOptions);
+    syncDisguiseChildOrder(scene, role, ['a', 'b', 'c', 'd']);
+    const originalChildren = [...scene.disguiseRoot.children];
+    const remove = vi.spyOn(scene.disguiseRoot, 'removeChildren');
+    const move = vi.spyOn(scene.disguiseRoot, 'setChildIndex');
+
+    syncDisguiseChildOrder(scene, role, ['d', 'c', 'b', 'a']);
+    expect(scene.disguiseRoot.children).toEqual([
+      ...originalChildren.slice(0, 4).reverse(), ...originalChildren.slice(4)
+    ]);
+    expect(remove).toHaveBeenCalledOnce();
+    expect(move).not.toHaveBeenCalled();
   });
 
   it('keeps existing children until a deferred display sync refreshes different ids', () => {

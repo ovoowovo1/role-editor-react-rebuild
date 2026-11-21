@@ -6,6 +6,23 @@ const ONE_PIXEL_PNG = Buffer.from(
   'base64'
 );
 
+test('loads the Extra tools module only when its tab is opened', async ({ page }) => {
+  const extraModule = /\/(?:src\/components\/extra\/ExtraPanel\.tsx|assets\/ExtraPanel-[^/]+\.js)(?:\?|$)/;
+  let extraRequested = false;
+  page.on('request', (request) => {
+    if (extraModule.test(request.url())) extraRequested = true;
+  });
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const extraTab = page.locator('[data-tab-mode="extra"]');
+  await expect(extraTab).toBeVisible();
+  expect(extraRequested).toBe(false);
+  const extraRequest = page.waitForRequest(extraModule);
+  await extraTab.click();
+  await extraRequest;
+  await expect(page.getByTestId('extra-entry-chooser')).toBeVisible();
+});
+
 test('separates reference image entry from Image to TWRole conversion', async ({ page }) => {
   const monitor = watchPageErrors(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });

@@ -36,26 +36,41 @@ export function stripPngDataUrlPrefix(value: string): string {
   return value.replace(/^data:image\/png;base64,/i, '');
 }
 
-export function alphaBounds(image: ImageDataLike): AlphaBounds | null {
+export function scanAlphaCoverage({ width, height, data }: ImageDataLike): {
+  alphaPixels: number;
+  nonTransparentBounds: AlphaBounds | null;
+} {
   let minX = Number.POSITIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  let found = false;
+  let minY = -1;
+  let maxX = -1;
+  let maxY = -1;
+  let alphaPixels = 0;
 
-  for (let y = 0; y < image.height; y += 1) {
-    for (let x = 0; x < image.width; x += 1) {
-      const alpha = image.data[(y * image.width + x) * 4 + 3];
-      if (alpha <= 0) continue;
-      found = true;
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x);
-      maxY = Math.max(maxY, y);
+  for (let y = 0; y < height; y += 1) {
+    let offset = y * width * 4 + 3;
+    let first = -1;
+    let last = -1;
+    for (let x = 0; x < width; x += 1, offset += 4) {
+      if (data[offset] <= 0) continue;
+      if (first < 0) first = x;
+      last = x;
+      alphaPixels += 1;
     }
+    if (last < 0) continue;
+    if (first < minX) minX = first;
+    if (last > maxX) maxX = last;
+    if (minY < 0) minY = y;
+    maxY = y;
   }
 
-  return found ? { minX, minY, maxX, maxY } : null;
+  return {
+    alphaPixels,
+    nonTransparentBounds: alphaPixels ? { minX, minY, maxX, maxY } : null
+  };
+}
+
+export function alphaBounds(image: ImageDataLike): AlphaBounds | null {
+  return scanAlphaCoverage(image).nonTransparentBounds;
 }
 
 function assertSameSize(a: ImageDataLike, b: ImageDataLike): void {
@@ -82,17 +97,19 @@ function boundsUnion(a: AlphaBounds | null, b: AlphaBounds | null): AlphaBounds 
 
 export function rgbaMseAlphaWeighted(target: ImageDataLike, candidate: ImageDataLike): number {
   assertSameSize(target, candidate);
+  const targetBytes = target.data;
+  const candidateBytes = candidate.data;
   let weightedError = 0;
   let weightTotal = 0;
 
-  for (let index = 0; index < target.data.length; index += 4) {
-    const targetAlpha = target.data[index + 3] / 255;
-    const candidateAlpha = candidate.data[index + 3] / 255;
-    const weight = Math.max(targetAlpha, candidateAlpha, 0.05);
-    const dr = target.data[index] - candidate.data[index];
-    const dg = target.data[index + 1] - candidate.data[index + 1];
-    const db = target.data[index + 2] - candidate.data[index + 2];
-    const da = target.data[index + 3] - candidate.data[index + 3];
+  for (let index = 0; index < targetBytes.length; index += 4) {
+    const targetAlpha = targetBytes[index + 3];
+    const candidateAlpha = candidateBytes[index + 3];
+    const weight = Math.max(targetAlpha / 255, candidateAlpha / 255, 0.05);
+    const dr = targetBytes[index] - candidateBytes[index];
+    const dg = targetBytes[index + 1] - candidateBytes[index + 1];
+    const db = targetBytes[index + 2] - candidateBytes[index + 2];
+    const da = targetAlpha - candidateAlpha;
     weightedError += (((dr * dr + dg * dg + db * db) / 3) + da * da) * weight;
     weightTotal += weight;
   }
@@ -102,11 +119,13 @@ export function rgbaMseAlphaWeighted(target: ImageDataLike, candidate: ImageData
 
 export function alphaIou(target: ImageDataLike, candidate: ImageDataLike): number {
   assertSameSize(target, candidate);
+  const targetBytes = target.data;
+  const candidateBytes = candidate.data;
   let intersection = 0;
   let union = 0;
-  for (let index = 3; index < target.data.length; index += 4) {
-    const a = target.data[index] > 0;
-    const b = candidate.data[index] > 0;
+  for (let index = 3; index < targetBytes.length; index += 4) {
+    const a = targetBytes[index] > 0;
+    const b = candidateBytes[index] > 0;
     if (a && b) intersection += 1;
     if (a || b) union += 1;
   }
@@ -115,28 +134,74 @@ export function alphaIou(target: ImageDataLike, candidate: ImageDataLike): numbe
 
 export function alphaMae(target: ImageDataLike, candidate: ImageDataLike): number {
   assertSameSize(target, candidate);
+  const targetBytes = target.data;
+  const candidateBytes = candidate.data;
   let error = 0;
   const pixels = target.width * target.height;
-  for (let index = 3; index < target.data.length; index += 4) {
-    error += Math.abs(target.data[index] - candidate.data[index]);
+  for (let index = 3; index < targetBytes.length; index += 4) {
+    error += Math.abs(targetBytes[index] - candidateBytes[index]);
   }
   return pixels ? error / pixels / 255 : 0;
 }
 
+const RGBA_MSE = 'full_role_rgba_mse_alpha_weighted';
+const ALPHA_IOU = 'full_role_alpha_iou';
+const ALPHA_MAE = 'full_role_alpha_mae';
+
+/** One pass if all three are requested; accumulation order for each is unchanged. */
+function comparePixels(target: ImageDataLike, candidate: ImageDataLike): Record<
+  typeof RGBA_MSE | typeof ALPHA_IOU | typeof ALPHA_MAE, number
+> {
+  assertSameSize(target, candidate);
+  const targetBytes = target.data;
+  const candidateBytes = candidate.data;
+  let weightedError = 0;
+  let weightTotal = 0;
+  let intersection = 0;
+  let union = 0;
+  let alphaError = 0;
+  for (let index = 0; index < targetBytes.length; index += 4) {
+    const a = targetBytes[index + 3];
+    const b = candidateBytes[index + 3];
+    const da = a - b;
+    const weight = Math.max(a / 255, b / 255, 0.05);
+    const dr = targetBytes[index] - candidateBytes[index];
+    const dg = targetBytes[index + 1] - candidateBytes[index + 1];
+    const db = targetBytes[index + 2] - candidateBytes[index + 2];
+    weightedError += (((dr * dr + dg * dg + db * db) / 3) + da * da) * weight;
+    weightTotal += weight;
+    if (a > 0 && b > 0) intersection += 1;
+    if (a > 0 || b > 0) union += 1;
+    alphaError += Math.abs(da);
+  }
+  const pixels = target.width * target.height;
+  return {
+    [RGBA_MSE]: weightTotal ? weightedError / weightTotal / (255 * 255) : 0,
+    [ALPHA_IOU]: union ? intersection / union : 1,
+    [ALPHA_MAE]: pixels ? alphaError / pixels / 255 : 0
+  };
+}
+
 export function foregroundCropRgbL1(target: ImageDataLike, candidate: ImageDataLike): number {
   assertSameSize(target, candidate);
-  const bounds = boundsUnion(alphaBounds(target), alphaBounds(candidate));
+  return foregroundRgbInBounds(target, candidate, boundsUnion(alphaBounds(target), alphaBounds(candidate)));
+}
+
+function foregroundRgbInBounds(target: ImageDataLike, candidate: ImageDataLike, bounds: AlphaBounds | null): number {
   if (!bounds) return 0;
+  const targetBytes = target.data;
+  const candidateBytes = candidate.data;
+  const width = target.width;
   let error = 0;
   let channels = 0;
 
   for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
     for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
-      const index = (y * target.width + x) * 4;
-      if (target.data[index + 3] <= 0 && candidate.data[index + 3] <= 0) continue;
-      error += Math.abs(target.data[index] - candidate.data[index]);
-      error += Math.abs(target.data[index + 1] - candidate.data[index + 1]);
-      error += Math.abs(target.data[index + 2] - candidate.data[index + 2]);
+      const index = (y * width + x) * 4;
+      if (targetBytes[index + 3] <= 0 && candidateBytes[index + 3] <= 0) continue;
+      error += Math.abs(targetBytes[index] - candidateBytes[index]);
+      error += Math.abs(targetBytes[index + 1] - candidateBytes[index + 1]);
+      error += Math.abs(targetBytes[index + 2] - candidateBytes[index + 2]);
       channels += 3;
     }
   }
@@ -145,10 +210,12 @@ export function foregroundCropRgbL1(target: ImageDataLike, candidate: ImageDataL
 }
 
 export function bboxCenterError(target: ImageDataLike, candidate: ImageDataLike): number {
-  const a = alphaBounds(target);
-  const b = alphaBounds(candidate);
+  return bboxCenterFromBounds(alphaBounds(target), alphaBounds(candidate), target);
+}
+
+function bboxCenterFromBounds(a: AlphaBounds | null, b: AlphaBounds | null, size: { width: number; height: number }): number {
   if (!a && !b) return 0;
-  if (!a || !b) return Math.hypot(target.width, target.height);
+  if (!a || !b) return Math.hypot(size.width, size.height);
   const ax = (a.minX + a.maxX) / 2;
   const ay = (a.minY + a.maxY) / 2;
   const bx = (b.minX + b.maxX) / 2;
@@ -157,8 +224,10 @@ export function bboxCenterError(target: ImageDataLike, candidate: ImageDataLike)
 }
 
 export function bboxSizeError(target: ImageDataLike, candidate: ImageDataLike): number {
-  const a = alphaBounds(target);
-  const b = alphaBounds(candidate);
+  return bboxSizeFromBounds(alphaBounds(target), alphaBounds(candidate));
+}
+
+function bboxSizeFromBounds(a: AlphaBounds | null, b: AlphaBounds | null): number {
   if (!a && !b) return 0;
   if (!a || !b) return 1;
   const aw = a.maxX - a.minX + 1;
@@ -170,13 +239,17 @@ export function bboxSizeError(target: ImageDataLike, candidate: ImageDataLike): 
 
 export function imageDeltaMagnitude(a: ImageDataLike, b: ImageDataLike): number {
   assertSameSize(a, b);
+  const aBytes = a.data;
+  const bBytes = b.data;
   let delta = 0;
-  for (let index = 0; index < a.data.length; index += 4) {
-    const alphaWeight = Math.max(a.data[index + 3], b.data[index + 3]) / 255;
-    delta += Math.abs(a.data[index] - b.data[index]) * alphaWeight;
-    delta += Math.abs(a.data[index + 1] - b.data[index + 1]) * alphaWeight;
-    delta += Math.abs(a.data[index + 2] - b.data[index + 2]) * alphaWeight;
-    delta += Math.abs(a.data[index + 3] - b.data[index + 3]);
+  for (let index = 0; index < aBytes.length; index += 4) {
+    const aAlpha = aBytes[index + 3];
+    const bAlpha = bBytes[index + 3];
+    const alphaWeight = Math.max(aAlpha, bAlpha) / 255;
+    delta += Math.abs(aBytes[index] - bBytes[index]) * alphaWeight;
+    delta += Math.abs(aBytes[index + 1] - bBytes[index + 1]) * alphaWeight;
+    delta += Math.abs(aBytes[index + 2] - bBytes[index + 2]) * alphaWeight;
+    delta += Math.abs(aAlpha - bAlpha);
   }
   return delta / (a.width * a.height * 4 * 255);
 }
@@ -210,13 +283,26 @@ export function computeRenderMetrics(
   contribution?: PartContribution
 ): MetricMap {
   const metrics: MetricMap = {};
+  // Keep the pair local to this call: arrays may be reused and mutated by
+  // callers between requests, and alpha-only metrics don't need the bounds.
+  let bounds: [AlphaBounds | null, AlphaBounds | null] | undefined;
+  const getBounds = () => bounds ??= [alphaBounds(target), alphaBounds(candidate)];
+  const wantsPixelSuite = requested.length >= 3 &&
+    requested.includes(RGBA_MSE) && requested.includes(ALPHA_IOU) && requested.includes(ALPHA_MAE);
+  let pixelSuite: ReturnType<typeof comparePixels> | undefined;
   for (const metric of requested) {
-    if (metric === 'full_role_rgba_mse_alpha_weighted') metrics[metric] = rgbaMseAlphaWeighted(target, candidate);
-    if (metric === 'full_role_alpha_iou') metrics[metric] = alphaIou(target, candidate);
-    if (metric === 'full_role_alpha_mae') metrics[metric] = alphaMae(target, candidate);
-    if (metric === 'foreground_crop_rgb_l1') metrics[metric] = foregroundCropRgbL1(target, candidate);
-    if (metric === 'bbox_center_error') metrics[metric] = bboxCenterError(target, candidate);
-    if (metric === 'bbox_size_error') metrics[metric] = bboxSizeError(target, candidate);
+    if (metric === RGBA_MSE || metric === ALPHA_IOU || metric === ALPHA_MAE) {
+      if (wantsPixelSuite) metrics[metric] = (pixelSuite ??= comparePixels(target, candidate))[metric];
+      else if (metric === RGBA_MSE) metrics[metric] = rgbaMseAlphaWeighted(target, candidate);
+      else if (metric === ALPHA_IOU) metrics[metric] = alphaIou(target, candidate);
+      else metrics[metric] = alphaMae(target, candidate);
+    }
+    if (metric === 'foreground_crop_rgb_l1') {
+      assertSameSize(target, candidate);
+      metrics[metric] = foregroundRgbInBounds(target, candidate, boundsUnion(...getBounds()));
+    }
+    if (metric === 'bbox_center_error') metrics[metric] = bboxCenterFromBounds(...getBounds(), target);
+    if (metric === 'bbox_size_error') metrics[metric] = bboxSizeFromBounds(...getBounds());
     if (metric === 'fake_part_score') Object.assign(metrics, fakePartMetrics(contribution));
   }
   return metrics;

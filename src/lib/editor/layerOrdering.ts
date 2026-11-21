@@ -56,12 +56,22 @@ export function deriveRoleFromAtoms(
 ): RoleDocument {
   const decorationById = new Map(role.decorations.map((item) => [item.id, item] as const));
   extraDecorations.forEach((item, id) => decorationById.set(id, item));
-  const decorations = atoms
-    .filter((atom) => atom !== HEAD_ATOM)
-    .map((atom) => decorationById.get(atom))
-    .filter((item): item is DecorationLayer => Boolean(item));
-  const headAtomIndex = atoms.indexOf(HEAD_ATOM);
-  const headLayerIndex = atoms.slice(0, headAtomIndex < 0 ? atoms.length : headAtomIndex).filter((atom) => atom !== HEAD_ATOM).length;
+  const decorations: DecorationLayer[] = [];
+  let headLayerIndex = 0;
+  let foundHead = false;
+  for (let index = 0; index < atoms.length; index += 1) {
+    if (!(index in atoms)) continue; // Match the previous Array.filter on sparse stacks.
+    const atom = atoms[index];
+    if (atom === HEAD_ATOM) {
+      foundHead = true;
+      continue;
+    }
+    // Even an unresolved atom counted toward the old virtual head position.
+    // The final clamp still uses the number of resolved decoration objects.
+    if (!foundHead) headLayerIndex += 1;
+    const item = decorationById.get(atom);
+    if (item) decorations.push(item);
+  }
   return {
     ...role,
     decorations,

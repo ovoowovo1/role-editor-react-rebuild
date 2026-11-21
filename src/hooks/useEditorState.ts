@@ -9,7 +9,9 @@ import { createDefaultRole } from '../mock/options';
 import type { PartTab, RoleDocument } from '../types/role';
 import { clamp } from '../lib/math';
 import { cloneRole, syncGroups, touch } from '../lib/editor/editorRoleUtils';
+import { applyBaseRoleAppearanceUpdate, type BaseRoleAppearanceUpdate } from '../lib/editor/editorRoleCommands';
 import { applyTransformUpdate } from '../lib/editor/editorTransformUpdates';
+import { applyBaseGroupVisibilityUpdate, applyGroupMetadataUpdate, type GroupRoleUpdate } from '../lib/editor/editorGroupMutations';
 import {
   DEFAULT_INSERT_SETTINGS,
   sanitizeInsertDraftSettings,
@@ -65,6 +67,16 @@ export function useEditorState() {
     [setRole]
   );
 
+  const updateBaseRoleAppearance = useCallback((update: BaseRoleAppearanceUpdate) => {
+    setRole((current) => applyBaseRoleAppearanceUpdate(current, update), 'history');
+  }, [setRole]);
+
+  const updateGroupRole = useCallback((update: GroupRoleUpdate) => {
+    setRole((current) => update.type === 'set-visibility'
+      ? applyBaseGroupVisibilityUpdate(current, update.groupId, update.visible)
+      : applyGroupMetadataUpdate(current, update), 'history');
+  }, [setRole]);
+
   const setStageScale = useCallback((value: number) => {
     const steppedValue = Math.round(value / EDITOR_STAGE_SCALE_STEP) * EDITOR_STAGE_SCALE_STEP;
     setStageScaleState(clamp(steppedValue, EDITOR_STAGE_MIN_SCALE, EDITOR_STAGE_MAX_SCALE));
@@ -93,6 +105,8 @@ export function useEditorState() {
     insertDraftSettings,
     setInsertDraftSettings,
     updateRole,
+    updateBaseRoleAppearance,
+    updateGroupRole,
     updateTransformRole
   };
 }

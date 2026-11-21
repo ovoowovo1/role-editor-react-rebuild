@@ -98,9 +98,15 @@ test('switches body-part tabs, keeps the selected asset in sync, and exports the
 
 test('changes camp and gender, refreshes available assets, and persists their legacy role data', async ({ page }, testInfo) => {
   const monitor = watchPageErrors(page);
-  const fixture = await writeRoleFixture(testInfo, 'camp-gender-source', makeEditorSmokeRole(1));
+  const role = makeEditorSmokeRole(1);
+  role.decorations[0].x = 19;
+  const fixture = await writeRoleFixture(testInfo, 'camp-gender-source', role);
 
   await importRoleFile(page, fixture, 1);
+  const layer = page.getByTestId('layer-row-e2e-deco-1');
+  await layer.locator('.layer-badge').click();
+  const x = page.getByTestId('transform-pos-x-number');
+  await expect(x).toHaveValue('19');
   const selects = page.locator('.menu-selects select');
   const campSelect = selects.nth(0);
   const genderSelect = selects.nth(1);
@@ -115,6 +121,19 @@ test('changes camp and gender, refreshes available assets, and persists their le
 
   await genderSelect.selectOption('female');
   await expect(genderSelect).toHaveValue('female');
+
+  await page.getByTestId('undo-button').click();
+  await expect(genderSelect).toHaveValue('male');
+  const redo = page.getByTestId('redo-button');
+  await expect(redo).toBeEnabled();
+  // Dispatch a same-value selection so the React control actually receives it.
+  await campSelect.dispatchEvent('change');
+  await genderSelect.dispatchEvent('change');
+  await expect(redo).toBeEnabled();
+  await redo.click();
+  await expect(genderSelect).toHaveValue('female');
+  await expect(layer).toHaveClass(/\bselected\b/);
+  await expect(x).toHaveValue('19');
   const payload = await readLegacyPayload(await downloadJsonExport(page, testInfo, 'camp-gender-export.json'));
   expect(payload.data.dr).toBe(1);
   expectNoPageErrors(monitor);

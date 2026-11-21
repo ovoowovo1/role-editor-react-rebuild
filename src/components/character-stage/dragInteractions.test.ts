@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Container } from 'pixi.js';
+import { LIVE_MULTI_DRAG_ITEM_LIMIT } from '../../constants/stage';
 import { makeDecorationLayer, makeRoleDocument } from '../../test/roleFixtures';
 import {
   beginDecorationDrag,
@@ -10,14 +11,19 @@ import {
 import type { StageRuntimeRefs, StageSceneState } from './types';
 
 const mocks = vi.hoisted(() => ({
+  isDecorationDisplaySyncCurrent: vi.fn(() => false),
+  createLargeMultiDragPreview: vi.fn((_width: number, _height: number) => new Container()),
   setDecorationInteractionEnabled: vi.fn(),
   syncDisguiseChildOrder: vi.fn()
 }));
 
 vi.mock('./sceneSync', () => ({
+  isDecorationDisplaySyncCurrent: mocks.isDecorationDisplaySyncCurrent,
   setDecorationInteractionEnabled: mocks.setDecorationInteractionEnabled,
   syncDisguiseChildOrder: mocks.syncDisguiseChildOrder
 }));
+
+vi.mock('./stageOverlayVisuals', () => ({ createLargeMultiDragPreview: mocks.createLargeMultiDragPreview }));
 
 function makeRefs(scene: StageSceneState, visual: Container): StageRuntimeRefs {
   return {
@@ -136,6 +142,30 @@ describe('decoration drag commit', () => {
     vi.clearAllMocks();
   });
 
+  it('uses the current indexed decoration for single drag without scanning the role', () => {
+    const { refs, scene } = makeMultiDragRefs();
+    const current = refs.roleRef.current.decorations;
+    const filter = vi.spyOn(current, 'filter');
+    scene.decorationsById.set('a', current[0]);
+    refs.selectedIdsRef.current = ['a'];
+    mocks.isDecorationDisplaySyncCurrent.mockReturnValueOnce(true);
+
+    beginDecorationDrag('a', { x: 10, y: 20 }, scene.disguiseRoot, refs);
+    expect(filter).not.toHaveBeenCalled();
+    expect(refs.dragRef.current?.selectionIds).toEqual(['a']);
+    expect(refs.dragRef.current?.visual).toMatchObject({ kind: 'direct', startX: 10, startY: 20 });
+  });
+
+  it('falls back to live role data when the single-drag scene index is stale', () => {
+    const { refs, scene } = makeMultiDragRefs();
+    refs.selectedIdsRef.current = ['a'];
+    const filter = vi.spyOn(refs.roleRef.current.decorations, 'filter');
+
+    beginDecorationDrag('a', { x: 10, y: 20 }, scene.disguiseRoot, refs);
+    expect(filter).toHaveBeenCalledOnce();
+    expect(refs.dragRef.current?.selectionIds).toEqual(['a']);
+  });
+
   it('keeps the selection mask at the drop position until role displays catch up', () => {
     const scene = {
       selectionDragController: new Container(),
@@ -156,6 +186,35 @@ describe('decoration drag commit', () => {
     expect(scene.selectionDragController.filters).toEqual([filter]);
     expect(onCommitDrag).toHaveBeenCalledWith(['deco-a'], 24, 16);
     expect(refs.dragRef.current).toBeNull();
+  });
+
+  it('keeps large preview center, fallback coordinates and commit order without moving original layers', () => {
+    const { refs, scene } = makeMultiDragRefs();
+    const decorations = Array.from({ length: LIVE_MULTI_DRAG_ITEM_LIMIT + 1 }, (_, index) =>
+      makeDecorationLayer(index === 0 ? 'a' : `missing-${index}`, { x: 0, y: 0 })
+    );
+    // The visible 'a' uses actual Pixi origin (10, 20); all missing
+    // decorations contribute their stored coordinates instead.
+    refs.roleRef.current = makeRoleDocument({ decorations, positionRange: 100 });
+    refs.selectedIdsRef.current = [...decorations].reverse().map(({ id }) => id);
+    const selectedInRoleOrder = decorations.map(({ id }) => id);
+    const root = scene.disguiseRoot;
+    const startX = 10 / decorations.length;
+    const startY = 20 / decorations.length;
+    beginDecorationDrag('a', { x: 0, y: 0 }, root, refs);
+
+    expect(refs.dragRef.current?.selectionIds).toEqual(selectedInRoleOrder);
+    expect(refs.dragRef.current?.visual).toMatchObject({ kind: 'preview', startX, startY });
+    expect(mocks.createLargeMultiDragPreview).toHaveBeenCalledExactlyOnceWith(10, 20);
+    expect(scene.decoDisplays.get('a')!.container.position).toMatchObject({ x: 10, y: 20 });
+
+    expect(updateDecorationDrag({ x: 9, y: -2 }, refs)).toBe(true);
+    expect(scene.decoDisplays.get('a')!.container.position).toMatchObject({ x: 10, y: 20 });
+    expect(commitDecorationDrag(refs)).toBe(true);
+    const [ids, dx, dy] = vi.mocked(refs.callbacksRef.current.onCommitDrag).mock.calls[0];
+    expect(ids).toEqual(selectedInRoleOrder);
+    expect(dx).toBeCloseTo(9);
+    expect(dy).toBeCloseTo(-2);
   });
 
   it('moves non-contiguous multi-selection in place without changing child order', () => {

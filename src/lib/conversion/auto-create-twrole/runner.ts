@@ -119,6 +119,9 @@ async function runAutoCreateTwroleInternal({
   const sourceSignature = sourceSignatureForTiles(sourceLoad.sources);
   const targetSignature = targetSignatureForImage(target);
   const settingsSignature = autoCreateSnapshotSettingsSignature(settings);
+  // The loaded source catalog and normalized settings stay fixed for a run.
+  // Published checkpoints reuse the exact identities verified at resume.
+  const checkpointSignatures = { sourceSignature, settingsSignature };
   const canResume = Boolean(
     resumeSnapshot &&
       hasValidSnapshotState(resumeSnapshot) &&
@@ -173,10 +176,10 @@ async function runAutoCreateTwroleInternal({
   }
 
   const buildResult = (previewDataUrl: string): AutoCreateTwroleResult => {
-    const decorations = collage.exportDecorations();
+    const { decorations, legacy } = collage.exportResultTiles();
     return {
       decorations,
-      exportJson: { deco: collage.exportLegacyDeco() },
+      exportJson: { deco: legacy },
       previewDataUrl,
       targetWidth: target.width,
       targetHeight: target.height,
@@ -222,7 +225,8 @@ async function runAutoCreateTwroleInternal({
           seed,
           target,
           targetSignature,
-          sourceLoad.warnings
+          sourceLoad.warnings,
+          checkpointSignatures
         )
       };
     };
@@ -251,7 +255,8 @@ async function runAutoCreateTwroleInternal({
         seed,
         target,
         targetSignature,
-        sourceLoad.warnings
+        sourceLoad.warnings,
+        checkpointSignatures
       )
     });
     const checkpoint = diagnostics

@@ -40,7 +40,7 @@ interface Bounds {
 
 interface BrushMaskSpatialIndex {
   cellSize: number;
-  buckets: Map<string, BrushFillPoint[]>;
+  rows: Map<number, Map<number, BrushFillPoint[]>>;
   widePoints: BrushFillPoint[];
 }
 
@@ -56,41 +56,48 @@ function positiveRadiusMedian(points: BrushFillPoint[]): number {
     : radii[middle];
 }
 
-function spatialCellKey(cellX: number, cellY: number): string {
-  return `${cellX},${cellY}`;
-}
-
 function buildBrushMaskSpatialIndex(mask: BrushFillMask, step: number): BrushMaskSpatialIndex {
   const cellSize = Math.max(step, 2 * positiveRadiusMedian(mask.points), 1);
-  const buckets = new Map<string, BrushFillPoint[]>();
+  const rows = new Map<number, Map<number, BrushFillPoint[]>>();
   const widePoints: BrushFillPoint[] = [];
 
   for (const point of mask.points) {
     // The legacy distance check squares radius, so a negative imported radius
     // behaves like its absolute value. Keep that edge-case semantics in the index.
     const radius = Math.abs(point.radius);
+    if (Number.isNaN(radius) || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+    if (!Number.isFinite(radius)) {
+      widePoints.push(point);
+      continue;
+    }
     const minCellX = Math.floor((point.x - radius) / cellSize);
     const maxCellX = Math.floor((point.x + radius) / cellSize);
     const minCellY = Math.floor((point.y - radius) / cellSize);
     const maxCellY = Math.floor((point.y + radius) / cellSize);
     const coveredCellCount = (maxCellX - minCellX + 1) * (maxCellY - minCellY + 1);
 
-    if (coveredCellCount > 64) {
+    if (coveredCellCount > 64 ||
+      !Number.isSafeInteger(minCellX) || !Number.isSafeInteger(maxCellX) ||
+      !Number.isSafeInteger(minCellY) || !Number.isSafeInteger(maxCellY)) {
       widePoints.push(point);
       continue;
     }
 
     for (let cellY = minCellY; cellY <= maxCellY; cellY += 1) {
+      let row = rows.get(cellY);
+      if (!row) {
+        row = new Map();
+        rows.set(cellY, row);
+      }
       for (let cellX = minCellX; cellX <= maxCellX; cellX += 1) {
-        const key = spatialCellKey(cellX, cellY);
-        const bucket = buckets.get(key);
+        const bucket = row.get(cellX);
         if (bucket) bucket.push(point);
-        else buckets.set(key, [point]);
+        else row.set(cellX, [point]);
       }
     }
   }
 
-  return { cellSize, buckets, widePoints };
+  return { cellSize, rows, widePoints };
 }
 
 function pointIsInsideCircle(point: BrushFillPoint, x: number, y: number): boolean {
@@ -105,12 +112,17 @@ export function createBrushMaskPointTester(
   step: number,
   onCandidateCompared?: (point: BrushFillPoint) => void
 ): (x: number, y: number) => boolean {
-  const index = buildBrushMaskSpatialIndex(mask, step);
+  return makeBrushMaskPointTester(buildBrushMaskSpatialIndex(mask, step), onCandidateCompared);
+}
 
+function makeBrushMaskPointTester(
+  index: BrushMaskSpatialIndex,
+  onCandidateCompared?: (point: BrushFillPoint) => void
+): (x: number, y: number) => boolean {
   return (x, y) => {
     const cellX = Math.floor(x / index.cellSize);
     const cellY = Math.floor(y / index.cellSize);
-    const bucket = index.buckets.get(spatialCellKey(cellX, cellY));
+    const bucket = index.rows.get(cellY)?.get(cellX);
     if (bucket) {
       for (const point of bucket) {
         onCandidateCompared?.(point);
@@ -123,6 +135,181 @@ export function createBrushMaskPointTester(
     }
     return false;
   };
+}
+
+const MAX_WIDE_BRUSH_AXIS_SAMPLES = 128 * 1024;
+const MIN_SPARSE_BRUSH_SAMPLES = 16 * 1024;
+type SampleSpan = [first: number, end: number];
+
+function canVisitAxis(start: number, end: number, step: number): boolean {
+  return Number.isFinite(start) && Number.isFinite(end) && Number.isFinite(step) &&
+    start <= end && start + step > start && end + step > end;
+}
+
+function lowerBound(low: number, high: number, isPast: (index: number) => boolean): number {
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (isPast(middle)) high = middle;
+    else low = middle + 1;
+  }
+  return low;
+}
+
+function isSparseWideBrush(index: BrushMaskSpatialIndex, width: number, height: number, step: number): boolean {
+  if (width > MAX_WIDE_BRUSH_AXIS_SAMPLES || width * height < MIN_SPARSE_BRUSH_SAMPLES) return false;
+  let occupiedAreaUpperBound = 0;
+  for (const row of index.rows.values()) occupiedAreaUpperBound += row.size * (index.cellSize + step) ** 2;
+  for (const { radius } of index.widePoints) occupiedAreaUpperBound += (2 * Math.abs(radius) + step) ** 2;
+  // Overlaps can only make this upper bound larger. Stay on the original
+  // streaming scan when the bounds are small or likely dense.
+  return occupiedAreaUpperBound < (width * step) * (height * step) / 2;
+}
+
+function wideCircleSpan(xs: readonly number[], point: BrushFillPoint, split: number, y: number): SampleSpan | null {
+  const dy = y - point.y;
+  if (dy * dy > point.radius * point.radius) return null;
+  const inside = (i: number) => pointIsInsideCircle(point, xs[i], y);
+  const hasLeft = split > 0 && inside(split - 1);
+  const hasRight = split < xs.length && inside(split);
+  if (!hasLeft && !hasRight) return null;
+
+  // On each side of the center the original predicate is monotone on
+  // ordered samples; keep its arithmetic instead of rounding sqrt bounds.
+  return [
+    hasLeft ? lowerBound(0, split, inside) : split,
+    hasRight ? lowerBound(split, xs.length, (i) => !inside(i)) : split
+  ];
+}
+
+/** Skip empty cells even if a large circle was too wide to expand into the index. */
+function visitSparseWideBrushSamples(
+  index: BrushMaskSpatialIndex,
+  startX: number,
+  endX: number,
+  startY: number,
+  endY: number,
+  step: number,
+  containsPoint: (x: number, y: number) => boolean,
+  onHit: (x: number, y: number) => void
+): boolean {
+  const width = (endX - startX) / step + 1;
+  const height = (endY - startY) / step + 1;
+  if (!isSparseWideBrush(index, width, height, step)) return false;
+
+  const xs: number[] = [];
+  const xByColumn = new Map<number, SampleSpan>();
+  for (let x = startX; x <= endX; x += step) {
+    const first = xs.length;
+    // Repeated additions can make actual sample count differ from the
+    // estimate. Fall back before a large allocation or any output.
+    if (first >= MAX_WIDE_BRUSH_AXIS_SAMPLES) return false;
+    xs.push(x);
+    const column = Math.floor(x / index.cellSize);
+    const span = xByColumn.get(column);
+    if (span) span[1] = first + 1;
+    else xByColumn.set(column, [first, first + 1]);
+  }
+  const wide = index.widePoints.map((point) => ({
+    point,
+    split: lowerBound(0, xs.length, (i) => xs[i] >= point.x)
+  }));
+  const spans: SampleSpan[] = [];
+  for (let y = startY; y <= endY; y += step) {
+    spans.length = 0;
+    const row = index.rows.get(Math.floor(y / index.cellSize));
+    if (row) {
+      for (const column of row.keys()) {
+        const span = xByColumn.get(column);
+        if (span) spans.push(span);
+      }
+    }
+    for (const { point, split } of wide) {
+      const span = wideCircleSpan(xs, point, split, y);
+      if (span) spans.push(span);
+    }
+    if (spans.length > 1) spans.sort((a, b) => a[0] - b[0]);
+
+    let consumed = 0;
+    for (const [first, end] of spans) {
+      for (let i = Math.max(first, consumed); i < end; i += 1) {
+        if (containsPoint(xs[i], y)) onHit(xs[i], y);
+      }
+      consumed = Math.max(consumed, end);
+    }
+  }
+  return true;
+}
+
+/**
+ * Visits the same row-major sample grid as the full scan, without evaluating
+ * cells that the existing point tester would immediately reject. In particular,
+ * x/y still advance by repeated addition, not by multiplication: changing that
+ * arithmetic can move a borderline sample into or out of a circle.
+ */
+function visitBrushSamples(
+  index: BrushMaskSpatialIndex,
+  startX: number,
+  endX: number,
+  startY: number,
+  endY: number,
+  step: number,
+  onHit: (x: number, y: number) => void
+): void {
+  if (index.widePoints.length) {
+    const containsPoint = makeBrushMaskPointTester(index);
+    if (visitSparseWideBrushSamples(index, startX, endX, startY, endY, step, containsPoint, onHit)) return;
+    for (let y = startY; y <= endY; y += step) {
+      for (let x = startX; x <= endX; x += step) {
+        if (containsPoint(x, y)) onHit(x, y);
+      }
+    }
+    return;
+  }
+
+  if (!index.rows.size) return;
+  const usedColumns = new Set<number>();
+  const columnsByRow = new Map<number, number[]>();
+  for (const [cellY, row] of index.rows) {
+    const columns = [...row.keys()].sort((a, b) => a - b);
+    columnsByRow.set(cellY, columns);
+    for (const column of columns) usedColumns.add(column);
+  }
+
+  // Build the one-dimensional x grid once. Reuse the exact coordinates for
+  // each y instead of repeating the same x values across the whole rectangle.
+  const xsByColumn = new Map<number, number[]>();
+  for (let x = startX; x <= endX; x += step) {
+    const column = Math.floor(x / index.cellSize);
+    if (!usedColumns.has(column)) continue;
+    const xs = xsByColumn.get(column);
+    if (xs) xs.push(x);
+    else xsByColumn.set(column, [x]);
+  }
+
+  let previousCellY = Number.NaN;
+  let spans: { xs: number[]; bucket: BrushFillPoint[] }[] = [];
+  for (let y = startY; y <= endY; y += step) {
+    const cellY = Math.floor(y / index.cellSize);
+    if (cellY !== previousCellY) {
+      previousCellY = cellY;
+      spans = [];
+      const row = index.rows.get(cellY);
+      for (const column of columnsByRow.get(cellY) ?? []) {
+        const xs = xsByColumn.get(column);
+        const bucket = row?.get(column);
+        if (xs && bucket) spans.push({ xs, bucket });
+      }
+    }
+    for (const { xs, bucket } of spans) {
+      for (const x of xs) {
+        for (const point of bucket) {
+          if (!pointIsInsideCircle(point, x, y)) continue;
+          onHit(x, y);
+          break;
+        }
+      }
+    }
+  }
 }
 
 export function brushMaskBounds(mask: BrushFillMask): Bounds | null {
@@ -226,20 +413,19 @@ export async function convertBrushFillToDecos(
   const endY = Math.ceil(bounds.maxY / step) * step;
   const maxLayers = Math.max(0, Math.floor(options.maxLayers));
   const decorations: DecorationLayer[] = [];
-  const containsPoint = createBrushMaskPointTester(mask, step);
   let sampledPixels = 0;
   let truncated = false;
 
-  for (let y = startY; y <= endY; y += step) {
-    for (let x = startX; x <= endX; x += step) {
-      if (!containsPoint(x, y)) continue;
+  if (canVisitAxis(startX, endX, step) && canVisitAxis(startY, endY, step)) {
+    const index = buildBrushMaskSpatialIndex(mask, step);
+    visitBrushSamples(index, startX, endX, startY, endY, step, (x, y) => {
       sampledPixels += 1;
       if (decorations.length >= maxLayers) {
         truncated = true;
-        continue;
+        return;
       }
       decorations.push(createFillDecoration(option, x, y, decorations.length + 1, options));
-    }
+    });
   }
 
   const warnings: string[] = [];

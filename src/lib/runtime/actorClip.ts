@@ -1,6 +1,7 @@
 import { Container, Matrix } from 'pixi.js';
 import { actorAtlasFrames, gafSources } from '../../mock/gafManifest';
-import { actorRuntimeManifest, assetsRuntimeManifest } from './gafRuntimeManifest';
+import { actorRuntimeManifest } from './gafRuntimeManifest';
+import { getLoadedWeaponRuntimeManifest, weaponRuntimeHasTimeline } from './weaponRuntimeManifest';
 import { actorPreviewSlots, type ActorPreviewSlot } from './actorClipAdapter';
 import { actorPartRuntime } from './twlibPartRuntime';
 import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from './actorBodyAnimation';
@@ -84,7 +85,7 @@ function resolvePreviewClip(linkage: string | undefined, preferredSource?: Weapo
   if (!linkage) return null;
 
   const hasActorClip = !!actorRuntimeManifest && !!resolveGafTimelineId(actorRuntimeManifest, linkage);
-  const hasAssetsClip = !!assetsRuntimeManifest && !!resolveGafTimelineId(assetsRuntimeManifest, linkage);
+  const hasAssetsClip = weaponRuntimeHasTimeline(linkage);
 
   if (preferredSource === 'actor' && hasActorClip) return { linkage, source: 'actor' };
   if (preferredSource === 'assets' && hasAssetsClip) return { linkage, source: 'assets' };
@@ -103,6 +104,15 @@ function resolveWeaponClipConfig(config: WeaponPreviewConfig): WeaponPreviewClip
 
 function resolveReloadClipConfig(config: WeaponPreviewConfig): WeaponPreviewClipConfig | null {
   return resolvePreviewClip(config.animClip?.reload, 'actor') ?? resolvePreviewClip(config.weaponClip) ?? resolvePreviewClip(config.clip);
+}
+
+/** True only when the selected sequence actually draws an assets-atlas clip. */
+export function actorAnimationUsesWeaponAtlas(label: string): boolean {
+  const config = findWeaponPreviewConfig(label);
+  return config != null && (
+    resolveWeaponClipConfig(config)?.source === 'assets' ||
+    resolveReloadClipConfig(config)?.source === 'assets'
+  );
 }
 
 function clearSlotChildren(slot: Container): void {
@@ -454,7 +464,7 @@ export class ActorClip extends Container {
     return createGafClip(
       this._failedTextures,
       config.linkage,
-      assetsRuntimeManifest,
+      getLoadedWeaponRuntimeManifest(),
       gafSources.assetsTexture,
       []
     );

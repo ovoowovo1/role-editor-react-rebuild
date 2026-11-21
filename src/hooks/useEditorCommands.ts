@@ -1,6 +1,8 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { camps, createDefaultRole } from '../mock/options';
 import type { GenderCode, PartTab, RoleDocument } from '../types/role';
+import type { BaseRoleAppearanceUpdate } from '../lib/editor/editorRoleCommands';
+import type { GroupRoleUpdate } from '../lib/editor/editorGroupMutations';
 import type { InsertDraftSettings } from '../lib/editor/editorInsertSettings';
 import { useRoleClipboardCommands } from './useRoleClipboardCommands';
 import { useRoleDecorationCommands } from './useRoleDecorationCommands';
@@ -17,6 +19,8 @@ export function useEditorCommands({
   insertDraftSettings,
   setSelectedTab,
   updateRole,
+  updateBaseRoleAppearance,
+  updateGroupRole,
   updateTransformRole
 }: {
   roleHistory: RoleBaseHistoryApi;
@@ -25,6 +29,8 @@ export function useEditorCommands({
   insertDraftSettings: InsertDraftSettings;
   setSelectedTab: Dispatch<SetStateAction<PartTab>>;
   updateRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
+  updateBaseRoleAppearance(update: BaseRoleAppearanceUpdate): void;
+  updateGroupRole(update: GroupRoleUpdate): void;
   updateTransformRole(updater: (current: RoleDocument) => RoleDocument, commit?: boolean): void;
 }) {
   const selection = useRoleSelection({ role, roleRef });
@@ -88,6 +94,7 @@ export function useEditorCommands({
     recordLocalHistoryEntry,
     restoreSelection,
     updateRole,
+    updateBaseRoleAppearance,
     updateTransformRole,
     withTransformHistory,
     resetRole: roleHistoryController.resetRole
@@ -109,7 +116,8 @@ export function useEditorCommands({
     roleRef,
     selectedLayerIds,
     commitRole,
-    updateRole
+    updateRole,
+    updateGroupRole
   });
 
   const layerCommands = useRoleLayerCommands({
@@ -127,13 +135,13 @@ export function useEditorCommands({
   });
 
   const changeCamp = useCallback(
-    (camp: string) => updateRole((current) => ({ ...current, camp })),
-    [updateRole]
+    (camp: string) => updateBaseRoleAppearance({ type: 'camp', camp }),
+    [updateBaseRoleAppearance]
   );
 
   const changeGender = useCallback(
-    (gender: GenderCode) => updateRole((current) => ({ ...current, gender })),
-    [updateRole]
+    (gender: GenderCode) => updateBaseRoleAppearance({ type: 'gender', gender }),
+    [updateBaseRoleAppearance]
   );
 
   const newDesign = useCallback(() => {

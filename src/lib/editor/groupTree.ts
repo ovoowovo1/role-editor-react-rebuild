@@ -149,7 +149,11 @@ export function isGroupDescendant(groups: DecorationGroup[], ancestorId: string,
 }
 
 export function descendantLayerIdsForGroup(groups: DecorationGroup[], groupId: string): string[] {
-  const byId = groupById(groups);
+  return descendantLayerIdsFromIndex(groupById(groups), groupId);
+}
+
+/** Reuse the lookup across roots without retaining every root's result. */
+export function descendantLayerIdsFromIndex(byId: ReadonlyMap<string, DecorationGroup>, groupId: string): string[] {
   const ids: string[] = [];
   const seenGroups = new Set<string>();
   const seenLayers = new Set<string>();
@@ -233,21 +237,45 @@ export function removeMembersFromAllGroups(
   movingMembers: DecorationGroupMember[],
   keepGroupIds: Set<string> = new Set()
 ): DecorationGroup[] {
+  const movingLayers = new Set<string>();
+  const movingGroups = new Set<string>();
+  for (const member of movingMembers) {
+    if (member.type === 'layer') movingLayers.add(member.id);
+    else if (member.type === 'group') movingGroups.add(member.id);
+  }
+
   const directGroups = groups.map((group) => {
-    const members = groupMembers(group).filter(
-      (member) =>
-        !movingMembers.some((moving) => moving.type === member.type && moving.id === member.id) ||
-        keepGroupIds.has(group.id)
-    );
-    return { ...group, members: members.map((member) => ({ ...member })) };
+    const members = groupMembers(group);
+    if (keepGroupIds.has(group.id)) return { ...group, members };
+    return {
+      ...group,
+      members: members.filter((member) => !(member.type === 'layer' ? movingLayers : movingGroups).has(member.id))
+    };
   });
-  return directGroups.map((group) => withGroupMembers(group, membersForGroup(group), directGroups));
+
+  // Descendant layer lists come from the same post-removal tree. Reuse an
+  // index rather than rebuilding the ID lookup for every nested member.
+  let tree: GroupTreeIndex | undefined;
+  return directGroups.map((group) => {
+    const members = groupMembers(group);
+    const itemIds: string[] = [];
+    for (const member of members) {
+      if (member.type === 'layer') {
+        itemIds.push(member.id);
+      } else {
+        tree ??= createGroupTreeIndex(directGroups);
+        for (const id of tree.descendantLayerIds(member.id)) itemIds.push(id);
+      }
+    }
+    return { ...group, members, itemIds };
+  });
 }
 
 export function normalizeGroupsForRole(role: RoleDocument): DecorationGroup[] {
+  const rawGroups = role.groups ?? [];
+  if (rawGroups.length === 0) return [];
   const validLayerIds = new Set(role.decorations.map((item) => item.id));
   validLayerIds.add(HEAD_LAYER_ID);
-  const rawGroups = role.groups ?? [];
   const byId = groupById(rawGroups);
   const claimedLayers = new Set<string>();
   const claimedGroups = new Set<string>();
@@ -266,10 +294,12 @@ export function normalizeGroupsForRole(role: RoleDocument): DecorationGroup[] {
 
     const members: DecorationGroupMember[] = [];
     const localLayerIds = new Set<string>();
+    const itemIds: string[] = [];
     for (const member of groupMembers(group)) {
       if (member.type === 'layer') {
         if (!validLayerIds.has(member.id) || claimedLayers.has(member.id) || localLayerIds.has(member.id)) continue;
-        members.push({ ...member });
+        members.push(member);
+        itemIds.push(member.id);
         localLayerIds.add(member.id);
         continue;
       }
@@ -279,15 +309,13 @@ export function normalizeGroupsForRole(role: RoleDocument): DecorationGroup[] {
       if (!child) continue;
       const normalizedChild = normalizeGroup(child);
       if (!normalizedChild || invalidGroups.has(member.id)) continue;
-      members.push({ ...member });
+      members.push(member);
+      // Child metadata is already normalized and final; append it where the
+      // child appears to retain repeated child references and exact layer order.
+      for (const id of normalizedChild.itemIds) itemIds.push(id);
     }
 
     normalizing.delete(group.id);
-    const layerIdsForNormalizedMember = (member: DecorationGroupMember): string[] => {
-      if (member.type === 'layer') return [member.id];
-      return normalized.get(member.id)?.itemIds ?? descendantLayerIdsForGroup(rawGroups, member.id);
-    };
-    const itemIds = members.flatMap(layerIdsForNormalizedMember);
     if (itemIds.length < 2) {
       invalidGroups.add(group.id);
       return null;
@@ -299,7 +327,8 @@ export function normalizeGroupsForRole(role: RoleDocument): DecorationGroup[] {
     });
     const next = {
       ...group,
-      members: members.map((member) => ({ ...member })),
+      // groupMembers made fresh sanitized objects, none alias the source.
+      members,
       itemIds
     };
     normalized.set(group.id, next);

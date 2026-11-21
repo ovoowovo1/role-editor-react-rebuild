@@ -1,5 +1,6 @@
 import type { DecorationLayer, PartOption } from '../../types/role';
 import { createId, round } from '../math';
+import { averageOpaqueColorAtThreshold, buildAlphaPaletteTotals, minimumPaletteAlpha } from './alphaPaletteStats';
 
 export type ColorMatchAlgorithm =
   | 'cielab'
@@ -74,13 +75,6 @@ export interface DecoPaletteEntry {
   visualWidth: number;
 }
 
-interface ColorDistanceContext {
-  lab: LabColor | null;
-  hsv: HsvColor | null;
-  hsl: HslColor | null;
-  luminance: number;
-}
-
 export const IMAGE_TO_DECO_PRESETS: Record<Exclude<ImageToDecoQuality, 'custom'>, ImageToDecoConversionOptions> = {
   performance: {
     maxSize: 64,
@@ -115,10 +109,71 @@ export const IMAGE_TO_DECO_PRESETS: Record<Exclude<ImageToDecoQuality, 'custom'>
 };
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
-const paletteEntryCache = new WeakMap<PartOption, Map<number, Promise<DecoPaletteEntry | null>>>();
+// Retain the original readback for one threshold, then retain only compact
+// alpha totals for repeatedly edited options. Both identities and bytes are
+// bounded independently of the number of alpha-slider positions.
+const PALETTE_OPTION_CACHE_LIMIT = 512;
+const PALETTE_CACHE_BYTE_LIMIT = 8 * 1024 * 1024;
+const PALETTE_THRESHOLD_CACHE_LIMIT = 4;
+type PaletteRaster =
+  | { pixels: Uint8ClampedArray; totals: null }
+  | { pixels: null; totals: Float64Array };
+interface PaletteOptionCache {
+  raster: Promise<{ data: PaletteRaster }>;
+  firstMinimumAlpha: number;
+  entries: Map<number, Promise<DecoPaletteEntry | null>>;
+  retainedBytes: number;
+}
+const paletteOptionCache = new Map<PartOption, PaletteOptionCache>();
+let retainedPaletteRasterBytes = 0;
+
+function forgetPaletteOption(option: PartOption): void {
+  const cached = paletteOptionCache.get(option);
+  if (!cached) return;
+  retainedPaletteRasterBytes -= cached.retainedBytes;
+  paletteOptionCache.delete(option);
+}
+
+function trimPaletteRasters(): void {
+  while (paletteOptionCache.size > PALETTE_OPTION_CACHE_LIMIT || retainedPaletteRasterBytes > PALETTE_CACHE_BYTE_LIMIT) {
+    const oldest = paletteOptionCache.keys().next();
+    if (oldest.done) return;
+    forgetPaletteOption(oldest.value);
+  }
+}
+
+function updatePaletteRasterSize(option: PartOption, cached: PaletteOptionCache, bytes: number): void {
+  if (paletteOptionCache.get(option) !== cached) return;
+  retainedPaletteRasterBytes += bytes - cached.retainedBytes;
+  cached.retainedBytes = bytes;
+  trimPaletteRasters();
+}
+
+function keepRecent<K, V>(cache: Map<K, V>, key: K, value: V, limit: number): void {
+  cache.delete(key);
+  cache.set(key, value);
+  if (cache.size > limit) {
+    const oldest = cache.keys().next();
+    if (!oldest.done) cache.delete(oldest.value);
+  }
+}
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+const FRAME_WORK_BUDGET_MS = 8;
+
+/** Yield after doing budgeted work, rather than for every progress sample. */
+function createFrameYieldBudget(): () => Promise<void> | undefined {
+  let startedAt: number | undefined;
+  return () => {
+    const now = performance.now();
+    if (startedAt !== undefined && now - startedAt < FRAME_WORK_BUDGET_MS) return;
+    return nextFrame().then(() => {
+      startedAt = performance.now();
+    });
+  };
 }
 
 function createCanvas(width: number, height: number): HTMLCanvasElement {
@@ -236,96 +291,12 @@ function luminanceForRgb(r: number, g: number, b: number): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-function colorDistance(
-  r: number,
-  g: number,
-  b: number,
-  context: ColorDistanceContext,
-  entry: DecoPaletteEntry,
-  algorithm: ColorMatchAlgorithm
-): number {
-  if (algorithm === 'cielab') {
-    const currentLab = context.lab ?? rgbToLab(r, g, b);
-    return (
-      (currentLab.l - entry.lab.l) ** 2 +
-      (currentLab.a - entry.lab.a) ** 2 +
-      (currentLab.b - entry.lab.b) ** 2
-    );
-  }
-
-  if (algorithm === 'weighted-rgb') {
-    const dr = r - entry.r;
-    const dg = g - entry.g;
-    const db = b - entry.b;
-    return 2 * dr * dr + 4 * dg * dg + 3 * db * db;
-  }
-
-  if (algorithm === 'luminance') {
-    return Math.abs(context.luminance - entry.luminance);
-  }
-
-  if (algorithm === 'hsv') {
-    const currentHsv = context.hsv ?? rgbToHsv(r, g, b);
-    const hue = hueDistance(currentHsv.h, entry.hsv.h);
-    const saturation = currentHsv.s - entry.hsv.s;
-    const value = currentHsv.v - entry.hsv.v;
-    const hueWeight = currentHsv.s * entry.hsv.s;
-    return 1800 * hueWeight * hue * hue + 400 * saturation * saturation + 250 * value * value;
-  }
-
-  if (algorithm === 'hsl') {
-    const currentHsl = context.hsl ?? rgbToHsl(r, g, b);
-    const hue = hueDistance(currentHsl.h, entry.hsl.h);
-    const saturation = currentHsl.s - entry.hsl.s;
-    const lightness = currentHsl.l - entry.hsl.l;
-    const hueWeight = currentHsl.s * entry.hsl.s;
-    return 1200 * hueWeight * hue * hue + 500 * saturation * saturation + 350 * lightness * lightness;
-  }
-
-  if (algorithm === 'brightness-color') {
-    const dr = r - entry.r;
-    const dg = g - entry.g;
-    const db = b - entry.b;
-    const weightedRgb = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
-    const brightness = context.luminance - entry.luminance;
-    return 6 * brightness * brightness + 0.25 * weightedRgb;
-  }
-
-  return (r - entry.r) ** 2 + (g - entry.g) ** 2 + (b - entry.b) ** 2;
-}
-
 export function visualWidthForOption(option: PartOption): number {
   const atlas = option.atlas;
   return Math.max(1, atlas?.runtimeDisplayWidth ?? atlas?.width ?? 50);
 }
 
-function averageOpaqueColor(data: Uint8ClampedArray, alphaThreshold: number) {
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  let count = 0;
-
-  for (let index = 0; index < data.length; index += 4) {
-    if (data[index + 3] <= alphaThreshold) continue;
-    r += data[index];
-    g += data[index + 1];
-    b += data[index + 2];
-    count += 1;
-  }
-
-  if (!count) return null;
-  return {
-    r: r / count,
-    g: g / count,
-    b: b / count,
-    count
-  };
-}
-
-async function optionToPaletteEntry(
-  option: PartOption,
-  alphaThreshold: number
-): Promise<DecoPaletteEntry | null> {
+async function readPaletteOptionPixels(option: PartOption): Promise<Uint8ClampedArray> {
   const atlas = option.atlas;
   const image = await loadImage(atlas?.texture ?? option.icon);
   const width = Math.max(1, Math.round(atlas?.width ?? image.naturalWidth ?? 50));
@@ -339,7 +310,28 @@ async function optionToPaletteEntry(
     context.drawImage(image, 0, 0, width, height);
   }
 
-  const average = averageOpaqueColor(context.getImageData(0, 0, width, height).data, alphaThreshold);
+  return context.getImageData(0, 0, width, height).data;
+}
+
+function scanPaletteColor(data: Uint8ClampedArray, minimumAlpha: number) {
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let count = 0;
+  for (let index = 0; index < data.length; index += 4) {
+    if (data[index + 3] < minimumAlpha) continue;
+    r += data[index];
+    g += data[index + 1];
+    b += data[index + 2];
+    count += 1;
+  }
+  return count ? { r: r / count, g: g / count, b: b / count, count } : null;
+}
+
+function makePaletteEntry(
+  option: PartOption,
+  average: ReturnType<typeof averageOpaqueColorAtThreshold>
+): DecoPaletteEntry | null {
   if (!average) return null;
 
   return {
@@ -360,22 +352,37 @@ function cachedPaletteEntry(
   option: PartOption,
   alphaThreshold: number
 ): Promise<DecoPaletteEntry | null> {
-  let thresholdCache = paletteEntryCache.get(option);
-  if (!thresholdCache) {
-    thresholdCache = new Map();
-    paletteEntryCache.set(option, thresholdCache);
+  const minimumAlpha = minimumPaletteAlpha(alphaThreshold);
+  let optionCache = paletteOptionCache.get(option);
+  if (!optionCache) {
+    const raster = readPaletteOptionPixels(option).then((pixels): { data: PaletteRaster } => {
+      updatePaletteRasterSize(option, created, pixels.buffer.byteLength);
+      return { data: { pixels, totals: null } };
+    });
+    const created: PaletteOptionCache = { raster, firstMinimumAlpha: minimumAlpha, entries: new Map(), retainedBytes: 0 };
+    optionCache = created;
+    void raster.catch(() => {
+      if (paletteOptionCache.get(option) === created) forgetPaletteOption(option);
+    });
   }
+  paletteOptionCache.delete(option);
+  paletteOptionCache.set(option, optionCache);
+  trimPaletteRasters();
 
-  const cached = thresholdCache.get(alphaThreshold);
-  if (cached) return cached;
-
-  const request = optionToPaletteEntry(option, alphaThreshold);
-  thresholdCache.set(alphaThreshold, request);
-  void request.catch(() => {
-    if (thresholdCache?.get(alphaThreshold) !== request) return;
-    thresholdCache.delete(alphaThreshold);
-    if (!thresholdCache.size) paletteEntryCache.delete(option);
+  const cached = optionCache;
+  const { raster, entries } = cached;
+  const request = entries.get(minimumAlpha) ?? raster.then((state) => {
+    const { pixels, totals } = state.data;
+    if (totals !== null) return makePaletteEntry(option, averageOpaqueColorAtThreshold(totals, minimumAlpha));
+    if (cached.firstMinimumAlpha === minimumAlpha) {
+      return makePaletteEntry(option, scanPaletteColor(pixels, minimumAlpha));
+    }
+    const compact = buildAlphaPaletteTotals(pixels);
+    state.data = { pixels: null, totals: compact };
+    updatePaletteRasterSize(option, cached, compact.byteLength);
+    return makePaletteEntry(option, averageOpaqueColorAtThreshold(compact, minimumAlpha));
   });
+  keepRecent(entries, minimumAlpha, request, PALETTE_THRESHOLD_CACHE_LIMIT);
   return request;
 }
 
@@ -386,6 +393,7 @@ export async function buildDecoPalette(
 ): Promise<DecoPaletteEntry[]> {
   const palette: DecoPaletteEntry[] = [];
   const total = options.length;
+  const yieldWhenNeeded = createFrameYieldBudget();
 
   for (let index = 0; index < options.length; index += 1) {
     try {
@@ -399,8 +407,11 @@ export async function buildDecoPalette(
 
     if (index % 16 === 0 || index === options.length - 1) {
       onProgress?.({ stage: 'palette', done: index + 1, total });
-      await nextFrame();
     }
+    // Check between individual readbacks; one slow atlas entry need not wait
+    // for 15 more before handing control back to the browser.
+    const frame = yieldWhenNeeded();
+    if (frame) await frame;
   }
 
   return palette;
@@ -413,23 +424,106 @@ export function bestPaletteMatch(
   palette: DecoPaletteEntry[],
   algorithm: ColorMatchAlgorithm
 ): DecoPaletteEntry {
-  const context: ColorDistanceContext = {
-    lab: algorithm === 'cielab' ? rgbToLab(r, g, b) : null,
-    hsv: algorithm === 'hsv' ? rgbToHsv(r, g, b) : null,
-    hsl: algorithm === 'hsl' ? rgbToHsl(r, g, b) : null,
-    luminance: luminanceForRgb(r, g, b)
-  };
   let best = palette[0];
   let bestDistance = Number.POSITIVE_INFINITY;
-
-  for (const entry of palette) {
-    const distance = colorDistance(r, g, b, context, entry, algorithm);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = entry;
+  // Choose the formula before the hot candidate scan. Preserve the original
+  // floating-point operation order and strict comparison (first tie wins).
+  switch (algorithm) {
+    case 'cielab': {
+      const currentLab = rgbToLab(r, g, b);
+      for (const entry of palette) {
+        const distance =
+          (currentLab.l - entry.lab.l) ** 2 +
+          (currentLab.a - entry.lab.a) ** 2 +
+          (currentLab.b - entry.lab.b) ** 2;
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = entry;
+        }
+      }
+      break;
+    }
+    case 'weighted-rgb': {
+      for (const entry of palette) {
+        const dr = r - entry.r;
+        const dg = g - entry.g;
+        const db = b - entry.b;
+        const distance = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = entry;
+        }
+      }
+      break;
+    }
+    case 'luminance': {
+      const luminance = luminanceForRgb(r, g, b);
+      for (const entry of palette) {
+        const distance = Math.abs(luminance - entry.luminance);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = entry;
+        }
+      }
+      break;
+    }
+    case 'hsv': {
+      const currentHsv = rgbToHsv(r, g, b);
+      for (const entry of palette) {
+        const hue = hueDistance(currentHsv.h, entry.hsv.h);
+        const saturation = currentHsv.s - entry.hsv.s;
+        const value = currentHsv.v - entry.hsv.v;
+        const hueWeight = currentHsv.s * entry.hsv.s;
+        const distance = 1800 * hueWeight * hue * hue + 400 * saturation * saturation + 250 * value * value;
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = entry;
+        }
+      }
+      break;
+    }
+    case 'hsl': {
+      const currentHsl = rgbToHsl(r, g, b);
+      for (const entry of palette) {
+        const hue = hueDistance(currentHsl.h, entry.hsl.h);
+        const saturation = currentHsl.s - entry.hsl.s;
+        const lightness = currentHsl.l - entry.hsl.l;
+        const hueWeight = currentHsl.s * entry.hsl.s;
+        const distance = 1200 * hueWeight * hue * hue + 500 * saturation * saturation + 350 * lightness * lightness;
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = entry;
+        }
+      }
+      break;
+    }
+    case 'brightness-color': {
+      const luminance = luminanceForRgb(r, g, b);
+      for (const entry of palette) {
+        const dr = r - entry.r;
+        const dg = g - entry.g;
+        const db = b - entry.b;
+        const weightedRgb = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
+        const brightness = luminance - entry.luminance;
+        const distance = 6 * brightness * brightness + 0.25 * weightedRgb;
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = entry;
+        }
+      }
+      break;
+    }
+    default: {
+      for (const entry of palette) {
+        const distance = (r - entry.r) ** 2 + (g - entry.g) ** 2 + (b - entry.b) ** 2;
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = entry;
+        }
+      }
+      break;
     }
   }
-
   return best;
 }
 
@@ -472,6 +566,7 @@ export async function convertImageFileToDecos(
   let skippedPixels = 0;
   let truncated = false;
   const baseName = file.name.replace(/\.[^.]+$/, '') || 'Image';
+  const yieldWhenNeeded = createFrameYieldBudget();
 
   for (let y = 0; y < outputHeight; y += 1) {
     for (let x = 0; x < outputWidth; x += 1) {
@@ -519,8 +614,9 @@ export async function convertImageFileToDecos(
 
     if (y % 8 === 0 || y === outputHeight - 1) {
       onProgress?.({ stage: 'pixels', done: Math.min(totalPixels, (y + 1) * outputWidth), total: totalPixels });
-      await nextFrame();
     }
+    const frame = yieldWhenNeeded();
+    if (frame) await frame;
   }
 
   const warnings: string[] = [];

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { t } from '../../i18n';
 import { Modal } from '../ui/Modal';
-import { parseLayerNumberInput } from './layerListVirtualization';
+import { LayerNumberOutOfRangeError, parseLayerNumberInput } from './layerListVirtualization';
 
 interface SelectableLayerNumber {
   number: number;
@@ -32,15 +32,22 @@ export function SelectLayerDialog({
   }, [open]);
 
   const handleConfirm = () => {
+    let maxLayerNumber = 0;
+    const idByNumber = new Map<number, string>();
+    for (const { number, id } of selectableLayerNumbers) {
+      maxLayerNumber = Math.max(maxLayerNumber, number);
+      idByNumber.set(number, id);
+    }
     let numbers: number[];
     try {
-      numbers = parseLayerNumberInput(inputValue);
+      numbers = parseLayerNumberInput(inputValue, maxLayerNumber);
     } catch (error) {
-      setInputError(error instanceof Error ? error.message : String(error));
+      setInputError(error instanceof LayerNumberOutOfRangeError
+        ? t('layers.layerNotFound', { missing: String(error.layerNumber) })
+        : error instanceof Error ? error.message : String(error));
       return;
     }
 
-    const idByNumber = new Map(selectableLayerNumbers.map((item) => [item.number, item.id]));
     const missing = numbers.filter((number) => !idByNumber.has(number));
     if (!numbers.length) {
       setInputError(t('layers.enterOne'));

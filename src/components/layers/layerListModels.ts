@@ -7,14 +7,14 @@ interface VirtualLayerModel {
   id: string;
   rowId: string;
   type: 'item' | 'head';
-  deco?: DecorationLayer;
+  deco?: Pick<DecorationLayer, 'id' | 'assetId' | 'visible'>;
 }
 
 export interface LayerRowModel {
   key: string;
   rowId: string;
   type: 'item' | 'group' | 'head' | 'reference-image' | 'spacer';
-  deco?: DecorationLayer;
+  deco?: Pick<DecorationLayer, 'id' | 'assetId' | 'visible'>;
   group?: DecorationGroup;
   index?: number;
   grouped?: boolean;
@@ -22,7 +22,7 @@ export interface LayerRowModel {
   selected: boolean;
   itemCount?: number;
   descendantIds?: readonly string[];
-  referenceImage?: ReferenceImageLayer;
+  referenceImage?: Pick<ReferenceImageLayer, 'id' | 'src' | 'name' | 'visible'>;
 }
 
 export interface LayerSelectionState {
@@ -48,7 +48,7 @@ export function buildLayerRowModels({
   groups,
   headLayerIndex
 }: {
-  decorations: DecorationLayer[];
+  decorations: readonly DecorationLayer[];
   groups: DecorationGroup[];
   headLayerIndex: number;
 }): LayerRowModel[] {
@@ -247,38 +247,39 @@ export function mergeReferenceImageRows(
     if (!range) return;
     for (const id of row.descendantIds ?? []) rootRangeByToken.set(id, range);
   });
-  const fallbackRoleOrder = roleRows
-    .filter((row) => row.type === 'head' || row.type === 'item')
-    .map((row) => row.type === 'head' ? HEAD_LAYER_ID : row.deco?.id)
-    .filter((id): id is string => Boolean(id));
   const canonicalOrder = layerOrder.length
     ? layerOrder
-    : [...fallbackRoleOrder.slice().reverse(), ...referenceImages.map((image) => referenceImageLayerToken(image.id))];
-  const visualOrder = canonicalOrder.slice().reverse();
+    : [
+      ...roleRows.flatMap((row) => row.type === 'head'
+        ? [HEAD_LAYER_ID]
+        : row.type === 'item' && row.deco?.id ? [row.deco.id] : []).reverse(),
+      ...referenceImages.map((image) => referenceImageLayerToken(image.id))
+    ];
+
+  // Traverse in both directions once instead of scanning left and right for
+  // every image (quadratic for long runs of adjacent reference images).
+  const nextRoleTokenByImageIndex = new Map<number, string>();
+  let nextToken: string | undefined;
+  for (let index = 0; index < canonicalOrder.length; index += 1) {
+    const token = canonicalOrder[index];
+    if (imageByToken.has(token) && nextToken !== undefined) {
+      nextRoleTokenByImageIndex.set(index, nextToken);
+    }
+    if (roleRowsByToken.has(token)) nextToken = token;
+  }
+
   const insertionBuckets = new Map<number, LayerRowModel[]>();
-  for (let index = 0; index < visualOrder.length; index += 1) {
-    const token = visualOrder[index];
+  let lastRoleToken: string | undefined;
+  for (let index = canonicalOrder.length - 1; index >= 0; index -= 1) {
+    const token = canonicalOrder[index];
+    const previousToken = lastRoleToken;
+    if (roleRowsByToken.has(token)) lastRoleToken = token;
     const image = imageByToken.get(token);
     if (!image) continue;
     let insertionIndex = roleRows.length;
-    let previousToken: string | undefined;
-    let previousRoleIndex = -1;
-    for (let next = index - 1; next >= 0; next -= 1) {
-      const roleIndex = roleRowsByToken.get(visualOrder[next]);
-      if (roleIndex == null) continue;
-      previousToken = visualOrder[next];
-      previousRoleIndex = roleIndex;
-      break;
-    }
-    let nextToken: string | undefined;
-    let nextRoleIndex = -1;
-    for (let next = index + 1; next < visualOrder.length; next += 1) {
-      const roleIndex = roleRowsByToken.get(visualOrder[next]);
-      if (roleIndex == null) continue;
-      nextToken = visualOrder[next];
-      nextRoleIndex = roleIndex;
-      break;
-    }
+    const nextToken = nextRoleTokenByImageIndex.get(index);
+    const previousRoleIndex = previousToken === undefined ? -1 : roleRowsByToken.get(previousToken)!;
+    const nextRoleIndex = nextToken === undefined ? -1 : roleRowsByToken.get(nextToken)!;
     const previousRange = previousToken ? rootRangeByToken.get(previousToken) : undefined;
     const nextRange = nextToken ? rootRangeByToken.get(nextToken) : undefined;
     if (previousRange && (!nextRange || nextRange !== previousRange)) {
@@ -304,7 +305,8 @@ export function mergeReferenceImageRows(
   }
   const result: LayerRowModel[] = [];
   for (let index = 0; index <= roleRows.length; index += 1) {
-    result.push(...(insertionBuckets.get(index) ?? []));
+    const bucket = insertionBuckets.get(index);
+    if (bucket) for (const row of bucket) result.push(row);
     if (index < roleRows.length) result.push(roleRows[index]);
   }
   return result;

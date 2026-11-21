@@ -22,8 +22,53 @@ import type { ReferenceImageOptions } from './types';
 interface OrderCache {
   decorations: readonly DecorationLayer[];
   headIndex: number;
+  requestedOrder?: readonly string[];
+  referenceImageCount: number;
 }
+interface DisplaySyncCache {
+  decorations: readonly DecorationLayer[];
+  options: DisguiseDecoOptions;
+  pending: ReadonlySet<string>;
+}
+const displaySyncCache = new WeakMap<StageSceneState, DisplaySyncCache>();
+const referenceSyncCache = new WeakMap<StageSceneState, {
+  images: readonly ReferenceImageLayer[];
+  options: ReferenceImageOptions;
+}>();
 const orderCache = new WeakMap<StageSceneState, OrderCache>();
+
+/** Keep the full rebuild for any order not achievable with exactly one move. */
+function tryMoveSingleChild(root: Container, wanted: readonly Container[]): boolean {
+  const current = root.children;
+  if (current.length !== wanted.length) return false;
+  let first = 0;
+  while (first < current.length && current[first] === wanted[first]) first++;
+  if (first === current.length) return true;
+
+  let last = current.length - 1;
+  while (last > first && current[last] === wanted[last]) last--;
+  if (last === first) return false;
+
+  // Removing the first item and inserting it at the end of the changed
+  // interval shifts the remaining items left exactly one position.
+  if (current[first] === wanted[last]) {
+    let index = first;
+    while (index < last && current[index + 1] === wanted[index]) index++;
+    if (index === last) {
+      root.setChildIndex(current[first], last);
+      return true;
+    }
+  }
+  if (current[last] === wanted[first]) {
+    let index = first + 1;
+    while (index <= last && current[index - 1] === wanted[index]) index++;
+    if (index > last) {
+      root.setChildIndex(current[last], first);
+      return true;
+    }
+  }
+  return false;
+}
 
 function replaceDisguiseChildren(root: Container, children: Container[]): void {
   root.removeChildren();
@@ -43,11 +88,9 @@ function decorationIdsMatchLookup(scene: StageSceneState, role: RoleDocument): b
 
 /** True once the display lookup has received the current role references. */
 export function isDecorationDisplaySyncCurrent(scene: StageSceneState, role: RoleDocument): boolean {
-  if (role.decorations.length !== scene.decorationsById.size) return false;
-  for (const deco of role.decorations) {
-    if (scene.decorationsById.get(deco.id) !== deco) return false;
-  }
-  return true;
+  // Role updates replace the decorations array; the display pass records the
+  // exact array it synchronized, so selection changes need no layer walk.
+  return displaySyncCache.get(scene)?.decorations === role.decorations;
 }
 
 export function syncDisguiseChildOrder(
@@ -57,48 +100,62 @@ export function syncDisguiseChildOrder(
 ): void {
   const headIndex = clampedHeadLayerIndex(role);
   const cached = orderCache.get(scene);
-  if (!layerOrder && !scene.referenceImageDisplays?.size && cached && cached.headIndex === headIndex &&
-    cached.decorations.length === role.decorations.length &&
+  const requestedLayerOrder = layerOrder?.length ? layerOrder : undefined;
+  const referenceImageCount = scene.referenceImageDisplays?.size ?? 0;
+  if (cached && cached.headIndex === headIndex &&
+    cached.referenceImageCount === referenceImageCount &&
+    (cached.requestedOrder === requestedLayerOrder ||
+      (cached.requestedOrder && requestedLayerOrder &&
+        cached.requestedOrder.length === requestedLayerOrder.length &&
+        cached.requestedOrder.every((id, index) => id === requestedLayerOrder[index]))) &&
     (cached.decorations === role.decorations ||
-      cached.decorations.every((deco, index) => deco.id === role.decorations[index].id))) {
+      (cached.decorations.length === role.decorations.length &&
+        cached.decorations.every((deco, index) => deco.id === role.decorations[index].id)))) {
     cached.decorations = role.decorations;
+    cached.requestedOrder = requestedLayerOrder;
     return;
   }
   // A large role update may defer display synchronization. Keep the existing
   // children until that update refreshes the lookup, otherwise ordering the
   // new IDs against old display records would temporarily blank the stage.
-  if (!decorationIdsMatchLookup(scene, role)) return;
+  if (!isDecorationDisplaySyncCurrent(scene, role) && !decorationIdsMatchLookup(scene, role)) return;
 
-  const fallbackCanonicalOrder = layerIdsForRole(role).reverse();
-  const requestedOrder = layerOrder?.length ? layerOrder : fallbackCanonicalOrder;
-  const roleContainers = new Map<string, Container>();
-  roleContainers.set(HEAD_LAYER_ID, scene.headLayerClip);
-  for (const deco of role.decorations) {
-    const record = scene.decoDisplays.get(deco.id);
-    if (record) roleContainers.set(deco.id, record.container);
-  }
+  const requestedOrder = requestedLayerOrder ?? layerIdsForRole(role).reverse();
+  const roleContainer = (id: string) => id === HEAD_LAYER_ID
+    ? scene.headLayerClip
+    : scene.decoDisplays.get(id)?.container;
   const imageContainers = new Map<string, Container>();
   for (const [id, record] of scene.referenceImageDisplays?.entries?.() ?? []) imageContainers.set(`${REFERENCE_IMAGE_LAYER_PREFIX}${id}`, record.container);
   const orderedChildren: Container[] = [];
   const added = new Set<Container>();
+  let placedRoleChildren = 0;
+  let placedImages = 0;
   for (const token of requestedOrder) {
-    const child = roleContainers.get(token) ?? imageContainers.get(token);
+    const roleChild = roleContainer(token);
+    const child = roleChild ?? imageContainers.get(token);
     if (!child || added.has(child)) continue;
     orderedChildren.push(child);
     added.add(child);
+    if (roleChild) placedRoleChildren++;
+    else placedImages++;
   }
-  // Repair an order that was generated before the role/image lookup caught up.
-  for (const token of fallbackCanonicalOrder) {
-    const child = roleContainers.get(token);
-    if (child && !added.has(child)) {
-      orderedChildren.push(child);
-      added.add(child);
+  // Canonical order was already walked if there was no explicit order. If
+  // there was, only repair genuinely incomplete orders (including the head).
+  if (requestedLayerOrder && placedRoleChildren < scene.decoDisplays.size + 1) {
+    for (const token of layerIdsForRole(role).reverse()) {
+      const child = roleContainer(token);
+      if (child && !added.has(child)) {
+        orderedChildren.push(child);
+        added.add(child);
+      }
     }
   }
-  for (const child of imageContainers.values()) {
-    if (!added.has(child)) {
-      orderedChildren.push(child);
-      added.add(child);
+  if (placedImages < imageContainers.size) {
+    for (const child of imageContainers.values()) {
+      if (!added.has(child)) {
+        orderedChildren.push(child);
+        added.add(child);
+      }
     }
   }
 
@@ -111,9 +168,13 @@ export function syncDisguiseChildOrder(
     scene.headLayerSelectionOverlay ? [scene.headLayerSelectionOverlay] : []
   );
   scene.layerOrder = [...requestedOrder];
-  orderCache.set(scene, { decorations: role.decorations, headIndex });
+  orderCache.set(scene, {
+    decorations: role.decorations, headIndex, requestedOrder: requestedLayerOrder, referenceImageCount
+  });
   if (sameChildOrder(scene.lastDisguiseChildOrder, fullOrder)) return;
-  replaceDisguiseChildren(scene.disguiseRoot, fullOrder);
+  if (!tryMoveSingleChild(scene.disguiseRoot, fullOrder)) {
+    replaceDisguiseChildren(scene.disguiseRoot, fullOrder);
+  }
   scene.lastDisguiseChildOrder = fullOrder;
 }
 
@@ -163,27 +224,18 @@ export function syncDecorationDisplayRecords(
   activeDragIds?: ReadonlySet<string> | null
 ): void {
   const decorationsById = scene.decorationsById;
-  // Most edits retain the ID sequence. Allocate a membership set only for
-  // removals or replacements, not for every position/scale update.
-  let membershipChanged = decorationsById.size !== role.decorations.length;
-  for (const deco of role.decorations) {
-    if (!decorationsById.has(deco.id)) membershipChanged = true;
-    decorationsById.set(deco.id, deco);
-  }
-  if (membershipChanged) {
-    const ids = new Set(role.decorations.map(deco => deco.id));
-    for (const id of decorationsById.keys()) {
-      if (ids.has(id)) continue;
-      decorationsById.delete(id);
-      const record = scene.decoDisplays.get(id);
-      record?.container.parent?.removeChild(record.container);
-      if (record && !record.container.destroyed) record.container.destroy({ children: true });
-      scene.decoDisplays.delete(id);
-    }
-    orderCache.delete(scene);
-  }
+  const previous = displaySyncCache.get(scene);
+  const comparable = previous?.options === decoOptions ? previous : undefined;
+  if (comparable?.decorations === role.decorations && comparable.pending.size === 0) return;
 
-  for (const deco of role.decorations) {
+  let membershipChanged = decorationsById.size !== role.decorations.length;
+  const pending = new Set<string>();
+  for (let index = 0; index < role.decorations.length; index++) {
+    const deco = role.decorations[index];
+    if (comparable?.decorations[index] === deco && !comparable.pending.has(deco.id)) continue;
+    const known = decorationsById.get(deco.id);
+    if (!known) membershipChanged = true;
+    if (known !== deco) decorationsById.set(deco.id, deco);
     let record = scene.decoDisplays.get(deco.id);
     if (record?.appliedDecoration === deco) continue;
     const displayKey = decorationDisplayKey(deco);
@@ -201,7 +253,10 @@ export function syncDecorationDisplayRecords(
         scene.disguiseRoot,
         decoOptions
       );
-      if (!container) continue;
+      if (!container) {
+        pending.add(deco.id);
+        continue;
+      }
       container.eventMode = scene.decorationInteractionEnabled ? 'static' : 'none';
       container.cursor = scene.decorationInteractionEnabled ? 'pointer' : 'default';
       record = {
@@ -222,8 +277,23 @@ export function syncDecorationDisplayRecords(
     // Active drag items own their imperative position until the commit has
     // produced a current role reference; the next display sync then applies
     // the committed transform.
-    if (!isActiveDragItem) record.appliedDecoration = deco;
+    if (isActiveDragItem) pending.add(deco.id);
+    else record.appliedDecoration = deco;
   }
+
+  if (membershipChanged) {
+    const ids = new Set(role.decorations.map((deco) => deco.id));
+    for (const id of decorationsById.keys()) {
+      if (ids.has(id)) continue;
+      decorationsById.delete(id);
+      const record = scene.decoDisplays.get(id);
+      record?.container.parent?.removeChild(record.container);
+      if (record && !record.container.destroyed) record.container.destroy({ children: true });
+      scene.decoDisplays.delete(id);
+    }
+    orderCache.delete(scene);
+  }
+  displaySyncCache.set(scene, { decorations: role.decorations, options: decoOptions, pending });
 }
 
 export function syncReferenceImages(
@@ -231,6 +301,12 @@ export function syncReferenceImages(
   images: readonly ReferenceImageLayer[],
   options: ReferenceImageOptions
 ): void {
+  const previous = referenceSyncCache.get(scene);
+  if (previous?.images === images && previous.options === options) return;
+  if (!previous || previous.images.length !== images.length || images.some((image) =>
+    scene.referenceImageDisplays.get(image.id)?.displayKey !== image.src)) {
+    orderCache.delete(scene);
+  }
   scene.referenceImagesById.clear();
   for (const image of images) scene.referenceImagesById.set(image.id, image);
   syncReferenceImageDisplayRecords(
@@ -241,4 +317,5 @@ export function syncReferenceImages(
     scene.decorationInteractionEnabled,
     false
   );
+  referenceSyncCache.set(scene, { images, options });
 }

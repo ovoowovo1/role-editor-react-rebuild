@@ -2,6 +2,11 @@ import { useEffect, type MutableRefObject } from 'react';
 import { BODY_ANIMATION_FRAME_MS } from '../../constants/stage';
 import { quarterTurnRotationRadians } from '../../lib/stage/characterStageHelpers';
 import type { StageSceneState } from './types';
+import {
+  clearLoadedWeaponAtlasFailure,
+  prepareWeaponAtlasForAnimation,
+  recordWeaponAtlasResult
+} from '../../lib/runtime/weaponAtlasAvailability';
 
 interface PlaybackResetState {
   sceneVersion: number;
@@ -74,52 +79,62 @@ export function useBodyAnimationPlayback({
     const scene = sceneRef.current;
     if (!scene) return;
 
-    const lastReset = lastPlaybackResetRef.current;
-    if (
-      lastReset.sceneVersion !== sceneVersion ||
-      lastReset.label !== bodyAnimationLabel ||
-      lastReset.restartKey !== bodyAnimationRestartKey
-    ) {
-      scene.actorClip.setBodyFrame(bodyAnimationLabel);
-      lastPlaybackResetRef.current = {
-        sceneVersion,
-        label: bodyAnimationLabel,
-        restartKey: bodyAnimationRestartKey
-      };
-    }
-
-    if (!bodyAnimationPlaying) return;
-
+    let cancelled = false;
     let rafId = 0;
-    let lastTime = performance.now();
+    let lastTime = 0;
     let accumulated = 0;
 
-    const advanceFrame = (elapsedMs: number) => {
-      const currentScene = sceneRef.current;
-      if (currentScene !== scene || scene.actorClip.destroyed) return;
+    const isActive = () => !cancelled && sceneRef.current === scene && !scene.actorClip.destroyed;
+    const tick = (time: number) => {
+      if (!isActive()) return;
+      accumulated += time - lastTime;
+      lastTime = time;
       const range = scene.actorClip.getBodyFrameRange(bodyAnimationLabel);
       const advance = calculateBodyAnimationAdvance(
         scene.actorClip.body.currentFrame,
         range,
-        elapsedMs
+        accumulated
       );
       if (advance.nextFrame !== null) {
         scene.actorClip.setBodyFrame(advance.nextFrame);
       }
       accumulated = advance.remainingMs;
-    };
-
-    const tick = (time: number) => {
-      const currentScene = sceneRef.current;
-      if (currentScene !== scene || scene.actorClip.destroyed) return;
-      accumulated += time - lastTime;
-      lastTime = time;
-      advanceFrame(accumulated);
       rafId = requestAnimationFrame(tick);
     };
 
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
+    const begin = (weaponAtlasReady?: boolean) => {
+      if (!isActive()) return;
+      const recovered = weaponAtlasReady === undefined && clearLoadedWeaponAtlasFailure(scene.failedTextures);
+      if (weaponAtlasReady !== undefined) recordWeaponAtlasResult(scene.failedTextures, weaponAtlasReady);
+      const lastReset = lastPlaybackResetRef.current;
+      if (
+        lastReset.sceneVersion !== sceneVersion ||
+        lastReset.label !== bodyAnimationLabel ||
+        lastReset.restartKey !== bodyAnimationRestartKey ||
+        weaponAtlasReady === true ||
+        recovered
+      ) {
+        scene.actorClip.setBodyFrame(bodyAnimationLabel);
+        lastPlaybackResetRef.current = {
+          sceneVersion,
+          label: bodyAnimationLabel,
+          restartKey: bodyAnimationRestartKey
+        };
+      }
+      if (bodyAnimationPlaying) {
+        lastTime = performance.now();
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+
+    const weaponAtlas = prepareWeaponAtlasForAnimation(bodyAnimationLabel);
+    if (weaponAtlas) void weaponAtlas.then(begin);
+    else begin();
+
+    return () => {
+      cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, [bodyAnimationLabel, bodyAnimationPlaying, bodyAnimationRestartKey, lastPlaybackResetRef, sceneRef, sceneVersion]);
 }
 

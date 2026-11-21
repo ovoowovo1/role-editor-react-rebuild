@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULT_POSITION_RANGE } from '../constants/editor';
 import { t } from '../i18n';
+import { createReferenceImageUrlOwner } from '../lib/editor/referenceImageUrlResources';
 import {
-  cloneReferenceImageSnapshot,
   createReferenceImageLayer,
   isReferenceImageFile,
   patchReferenceImageLayer,
@@ -22,11 +22,30 @@ interface UseReferenceImageLayersOptions {
   onMutation?(): void;
 }
 
-function loadImageSize(src: string): Promise<{ width: number; height: number }> {
+const EMPTY_LAYER_ORDER: string[] = [];
+
+function loadImageSize(src: string, signal: AbortSignal): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.onload = () => resolve({ width: image.naturalWidth || image.width, height: image.naturalHeight || image.height });
-    image.onerror = () => reject(new Error('Failed to load reference image.'));
+    const cleanup = () => {
+      image.onload = null;
+      image.onerror = null;
+      signal.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      image.removeAttribute('src');
+      reject(signal.reason);
+    };
+    image.onload = () => {
+      cleanup();
+      resolve({ width: image.naturalWidth || image.width, height: image.naturalHeight || image.height });
+    };
+    image.onerror = () => {
+      cleanup();
+      reject(new Error('Failed to load reference image.'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
     image.src = src;
   });
 }
@@ -42,34 +61,59 @@ export function useReferenceImageLayers({
   const [layerOrder, setLayerOrder] = useState<string[]>([]);
   const currentRef = useRef<ReferenceImageHistorySnapshot>({ images: [], selectedId: null, layerOrder: [] });
   const transientRef = useRef<ReferenceImageHistorySnapshot | null>(null);
-  const snapshotsRef = useRef<ReferenceImageHistorySnapshot[]>([]);
+  const [urlOwner] = useState(createReferenceImageUrlOwner);
+  const committedFutureRef = useRef(future);
+  const [clearGeneration, setClearGeneration] = useState(0);
+  const [submittedUrls, setSubmittedUrls] = useState<string[]>([]);
+  const committedClearGenerationRef = useRef(clearGeneration);
 
   useEffect(() => {
     currentRef.current = { images, selectedId, layerOrder };
-    snapshotsRef.current = [...past, ...future];
-  }, [future, images, layerOrder, past, selectedId]);
+    const wasCleared = committedClearGenerationRef.current !== clearGeneration;
+    const previousFuture = committedFutureRef.current;
+    // Dropped future entries are the only normal way an immutable URL can
+    // become unreachable; edits and undo/redo move current entries into history.
+    const discardedRedo = previousFuture !== future && previousFuture.length > 0 && future.length === 0;
+    committedClearGenerationRef.current = clearGeneration;
+    committedFutureRef.current = future;
+    if (!wasCleared && !discardedRedo && !submittedUrls.length) return;
 
-  useEffect(() => () => {
-    const urls = new Set<string>();
-    for (const image of currentRef.current.images) urls.add(image.src);
-    for (const snapshot of snapshotsRef.current) {
-      for (const image of snapshot.images) urls.add(image.src);
+    const reachable = new Set(images.map((image) => image.src));
+    for (const history of [past, future]) {
+      for (const snapshot of history) {
+        for (const image of snapshot.images) reachable.add(image.src);
+      }
     }
-    for (const url of urls) URL.revokeObjectURL(url);
-  }, []);
+    for (const image of transientRef.current?.images ?? []) reachable.add(image.src);
+    const committedSubmissions = new Set(submittedUrls);
+    urlOwner.collect(reachable, wasCleared ? clearGeneration : undefined, committedSubmissions);
+    if (committedSubmissions.size) {
+      setSubmittedUrls((urls) => {
+        const remaining = urls.filter((src) => !committedSubmissions.has(src));
+        return remaining.length === urls.length ? urls : remaining;
+      });
+    }
+  }, [clearGeneration, future, images, layerOrder, past, selectedId, submittedUrls, urlOwner]);
+
+  useEffect(() => {
+    urlOwner.activate();
+    return () => urlOwner.deactivate();
+  }, [urlOwner]);
 
   const commitSnapshot = useCallback((next: ReferenceImageHistorySnapshot, record = true) => {
     const previous = currentRef.current;
     if (sameReferenceImageSnapshot(previous, next)) return false;
+    // Updates construct new arrays/objects only when changed. Retaining these
+    // immutable snapshots also preserves the large canonical layer-order array.
     if (record) {
-      setPast((entries) => [...entries, cloneReferenceImageSnapshot(previous)]);
+      setPast((entries) => [...entries, previous]);
       setFuture([]);
       onMutation?.();
     }
-    currentRef.current = cloneReferenceImageSnapshot(next);
+    currentRef.current = next;
     setImages(next.images);
     setSelectedId(next.selectedId);
-    setLayerOrder([...(next.layerOrder ?? [])]);
+    setLayerOrder(next.layerOrder ?? EMPTY_LAYER_ORDER);
     return true;
   }, [onMutation]);
 
@@ -77,24 +121,32 @@ export function useReferenceImageLayers({
     setSelectedId((current) => current === id ? current : id);
   }, []);
 
-  const addImageFile = useCallback(async (file: File): Promise<string> => {
+  const addImageFile = useCallback(async (file: File): Promise<string | null> => {
     if (!isReferenceImageFile(file)) throw new Error(t('extra.error.referenceImageType'));
     const src = URL.createObjectURL(file);
+    const signal = urlOwner.begin(src);
     try {
-      const { width, height } = await loadImageSize(src);
+      const { width, height } = await loadImageSize(src, signal);
+      if (signal.aborted) throw signal.reason;
       const layer = createReferenceImageLayer(file.name, src, width, height, positionRange);
       const next = {
         images: [...currentRef.current.images, layer],
         selectedId: layer.id,
         layerOrder: [...(currentRef.current.layerOrder ?? []), referenceImageLayerToken(layer.id)]
       };
+      urlOwner.submit(src);
       commitSnapshot(next);
+      // Confirm this particular submission with the committed state batch. If
+      // another batched edit displaced it, the effect may now release it.
+      setSubmittedUrls((urls) => [...urls, src]);
       return layer.id;
     } catch (error) {
-      URL.revokeObjectURL(src);
+      const cancelled = signal.aborted;
+      urlOwner.fail(src);
+      if (cancelled) return null;
       throw error;
     }
-  }, [commitSnapshot, positionRange]);
+  }, [commitSnapshot, positionRange, urlOwner]);
 
   const updateImage = useCallback((id: string, patch: ReferenceImageTransformPatch, commit = true) => {
     const nextImages = currentRef.current.images.map((image) => image.id === id
@@ -106,7 +158,7 @@ export function useReferenceImageLayers({
       layerOrder: currentRef.current.layerOrder
     };
     if (!commit) {
-      if (!transientRef.current) transientRef.current = cloneReferenceImageSnapshot(currentRef.current);
+      if (!transientRef.current) transientRef.current = currentRef.current;
       commitSnapshot(next, false);
       return;
     }
@@ -114,7 +166,7 @@ export function useReferenceImageLayers({
   }, [commitSnapshot, positionRange]);
 
   const beginTransform = useCallback(() => {
-    transientRef.current = cloneReferenceImageSnapshot(currentRef.current);
+    transientRef.current = currentRef.current;
   }, []);
 
   const commitTransform = useCallback(() => {
@@ -123,7 +175,7 @@ export function useReferenceImageLayers({
     if (!before) return;
     const current = currentRef.current;
     if (sameReferenceImageSnapshot(before, current)) return;
-    setPast((entries) => [...entries, cloneReferenceImageSnapshot(before)]);
+    setPast((entries) => [...entries, before]);
     setFuture([]);
     onMutation?.();
   }, [onMutation]);
@@ -155,11 +207,11 @@ export function useReferenceImageLayers({
     if (!previous) return false;
     const current = currentRef.current;
     setPast((entries) => entries.slice(0, -1));
-    setFuture((entries) => [cloneReferenceImageSnapshot(current), ...entries]);
-    currentRef.current = cloneReferenceImageSnapshot(previous);
+    setFuture((entries) => [current, ...entries]);
+    currentRef.current = previous;
     setImages(previous.images);
     setSelectedId(previous.selectedId);
-    setLayerOrder([...(previous.layerOrder ?? [])]);
+    setLayerOrder(previous.layerOrder ?? EMPTY_LAYER_ORDER);
     onMutation?.();
     return true;
   }, [onMutation, past]);
@@ -169,28 +221,26 @@ export function useReferenceImageLayers({
     if (!next) return false;
     const current = currentRef.current;
     setFuture((entries) => entries.slice(1));
-    setPast((entries) => [...entries, cloneReferenceImageSnapshot(current)]);
-    currentRef.current = cloneReferenceImageSnapshot(next);
+    setPast((entries) => [...entries, current]);
+    currentRef.current = next;
     setImages(next.images);
     setSelectedId(next.selectedId);
-    setLayerOrder([...(next.layerOrder ?? [])]);
+    setLayerOrder(next.layerOrder ?? EMPTY_LAYER_ORDER);
     onMutation?.();
     return true;
   }, [future, onMutation]);
 
   const clear = useCallback(() => {
-    const urls = new Set<string>();
-    for (const image of currentRef.current.images) urls.add(image.src);
-    for (const snapshot of snapshotsRef.current) for (const image of snapshot.images) urls.add(image.src);
-    for (const url of urls) URL.revokeObjectURL(url);
+    const nextGeneration = urlOwner.prepareClear();
     transientRef.current = null;
+    currentRef.current = { images: [], selectedId: null, layerOrder: EMPTY_LAYER_ORDER };
     setImages([]);
     setSelectedId(null);
-    setLayerOrder([]);
+    setLayerOrder(EMPTY_LAYER_ORDER);
     setPast([]);
     setFuture([]);
-    currentRef.current = { images: [], selectedId: null, layerOrder: [] };
-  }, []);
+    setClearGeneration(nextGeneration);
+  }, [urlOwner]);
 
   const clearRedo = useCallback(() => setFuture([]), []);
 

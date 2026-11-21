@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useMemo,
   useRef,
   type MutableRefObject,
   type PointerEvent as ReactPointerEvent,
@@ -7,6 +8,7 @@ import {
 } from 'react';
 import type { DecorationGroup } from '../../types/role';
 import type { LayerReorderOptions } from '../../lib/editor/editorLayerDrag';
+import { createLayerDragGroupQueries } from './layerDragGroupQueries';
 import {
   canJoinTargetGroup,
   closestDraggableTarget,
@@ -34,6 +36,7 @@ export function useLayerListPointerDrag({
   groups: DecorationGroup[];
   onReorder(activeId: string, overId: string, options?: LayerReorderOptions): void;
 }) {
+  const groupQueries = useMemo(() => createLayerDragGroupQueries(groups), [groups]);
   const dragPointerIdRef = useRef<number | null>(null);
   const latestPointerYRef = useRef(0);
   const pointerMoveFrameRef = useRef<number | null>(null);
@@ -54,9 +57,10 @@ export function useLayerListPointerDrag({
         target,
         virtualY,
         'pointer',
-        canJoinTargetGroup(currentDrag.activeRowId, target, groups),
+        canJoinTargetGroup(currentDrag.activeRowId, target, groups, groupQueries),
         currentDrag.activeRowId,
-        groups
+        groups,
+        groupQueries
       );
       if (dragDropStateMatches(currentDrag, dropState)) return;
 
@@ -72,7 +76,7 @@ export function useLayerListPointerDrag({
       dragStateRef.current = next;
       setDragState(next);
     },
-    [dragStateRef, draggableTargets, groups, scrollRef, setDragState]
+    [dragStateRef, draggableTargets, groupQueries, groups, scrollRef, setDragState]
   );
 
   const stopPointerMoveFrame = useCallback(() => {

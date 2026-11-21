@@ -38,7 +38,7 @@ export function normalizeLegacyDecorations(rawList: unknown, fallbackHeadScale =
   const list = asArray(rawList);
   const decorationsBottomToTop: DecorationLayer[] = [];
   const originalIndexToId: Array<string | null> = [];
-  let headOriginalIndex = -1;
+  let decorationCountAtLastHead = -1;
   let headLayer = defaultHeadLayer(fallbackHeadScale);
 
   list.forEach((item, originalIndex) => {
@@ -50,7 +50,7 @@ export function normalizeLegacyDecorations(rawList: unknown, fallbackHeadScale =
     }
 
     if (isHeadDecoCode(code)) {
-      headOriginalIndex = originalIndex;
+      decorationCountAtLastHead = decorationsBottomToTop.length;
       headLayer = readHeadLayer(raw, fallbackHeadScale);
       originalIndexToId[originalIndex] = null;
       return;
@@ -61,17 +61,13 @@ export function normalizeLegacyDecorations(rawList: unknown, fallbackHeadScale =
     originalIndexToId[originalIndex] = deco.id;
   });
 
-  const decorations = decorationsBottomToTop.slice().reverse();
-  const nonHeadAbove = headOriginalIndex >= 0
-    ? list.slice(headOriginalIndex + 1).filter((item) => {
-      const raw = asRecord(item);
-      const code = readProperty(raw, 'code') ?? readProperty(raw, 'c') ?? readProperty(raw, 'assetId');
-      return Boolean(code) && !isHeadDecoCode(code);
-    }).length
-    : 0;
-  const headLayerIndex = headOriginalIndex >= 0
-    ? normalizeHeadLayerIndex(nonHeadAbove, decorations.length, decorations.length)
-    : decorations.length;
+  const decorationCount = decorationsBottomToTop.length;
+  const headLayerIndex = decorationCountAtLastHead < 0
+    ? decorationCount
+    : normalizeHeadLayerIndex(decorationCount - decorationCountAtLastHead, decorationCount, decorationCount);
+  // This array is owned by the import. Reverse it in place; the index-to-id
+  // table still uses original legacy indexes, including skipped sparse holes.
+  const decorations = decorationsBottomToTop.reverse();
 
   return { decorations, originalIndexToId, headLayerIndex, headLayer };
 }

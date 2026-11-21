@@ -5,20 +5,46 @@ import { shiftHeadLayerForDeletedIndexes, shiftHeadLayerForInsert } from './edit
 import { membersForGroup, withGroupMembers } from './groupTree';
 
 export function insertAfterSelection(role: RoleDocument, selectedIds: string[]): number {
-  const idToIndex = new Map(role.decorations.map((item, i) => [item.id, i]));
-  const indexes = selectedIds
-    .map((id) => idToIndex.get(id) ?? -1)
-    .filter((index) => index >= 0);
-  return indexes.length ? Math.max(...indexes) + 1 : 0;
-}
-
-export function setSelectedVisibleInRole(current: RoleDocument, selectedIds: string[], visible: boolean): void {
+  if (!selectedIds.length) return 0;
   const selected = new Set(selectedIds);
-  current.decorations = current.decorations.map((item) => (selected.has(item.id) ? { ...item, visible } : item));
+  // The last matching decoration is the insertion boundary, including when
+  // an imported document contains duplicate decoration IDs.
+  for (let index = role.decorations.length - 1; index >= 0; index -= 1) {
+    if (selected.has(role.decorations[index].id)) return index + 1;
+  }
+  return 0;
 }
 
-export function toggleDecorationVisibilityInRole(current: RoleDocument, id: string): void {
-  current.decorations = current.decorations.map((item) => (item.id === id ? { ...item, visible: !item.visible } : item));
+function updateDecorationVisibility(
+  role: RoleDocument,
+  matches: (id: string) => boolean,
+  visible?: boolean
+): RoleDocument {
+  let decorations: DecorationLayer[] | undefined;
+  for (let index = 0; index < role.decorations.length; index++) {
+    const layer = role.decorations[index];
+    if (!matches(layer.id)) continue;
+    const nextVisible = visible ?? !layer.visible;
+    if (nextVisible === layer.visible) continue;
+    decorations ??= role.decorations.slice();
+    decorations[index] = { ...layer, visible: nextVisible };
+  }
+  return decorations ? { ...role, decorations } : role;
+}
+
+export function roleWithSelectedVisibility(
+  role: RoleDocument,
+  selectedIds: readonly string[],
+  visible: boolean
+): RoleDocument {
+  if (!selectedIds.length) return role;
+  const selected = new Set(selectedIds);
+  return updateDecorationVisibility(role, (id) => selected.has(id), visible);
+}
+
+export function roleWithToggledDecorationVisibility(role: RoleDocument, id: string): RoleDocument {
+  // Preserve toggling all matching entries for legacy input containing duplicate IDs.
+  return updateDecorationVisibility(role, (layerId) => layerId === id);
 }
 
 export function deleteDecorationFromRole(current: RoleDocument, id: string): void {
@@ -29,6 +55,14 @@ export function deleteDecorationFromRole(current: RoleDocument, id: string): voi
     withGroupMembers(group, membersForGroup(group).filter((member) => member.type === 'group' || member.id !== id), current.groups ?? [])
   );
   shiftHeadLayerForDeletedIndexes(current, oldHeadIndex, [deletedIndex]);
+}
+
+export function roleWithDeletedDecoration(role: RoleDocument, id: string): RoleDocument {
+  // The deletion path replaces its arrays and updates only a scalar on the
+  // draft, so surviving layers and other role data can keep their identities.
+  const next = { ...role };
+  deleteDecorationFromRole(next, id);
+  return next;
 }
 
 export function deleteSelectedFromRole(current: RoleDocument, selectedIds: string[]): void {

@@ -110,3 +110,18 @@ describe('layer ordering and insert settings', () => {
     expect(next.headLayerIndex).toBe(2);
   });
 });
+
+it('keeps unresolved-atom head positioning, sparse slots, duplicates and extra overrides during reconstruction', () => {
+  const base = role({ decorations: [layer('a'), layer('a'), layer('b'), layer(HEAD_LAYER_ID)] });
+  const override = { ...layer('a'), x: 15 };
+  const extras = new Map([['a', override]]);
+  const atoms = ['unknown', 'a', 'b', HEAD_ATOM, HEAD_ATOM, HEAD_LAYER_ID, 'a'];
+  delete atoms[2];
+  const rebuilt = deriveRoleFromAtoms(base, atoms, extras);
+  expect(rebuilt.headLayerIndex).toBe(2);
+  expect(rebuilt.decorations).toEqual([override, base.decorations[3], override]);
+  expect(rebuilt.decorations[0]).toBe(override);
+  expect(rebuilt.decorations[2]).toBe(override);
+  expect(deriveRoleFromAtoms(base, ['unknown', 'a'], extras).headLayerIndex).toBe(1);
+  expect(deriveRoleFromAtoms(base, ['a'], new Map()).decorations[0]).toBe(base.decorations[1]);
+});

@@ -176,6 +176,10 @@ export class BinaryMaskIndex {
   }
 }
 
+function compareTileIndices(a: number, b: number): number {
+  return a - b;
+}
+
 export class TileSpatialIndex {
   private readonly gridWidth: number;
   private readonly gridHeight: number;
@@ -206,9 +210,9 @@ export class TileSpatialIndex {
     if (!bbox) return;
 
     const cells = this.coveredCells(bbox);
+    this.ensureMarkCapacity(tileIndex + 1);
     this.tileCells[tileIndex] = cells;
     for (const cellIndex of cells) this.cells[cellIndex].push(tileIndex);
-    this.ensureMarkCapacity(tileIndex + 1);
   }
 
   remove(tileIndex: number): void {
@@ -222,7 +226,8 @@ export class TileSpatialIndex {
     this.tileCells[tileIndex] = [];
   }
 
-  query(bbox: BBox): number[] {
+  /** Returns unique candidates in render order, optionally reusing caller-owned scratch. */
+  query(bbox: BBox, result: number[] = []): number[] {
     if (this.serial === 0xffffffff) {
       this.marks.fill(0);
       this.serial = 1;
@@ -230,18 +235,29 @@ export class TileSpatialIndex {
       this.serial += 1;
     }
     const serial = this.serial;
-    const result: number[] = [];
+    const marks = this.marks;
+    result.length = 0;
+    const left = this.column(bbox[0]);
+    const top = this.row(bbox[1]);
+    const right = this.column(Math.max(bbox[0], bbox[2] - 1));
+    const bottom = this.row(Math.max(bbox[1], bbox[3] - 1));
 
-    for (const cellIndex of this.coveredCells(bbox)) {
-      for (const tileIndex of this.cells[cellIndex]) {
-        this.ensureMarkCapacity(tileIndex + 1);
-        if (this.marks[tileIndex] === serial) continue;
-        this.marks[tileIndex] = serial;
-        result.push(tileIndex);
+    // Walk the grid directly: unlike update(), query() need not store a
+    // covered-cell list. update() already sizes marks for every cell entry.
+    for (let cy = top; cy <= bottom; cy += 1) {
+      const rowOffset = cy * this.gridWidth;
+      for (let cx = left; cx <= right; cx += 1) {
+        const entries = this.cells[rowOffset + cx];
+        for (let i = 0; i < entries.length; i += 1) {
+          const tileIndex = entries[i];
+          if (marks[tileIndex] === serial) continue;
+          marks[tileIndex] = serial;
+          result.push(tileIndex);
+        }
       }
     }
 
-    result.sort((a, b) => a - b);
+    if (result.length > 1) result.sort(compareTileIndices);
     return result;
   }
 
@@ -254,11 +270,19 @@ export class TileSpatialIndex {
     this.marks = next;
   }
 
+  private column(x: number): number {
+    return clamp(Math.floor(x / this.cellSize), 0, this.gridWidth - 1);
+  }
+
+  private row(y: number): number {
+    return clamp(Math.floor(y / this.cellSize), 0, this.gridHeight - 1);
+  }
+
   private coveredCells(bbox: BBox): number[] {
-    const left = clamp(Math.floor(bbox[0] / this.cellSize), 0, this.gridWidth - 1);
-    const top = clamp(Math.floor(bbox[1] / this.cellSize), 0, this.gridHeight - 1);
-    const right = clamp(Math.floor(Math.max(bbox[0], bbox[2] - 1) / this.cellSize), 0, this.gridWidth - 1);
-    const bottom = clamp(Math.floor(Math.max(bbox[1], bbox[3] - 1) / this.cellSize), 0, this.gridHeight - 1);
+    const left = this.column(bbox[0]);
+    const top = this.row(bbox[1]);
+    const right = this.column(Math.max(bbox[0], bbox[2] - 1));
+    const bottom = this.row(Math.max(bbox[1], bbox[3] - 1));
     const result: number[] = [];
     for (let cy = top; cy <= bottom; cy += 1) {
       for (let cx = left; cx <= right; cx += 1) result.push(cy * this.gridWidth + cx);
@@ -420,17 +444,20 @@ export class ErrorField {
   }
 
   private buildStaticCellColor(): void {
-    const buckets: number[][] = Array.from({ length: this.gw * this.gh }, () => []);
-    const masked: number[] = [];
-    const focus: number[] = [];
+    // Count first so setup never grows and copies several JS number arrays
+    // proportional to the image. Preserve the original row-major traversal
+    // for color sums and the pixel order used by seeded focus selection.
+    let maskedCount = 0;
+    let focusCount = 0;
     const colorSums = new Float64Array(this.gw * this.gh * 3);
 
     for (let y = 0; y < this.height; y += 1) {
       const cellRow = Math.floor(y / this.cell) * this.gw;
+      const pixelRow = y * this.width;
       for (let x = 0; x < this.width; x += 1) {
-        const pixel = y * this.width + x;
+        const pixel = pixelRow + x;
         if (!this.mask[pixel]) continue;
-        masked.push(pixel);
+        maskedCount += 1;
         if (!this.focusMask[pixel]) continue;
         const cell = cellRow + Math.floor(x / this.cell);
         const base = cell * 3;
@@ -439,13 +466,19 @@ export class ErrorField {
         colorSums[base + 1] += this.targetStraight[offset + 1];
         colorSums[base + 2] += this.targetStraight[offset + 2];
         this.cellMaskCount[cell] += 1;
-        buckets[cell].push(pixel);
-        focus.push(pixel);
+        focusCount += 1;
       }
     }
 
+    // One backing array groups the per-cell pixels; each cell owns its span.
+    const cellPool = new Int32Array(focusCount);
+    const cellCursor = new Int32Array(this.cellMaskCount.length);
+    let position = 0;
     for (let cell = 0; cell < this.cellMaskCount.length; cell += 1) {
       const count = this.cellMaskCount[cell];
+      cellCursor[cell] = position;
+      this.cellPixels[cell] = cellPool.subarray(position, position + count);
+      position += count;
       if (count > 0) {
         const base = cell * 3;
         this.cellColor[base] = colorSums[base] / count;
@@ -454,9 +487,23 @@ export class ErrorField {
       }
     }
 
-    this.cellPixels = buckets.map((pixels) => Int32Array.from(pixels));
-    this.maskedPixels = Int32Array.from(masked);
-    this.focusPixels = Int32Array.from(focus);
+    this.maskedPixels = new Int32Array(maskedCount);
+    this.focusPixels = this.focusMask === this.mask ? this.maskedPixels : new Int32Array(focusCount);
+    let maskedCursor = 0;
+    let focusCursor = 0;
+    for (let y = 0; y < this.height; y += 1) {
+      const cellRow = Math.floor(y / this.cell) * this.gw;
+      const pixelRow = y * this.width;
+      for (let x = 0; x < this.width; x += 1) {
+        const pixel = pixelRow + x;
+        if (!this.mask[pixel]) continue;
+        this.maskedPixels[maskedCursor++] = pixel;
+        if (!this.focusMask[pixel]) continue;
+        const cell = cellRow + Math.floor(x / this.cell);
+        this.focusPixels[focusCursor++] = pixel;
+        cellPool[cellCursor[cell]++] = pixel;
+      }
+    }
   }
 
   private pixelError(pixel: number): number {

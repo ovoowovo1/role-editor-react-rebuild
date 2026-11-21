@@ -8,7 +8,7 @@ import {
 import type { DecorationGroup, RoleDocument } from '../../types/role';
 import type { LayerReorderOptions } from './editorLayerDrag';
 import { atomToLayerId, atomsForRole, deriveRoleFromAtoms, layerIdToAtom, orderedLayerIds } from './layerOrdering';
-import { groupForItem } from './editorGroupMutations';
+import { applyGroupVisibilityToDraft, groupForItem } from './editorGroupMutations';
 import { syncGroups } from './editorRoleUtils';
 import {
   descendantLayerIdsForGroup,
@@ -315,29 +315,14 @@ export function createGroupFromLayerSelection(role: RoleDocument, selectedIds: s
 }
 
 export function setGroupVisibilityIncludingHead(role: RoleDocument, groupId: string, visible: boolean): RoleDocument {
-  const group = role.groups?.find((item) => item.id === groupId);
-  if (!group) return role;
-  const groups = role.groups ?? [];
-  const ids = new Set(descendantLayerIdsForGroup(groups, groupId));
-  const childGroupIds = new Set<string>([groupId]);
-  const visitGroup = (id: string) => {
-    const current = groups.find((item) => item.id === id);
-    if (!current) return;
-    for (const member of membersForGroup(current)) {
-      if (member.type === 'group' && !childGroupIds.has(member.id)) {
-        childGroupIds.add(member.id);
-        visitGroup(member.id);
-      }
-    }
-  };
-  visitGroup(groupId);
-  return {
-    ...role,
-    groups: groups.map((item) => (childGroupIds.has(item.id) ? { ...item, visible } : item)),
-    decorations: role.decorations.map((item) => (ids.has(item.id) ? { ...item, visible } : item)),
-    headLayer: ids.has(HEAD_LAYER_ID) ? { ...role.headLayer, visible } : role.headLayer,
-    updatedAt: new Date().toISOString()
-  };
+  const draft = { ...role };
+  const ids = applyGroupVisibilityToDraft(draft, groupId, visible);
+  if (!ids) return role;
+  if (ids.has(HEAD_LAYER_ID) && role.headLayer.visible !== visible) {
+    draft.headLayer = { ...role.headLayer, visible };
+  }
+  draft.updatedAt = new Date().toISOString();
+  return draft;
 }
 
 export function ungroupIncludingHead(role: RoleDocument, groupId: string): RoleDocument {

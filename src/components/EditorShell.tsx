@@ -6,7 +6,6 @@ import { TopMenu } from './TopMenu';
 import { ShortcutHelpModal } from './ShortcutHelpModal';
 import { WeaponAnimationModal } from './WeaponAnimationModal';
 import { InsertSettingsDialog } from './InsertSettingsDialog';
-import { useColorBlockPresets } from '../hooks/useColorBlockPresets';
 import { useRoleEditor } from '../hooks/useRoleEditor';
 import { useRoleFileActions } from '../hooks/useRoleFileActions';
 import { EditorSourcePanel } from './editor-shell/EditorSourcePanel';
@@ -37,7 +36,6 @@ export function EditorShell() {
   } = session;
   const layerStack = useLayerStackController({ editor, reference });
   const reorderLayer = layerStack.reorderLayer;
-  const colorBlockPresets = useColorBlockPresets(editor.role.camp, setStatus);
   const {
     handleImport,
     handleMerge,
@@ -84,7 +82,6 @@ export function EditorShell() {
           <EditorSourcePanel
             editor={editor}
             shell={shell}
-            colorBlockPresets={colorBlockPresets}
             selectedOptionId={selectedOptionId}
             setStatus={setStatus}
             onAddReferenceImage={addReferenceImage}

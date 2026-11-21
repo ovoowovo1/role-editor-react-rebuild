@@ -22,6 +22,8 @@ export function useRoleEditor() {
     insertDraftSettings,
     setInsertDraftSettings,
     updateRole,
+    updateBaseRoleAppearance,
+    updateGroupRole,
     updateTransformRole
   } = useEditorState();
 
@@ -32,6 +34,8 @@ export function useRoleEditor() {
     insertDraftSettings,
     setSelectedTab,
     updateRole,
+    updateBaseRoleAppearance,
+    updateGroupRole,
     updateTransformRole
   });
 

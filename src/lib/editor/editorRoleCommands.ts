@@ -1,4 +1,4 @@
-import type { BodyPartTab, DecorationLayer, EditorClipboardItem, PartOption, RoleDocument } from '../../types/role';
+import type { BodyPartTab, DecorationLayer, EditorClipboardItem, GenderCode, PartOption, RoleDocument } from '../../types/role';
 import { getPartFrame } from '../runtime/twlibPartRuntime';
 import { normalizeDegrees } from '../math';
 import { copyDecoration } from './editorImportMerge';
@@ -9,6 +9,8 @@ import {
   roundPosition,
 } from './editorTransformUtils';
 import { makeRoleHistoryEntry } from './editorRoleHistoryPatch';
+import { cloneRole, syncGroups, touch } from './editorRoleUtils';
+import { cloneGroup } from './groupTree';
 import { validSelectionIds } from './editorTransformUtils';
 import type { DecorationTransformTarget, HistoryIdPool, LocalHistoryEntry } from './editorHistoryTypes';
 
@@ -239,4 +241,43 @@ export function roleWithChosenBodyPart(
       [tab]: current.partScales?.[tab] ?? 1
     }
   };
+}
+
+
+export type BaseRoleAppearanceUpdate =
+  | { type: 'camp'; camp: string }
+  | { type: 'gender'; gender: GenderCode }
+  | { type: 'part'; tab: BodyPartTab; option: PartOption };
+
+function hasStrictlyUnequalDecorationFields(decorations: readonly DecorationLayer[]): boolean {
+  // Legacy comparisons use !== on every tracked field. Sharing the array
+  // would skip that comparison for a malformed NaN, which is unequal to itself.
+  return decorations.some((deco) =>
+    Number.isNaN(deco.id) || Number.isNaN(deco.code) || Number.isNaN(deco.assetId) ||
+    Number.isNaN(deco.name) || Number.isNaN(deco.x) || Number.isNaN(deco.y) ||
+    Number.isNaN(deco.scaleX) || Number.isNaN(deco.scaleY) || Number.isNaN(deco.rotation) ||
+    Number.isNaN(deco.visible) || Number.isNaN(deco.opacity)
+  );
+}
+
+/** Only these immutable commands can bypass the generic decoration clone. */
+export function applyBaseRoleAppearanceUpdate(
+  current: RoleDocument,
+  update: BaseRoleAppearanceUpdate
+): RoleDocument {
+  const draft = hasStrictlyUnequalDecorationFields(current.decorations)
+    ? cloneRole(current)
+    : {
+        ...current,
+        // Preserve cloneRole's legacy group pre-normalization and small-field
+        // copies. The command variants below cannot edit decoration objects.
+        groups: (current.groups ?? []).map(cloneGroup),
+        partFrames: { ...current.partFrames },
+        partScales: { ...current.partScales },
+        headLayer: { ...current.headLayer }
+      };
+  const nextRole = update.type === 'camp' ? { ...draft, camp: update.camp }
+    : update.type === 'gender' ? { ...draft, gender: update.gender }
+    : roleWithChosenBodyPart(draft, update.tab, update.option);
+  return syncGroups(touch(nextRole));
 }

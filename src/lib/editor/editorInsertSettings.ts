@@ -1,5 +1,6 @@
 import type { DecorationLayer, RoleDocument } from '../../types/role';
-import { atomsForRole, deriveRoleFromAtoms } from './layerOrdering';
+import { HEAD_ATOM, HEAD_LAYER_ID } from '../../constants/layers';
+import { atomsForRole, deriveRoleFromAtoms, getHeadLayerIndex } from './layerOrdering';
 import { clamp } from '../math';
 
 export type InsertDraftPlacement = 'top' | 'bottom' | 'after_index';
@@ -43,18 +44,24 @@ export function sanitizeInsertDraftSettings(settings: InsertDraftSettings): Inse
 }
 
 export function getInsertVirtualIndex(role: RoleDocument, settings: InsertDraftSettings): number {
-  const atoms = atomsForRole(role);
-  if (settings.placement === 'top') return 0;
-  if (settings.placement === 'bottom') return atoms.length;
-  const numeric = Number(settings.index);
-  if (!Number.isInteger(numeric) || numeric < 1) return atoms.length;
-  return clamp(numeric, 0, atoms.length);
+  return insertIndexForVirtualLength(atomsForRole(role).length, settings);
 }
 
-export function insertDecorations(role: RoleDocument, decorations: DecorationLayer[], settings: InsertDraftSettings): RoleDocument {
-  if (!decorations.length) return role;
+function insertIndexForVirtualLength(virtualLength: number, settings: InsertDraftSettings): number {
+  if (settings.placement === 'top') return 0;
+  if (settings.placement === 'bottom') return virtualLength;
+  const numeric = Number(settings.index);
+  if (!Number.isInteger(numeric) || numeric < 1) return virtualLength;
+  return clamp(numeric, 0, virtualLength);
+}
+
+function insertViaAtoms(
+  role: RoleDocument,
+  decorations: DecorationLayer[],
+  settings: InsertDraftSettings
+): RoleDocument {
   const atoms = atomsForRole(role);
-  const insertIndex = getInsertVirtualIndex(role, settings);
+  const insertIndex = insertIndexForVirtualLength(atoms.length, settings);
   const nextAtoms = [
     ...atoms.slice(0, insertIndex),
     ...decorations.map((item) => item.id),
@@ -62,4 +69,40 @@ export function insertDecorations(role: RoleDocument, decorations: DecorationLay
   ];
   const extras = new Map(decorations.map((item) => [item.id, item]));
   return deriveRoleFromAtoms(role, nextAtoms, extras);
+}
+
+export function insertDecorations(role: RoleDocument, decorations: DecorationLayer[], settings: InsertDraftSettings): RoleDocument {
+  if (!decorations.length) return role;
+
+  const seen = new Set<string>();
+  const previous = role.decorations;
+
+  // For well-formed unique IDs, the virtual stack is exactly the decorations
+  // plus one head marker. Guard the old lookup semantics before copying
+  // directly: collisions are last-ID-wins and malformed input may throw.
+  for (const list of [previous, decorations]) {
+    for (let index = 0; index < list.length; index++) {
+      const id = list[index]?.id;
+      if (typeof id !== 'string' || id === HEAD_ATOM || id === HEAD_LAYER_ID || seen.has(id)) {
+        return insertViaAtoms(role, decorations, settings);
+      }
+      seen.add(id);
+    }
+  }
+
+  const head = getHeadLayerIndex(role);
+  const virtualIndex = insertIndexForVirtualLength(previous.length + 1, settings);
+  const beforeHead = virtualIndex <= head;
+  const insertIndex = beforeHead ? virtualIndex : virtualIndex - 1;
+  const next = new Array<DecorationLayer>(previous.length + decorations.length);
+  for (let index = 0; index < insertIndex; index++) next[index] = previous[index];
+  for (let index = 0; index < decorations.length; index++) next[insertIndex + index] = decorations[index];
+  for (let index = insertIndex; index < previous.length; index++) next[index + decorations.length] = previous[index];
+
+  return {
+    ...role,
+    decorations: next,
+    headLayerIndex: head + (beforeHead ? decorations.length : 0),
+    updatedAt: new Date().toISOString()
+  };
 }

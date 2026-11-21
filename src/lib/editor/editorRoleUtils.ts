@@ -29,11 +29,17 @@ export function touch(role: RoleDocument): RoleDocument {
 }
 
 export function orderedSelectedDecorations(role: RoleDocument, selectedIds: string[]): DecorationLayer[] {
+  if (selectedIds.length === 0) return [];
   const selected = new Set(selectedIds);
   return role.decorations.filter((deco) => selected.has(deco.id));
 }
 
 export function getFirstSelected(role: RoleDocument, selectedIds: string[]): DecorationLayer | undefined {
+  if (selectedIds.length === 0) return undefined;
+  if (selectedIds.length === 1) {
+    const id = selectedIds[0];
+    return role.decorations.find((deco) => deco.id === id);
+  }
   const selected = new Set(selectedIds);
   return role.decorations.find((deco) => selected.has(deco.id));
 }

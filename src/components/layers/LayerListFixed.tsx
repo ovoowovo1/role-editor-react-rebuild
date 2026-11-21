@@ -21,11 +21,14 @@ import {
 } from './layerListModels';
 import { SelectLayerDialog } from './SelectLayerDialog';
 import { useLayerListDrag } from './useLayerListDrag';
+import { sameDecorationRow, sameReferenceImageRow, useStableLayerListInput } from './useStableLayerListInput';
 import {
   VIRTUAL_DRAG_OVERSCAN_ROWS,
   buildVirtualGeometry,
-  virtualItemsInViewport,
-  type VirtualLayerRow
+  updateVirtualWindow,
+  virtualItemsInWindow,
+  type VirtualLayerRow,
+  type VirtualWindow
 } from './layerListVirtualization';
 
 interface LayerListProps {
@@ -56,6 +59,15 @@ interface LayerListProps {
   onDeleteReferenceImage?(id: string): void;
 }
 
+const EMPTY_REFERENCE_IMAGES: ReferenceImageLayer[] = [];
+const EMPTY_LAYER_ORDER: readonly string[] = [];
+const LAYER_SPACER: VirtualLayerRow = {
+  key: 'layer-spacer',
+  rowId: 'layer-spacer',
+  type: 'spacer',
+  selected: false
+};
+
 export function LayerList({
   decorations,
   headLayer,
@@ -63,9 +75,9 @@ export function LayerList({
   headOptionId,
   groups,
   selectedIds,
-  referenceImages = [],
+  referenceImages = EMPTY_REFERENCE_IMAGES,
   selectedReferenceImageId = null,
-  layerOrder = [],
+  layerOrder = EMPTY_LAYER_ORDER,
   canGroupSelected,
   onSelect,
   onSelectMany,
@@ -84,12 +96,17 @@ export function LayerList({
   onDeleteReferenceImage = () => undefined
 }: LayerListProps) {
   const [selectItemsOpen, setSelectItemsOpen] = useState(false);
-  const [scrollState, setScrollState] = useState({ scrollTop: 0, viewportHeight: 0 });
+  const [viewportWindow, setViewportWindow] = useState<VirtualWindow>(() => ({
+    startIndex: 0,
+    endIndex: VIRTUAL_DRAG_OVERSCAN_ROWS + 1
+  }));
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  const decorationRows = useStableLayerListInput(decorations, sameDecorationRow);
+  const imageRows = useStableLayerListInput(referenceImages, sameReferenceImageRow);
   const rowModels = useMemo(
-    () => buildLayerRowModels({ decorations, groups, headLayerIndex }),
-    [decorations, groups, headLayerIndex]
+    () => buildLayerRowModels({ decorations: decorationRows, groups, headLayerIndex }),
+    [decorationRows, groups, headLayerIndex]
   );
 
   const selectableLayerNumbers = useMemo(
@@ -102,17 +119,6 @@ export function LayerList({
     [rowModels, selectItemsOpen]
   );
 
-  const handleScroll = useCallback((event: ReactUIEvent<HTMLDivElement>) => {
-    const target = event.currentTarget;
-    setScrollState((current) => {
-      const next = {
-        scrollTop: target.scrollTop,
-        viewportHeight: target.clientHeight
-      };
-      return current.scrollTop === next.scrollTop && current.viewportHeight === next.viewportHeight ? current : next;
-    });
-  }, []);
-
   const selectLayerIds = useCallback((ids: string[]) => {
     if (onSelectMany) {
       onSelectMany(ids);
@@ -124,24 +130,25 @@ export function LayerList({
 
   const layerCount = decorations.length + 1 + referenceImages.length;
   const virtualRows = useMemo<VirtualLayerRow[]>(
-    () => [
-      ...mergeReferenceImageRows(rowModels, referenceImages, layerOrder).map((row) => row.type === 'reference-image'
-        ? { ...row, selected: row.referenceImage?.id === selectedReferenceImageId }
-        : row),
-      {
-        key: 'layer-spacer',
-        rowId: 'layer-spacer',
-        type: 'spacer',
-        selected: false
-      }
-    ],
-    [layerOrder, referenceImages, rowModels, selectedReferenceImageId]
+    () => [...mergeReferenceImageRows(rowModels, imageRows, layerOrder), LAYER_SPACER],
+    [layerOrder, imageRows, rowModels]
   );
   const virtualGeometry = useMemo(
     () => buildVirtualGeometry(virtualRows),
     [virtualRows]
   );
   const { totalHeight, offsets, heights, rowIndexById, draggableTargets } = virtualGeometry;
+
+  const updateWindow = useCallback((scrollTop: number, viewportHeight: number) => {
+    setViewportWindow((previous) => updateVirtualWindow(
+      previous, virtualGeometry, scrollTop, viewportHeight, VIRTUAL_DRAG_OVERSCAN_ROWS
+    ));
+  }, [virtualGeometry]);
+
+  const handleScroll = useCallback((event: ReactUIEvent<HTMLDivElement>) => {
+    const { scrollTop, clientHeight } = event.currentTarget;
+    updateWindow(scrollTop, clientHeight);
+  }, [updateWindow]);
 
   const {
     dragState,
@@ -159,15 +166,8 @@ export function LayerList({
     onReorder
   });
   const visibleStructureItems = useMemo(
-    () =>
-      virtualItemsInViewport(
-        virtualRows,
-        virtualGeometry,
-        scrollState.scrollTop,
-        scrollState.viewportHeight,
-        VIRTUAL_DRAG_OVERSCAN_ROWS
-      ),
-    [scrollState.scrollTop, scrollState.viewportHeight, virtualGeometry, virtualRows]
+    () => virtualItemsInWindow(virtualRows, virtualGeometry, viewportWindow),
+    [viewportWindow, virtualGeometry, virtualRows]
   );
   const selectionState = useMemo(
     () => createLayerSelectionState(selectedIds),
@@ -176,8 +176,13 @@ export function LayerList({
   const visibleItems = useMemo(
     () => visibleStructureItems.map((item) => item.row.type === 'spacer'
       ? item
-      : { ...item, row: applyLayerSelection(item.row, selectionState) }),
-    [selectionState, visibleStructureItems]
+      : {
+        ...item,
+        row: item.row.type === 'reference-image'
+          ? (item.row.referenceImage?.id === selectedReferenceImageId ? { ...item.row, selected: true } : item.row)
+          : applyLayerSelection(item.row, selectionState)
+      }),
+    [selectedReferenceImageId, selectionState, visibleStructureItems]
   );
 
   const handleBlankListClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
@@ -189,30 +194,28 @@ export function LayerList({
     onClearSelection();
   }, [dragState, onClearSelection, selectedIds.length, selectedReferenceImageId]);
 
+  const updateSizeRef = useRef<() => void>(() => undefined);
   useLayoutEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return;
-
     const updateSize = () => {
-      setScrollState((current) => {
-        const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
-        const scrollTop = Math.min(scrollEl.scrollTop, maxScrollTop);
-        if (scrollEl.scrollTop !== scrollTop) {
-          scrollEl.scrollTop = scrollTop;
-        }
-        const next = {
-          scrollTop,
-          viewportHeight: scrollEl.clientHeight
-        };
-        return current.scrollTop === next.scrollTop && current.viewportHeight === next.viewportHeight ? current : next;
-      });
+      const viewportHeight = scrollEl.clientHeight;
+      const maxScrollTop = Math.max(0, scrollEl.scrollHeight - viewportHeight);
+      if (scrollEl.scrollTop > maxScrollTop) scrollEl.scrollTop = maxScrollTop;
+      updateWindow(scrollEl.scrollTop, viewportHeight);
     };
 
+    updateSizeRef.current = updateSize;
     updateSize();
-    const resizeObserver = new ResizeObserver(updateSize);
+  }, [updateWindow]);
+
+  useLayoutEffect(() => {
+    const scrollEl = scrollRef.current;
+    if (!scrollEl) return;
+    const resizeObserver = new ResizeObserver(() => updateSizeRef.current());
     resizeObserver.observe(scrollEl);
     return () => resizeObserver.disconnect();
-  }, [totalHeight]);
+  }, []);
 
   return (
     <aside className="edit-list" aria-label={t('layers.title')}>

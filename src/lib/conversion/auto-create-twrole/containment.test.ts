@@ -57,6 +57,36 @@ describe('strict AutoCreate containment', () => {
     expect(exact[1]).toBe(1);
   });
 
+  it('matches a reference square erosion across dense masks, holes, and narrow images', () => {
+    let seed = 49291;
+    for (const [width, height] of [[1, 7], [8, 2], [3, 3], [4, 8], [9, 5], [17, 23]]) {
+      for (const density of [0.35, 0.85, 1]) {
+        const mask = Uint8Array.from({ length: width * height }, () => {
+          seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+          return seed / 2 ** 32 < density ? 127 : 0;
+        });
+        const original = mask.slice();
+        for (const radius of [0, 0.6, 1, 2, 5]) {
+          const rounded = Math.round(radius);
+          const expected = rounded === 0 ? mask : new Uint8Array(mask.length);
+          for (let y = rounded; rounded > 0 && y < height - rounded; y++) {
+            for (let x = rounded; x < width - rounded; x++) {
+              let inside = true;
+              for (let dy = -rounded; dy <= rounded; dy++) {
+                for (let dx = -rounded; dx <= rounded; dx++) {
+                  if (!mask[(y + dy) * width + x + dx]) inside = false;
+                }
+              }
+              if (inside) expected[y * width + x] = 1;
+            }
+          }
+          expect(erodeContainmentMask(mask, width, height, radius)).toEqual(expected);
+        }
+        expect(mask).toEqual(original);
+      }
+    }
+  });
+
   it('accepts visible pixels inside the target and transparent padding outside it', () => {
     const rgba = transformed(3, 3, [
       0, 0, 0,

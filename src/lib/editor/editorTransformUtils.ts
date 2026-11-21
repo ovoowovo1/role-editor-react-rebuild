@@ -1,7 +1,7 @@
-import type { DecorationLayer, RoleDocument, TransformValues } from '../../types/role';
+import type { DecorationGroup, DecorationLayer, RoleDocument, TransformValues } from '../../types/role';
 import { HEAD_LAYER_ID } from '../../constants/layers';
 import { getHeadLayerIndex } from './layerOrdering';
-import { membersForGroup, withGroupMembers } from './groupTree';
+import { createGroupTreeIndex, membersForGroup, type GroupTreeIndex } from './groupTree';
 import {
   LOCAL_HISTORY_LIMIT,
   type DecorationTransformTarget,
@@ -145,30 +145,43 @@ export function sameTransformTarget(a: DecorationTransformTarget[], b: Decoratio
 }
 
 export function removeSelectedDecos(role: RoleDocument, selectedIds: string[]): RoleDocument | null {
-  const selected = new Set(selectedIds.filter((id) => id !== HEAD_LAYER_ID));
+  const selected = new Set(selectedIds);
+  selected.delete(HEAD_LAYER_ID);
   if (!selected.size) return null;
 
   const oldHeadIndex = getHeadLayerIndex(role);
-  const deletedIndexes: number[] = [];
+  let removedAboveHead = 0;
   const decorations = role.decorations.filter((deco, index) => {
     const remove = selected.has(deco.id);
-    if (remove) deletedIndexes.push(index);
+    if (remove && index < oldHeadIndex) removedAboveHead++;
     return !remove;
   });
   if (decorations.length === role.decorations.length) return null;
 
-  const removedAboveHead = deletedIndexes.filter((index) => index < oldHeadIndex).length;
-  const validIds = new Set(decorations.map((deco) => deco.id));
-  validIds.add(HEAD_LAYER_ID);
-  const groups = (role.groups ?? [])
-    .map((group) =>
-      withGroupMembers(
-        group,
-        membersForGroup(group).filter((member) => member.type === 'group' || (validIds.has(member.id) && !selected.has(member.id))),
-        role.groups ?? []
-      )
-    )
-    .filter((group) => group.itemIds.length >= 2);
+  const previousGroups = role.groups ?? [];
+  const groups: DecorationGroup[] = [];
+  if (previousGroups.length) {
+    const validIds = new Set(decorations.map((deco) => deco.id));
+    validIds.add(HEAD_LAYER_ID);
+    let tree: GroupTreeIndex | undefined;
+    for (const group of previousGroups) {
+      const members: NonNullable<DecorationGroup['members']> = [];
+      const itemIds: string[] = [];
+      for (const member of membersForGroup(group)) {
+        if (member.type === 'layer') {
+          if (!validIds.has(member.id) || selected.has(member.id)) continue;
+          itemIds.push(member.id);
+        } else {
+          // The previous command expanded nested members from the original
+          // group graph. Share that graph's lookup across the whole edit.
+          tree ??= createGroupTreeIndex(previousGroups);
+          for (const id of tree.descendantLayerIds(member.id)) itemIds.push(id);
+        }
+        members.push(member);
+      }
+      if (itemIds.length >= 2) groups.push({ ...group, members, itemIds });
+    }
+  }
 
   return {
     ...role,
@@ -180,8 +193,23 @@ export function removeSelectedDecos(role: RoleDocument, selectedIds: string[]): 
 }
 
 export function validSelectionIds(role: RoleDocument, ids: string[]): string[] {
-  const valid = new Set(role.decorations.map((deco) => deco.id));
-  valid.add(HEAD_LAYER_ID);
-  const seen = new Set<string>();
-  return ids.filter((id) => valid.has(id) && !seen.has(id) && seen.add(id));
+  if (!ids.length) return [];
+
+  // Most operations validate a small selection on a large role. Track only
+  // requested IDs, and stop scanning as soon as every one has been found.
+  if (ids.length < role.decorations.length / 4) {
+    const missing = new Set(ids);
+    missing.delete(HEAD_LAYER_ID);
+    if (missing.size) {
+      for (const decoration of role.decorations) {
+        if (missing.delete(decoration.id) && missing.size === 0) break;
+      }
+    }
+    const seen = new Set<string>();
+    return ids.filter((id) => !missing.has(id) && !seen.has(id) && seen.add(id));
+  }
+
+  const valid = new Set<string>([HEAD_LAYER_ID]);
+  for (const decoration of role.decorations) valid.add(decoration.id);
+  return ids.filter((id) => valid.delete(id));
 }

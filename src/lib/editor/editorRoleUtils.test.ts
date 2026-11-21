@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DecorationLayer, RoleDocument } from '../../types/role';
-import { clampDecoRatio, clampDecoScaleForLayer, positionRangeFromRole, syncGroups } from './editorRoleUtils';
+import { clampDecoRatio, clampDecoScaleForLayer, getFirstSelected, orderedSelectedDecorations, positionRangeFromRole, syncGroups } from './editorRoleUtils';
 
 function layer(id: string, patch: Partial<DecorationLayer> = {}): DecorationLayer {
   return {
@@ -72,4 +72,19 @@ describe('editor role utils', () => {
     expect(synced.headLayerIndex).toBe(2);
     expect(synced.groups).toEqual([]);
   });
+});
+
+it('returns empty selections without scanning and keeps document order for selected layers', () => {
+  const noScan = role();
+  Object.defineProperty(noScan, 'decorations', {
+    get() { throw new Error('No decoration lookup is needed.'); }
+  });
+  expect(orderedSelectedDecorations(noScan, [])).toEqual([]);
+  expect(getFirstSelected(noScan, [])).toBeUndefined();
+
+  const doc = role({ decorations: [layer('a'), layer('b'), layer('a', { x: 4 })] });
+  expect(getFirstSelected(doc, ['a'])).toBe(doc.decorations[0]);
+  expect(getFirstSelected(doc, ['missing'])).toBeUndefined();
+  expect(getFirstSelected(doc, ['b', 'a'])).toBe(doc.decorations[0]);
+  expect(orderedSelectedDecorations(doc, ['b', 'a'])).toEqual(doc.decorations);
 });

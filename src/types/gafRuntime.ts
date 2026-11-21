@@ -55,11 +55,31 @@ export interface GafTimelineSerialized {
   frames: Record<string, GafFrameInstanceSerialized[]>;
 }
 
+export type GafPackedMatrix = readonly [number, number, number, number, number, number];
+export type GafPackedInstance = readonly [
+  objectId: string,
+  zIndex: number,
+  alpha: number,
+  matrixIndex: number,
+  maskId?: string | null,
+  colorTransform?: number[] | null
+];
+
+export interface GafPackedTimeline extends Omit<GafTimelineSerialized, 'frames'> {
+  packedFrames: Record<string, readonly GafPackedInstance[]>;
+}
+
+export type GafTimeline = GafTimelineSerialized | GafPackedTimeline;
+
 export interface GafRuntimeManifest {
   /** GAF timeline scale used by the original runtime when applying instance tx/ty. */
   timelineScale?: number;
   elements: Record<string, GafElementSerialized>;
-  timelinesById: Record<string, GafTimelineSerialized>;
+  timelinesById: Record<string, GafTimeline>;
+  /** Shared by the packed timelines in this manifest; absent for legacy data. */
+  matrixPool?: readonly GafPackedMatrix[];
+  /** Alternative exact matrix pool: base64 of six consecutive little-endian Float32 values per matrix. */
+  matrixPoolFloat32LE?: string;
   timelinesByLinkage: Record<string, string>;
 }
 

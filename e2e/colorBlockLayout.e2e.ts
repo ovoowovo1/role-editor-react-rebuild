@@ -118,3 +118,23 @@ test('top bar keyboard navigation switches between editor modes', async ({ page 
   await expect(page.locator('.choice-list')).toBeVisible();
   expectNoPageErrors(monitor);
 });
+
+test('loads color block presets only on first use and reuses them after switching tabs', async ({ page }) => {
+  let requests = 0;
+  await page.route('**/api/color-block-presets**', async (route) => {
+    requests++;
+    await route.fulfill({ json: colorBlockPresets });
+  });
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await expect(page.locator('.choice-list')).toBeVisible();
+  expect(requests).toBe(0);
+
+  const colorTab = page.getByTestId('tab-color-block-button');
+  await colorTab.click();
+  await expect(page.locator('.color-block-choice')).toHaveCount(colorBlockPresets.length);
+  expect(requests).toBe(1);
+  await page.locator('[data-tab-mode="deco"]').click();
+  await colorTab.click();
+  await expect(page.locator('.color-block-choice')).toHaveCount(colorBlockPresets.length);
+  expect(requests).toBe(1);
+});

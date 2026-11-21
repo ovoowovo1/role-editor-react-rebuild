@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeSyntheticRgbaFixture } from '../../../test/autoCreateFixtures';
+import { ALPHA_MSE_WEIGHT } from './contracts';
 import {
   BinaryMaskIndex,
   ErrorField,
@@ -83,6 +84,24 @@ describe('auto-create numeric core', () => {
     expect(index.query([7, 7, 10, 10])).toEqual([]);
     index.clear();
     expect(index.query([0, 0, 32, 32])).toEqual([]);
+  });
+
+  it('reuses query scratch without leaking replaced, duplicate or stale indices', () => {
+    const index = new TileSpatialIndex(32, 32, 8);
+    const scratch = [999];
+    index.update(4, [0, 0, 16, 16]);
+    index.update(1_021, [3, 3, 14, 14]);
+    index.update(2, [0, 0, 4, 4]);
+    expect(index.query([-4, -4, 16, 16], scratch)).toBe(scratch);
+    expect(scratch).toEqual([2, 4, 1_021]);
+    const independent = index.query([0, 0, 16, 16]);
+    scratch.push(999);
+    expect(index.query([24, 24, 32, 32], scratch)).toBe(scratch);
+    expect(scratch).toEqual([]);
+    expect(independent).toEqual([2, 4, 1_021]);
+    index.update(1_021, [24, 24, 32, 32]);
+    expect(index.query([0, 0, 16, 16], scratch)).toEqual([2, 4]);
+    expect(index.query([24, 24, 40, 40], scratch)).toEqual([1_021]);
   });
 
   it('keeps incremental bbox error updates equivalent to a full recomputation', () => {
@@ -180,6 +199,87 @@ describe('auto-create numeric core', () => {
     errors.updateBBox([7, 0, 8, 1]);
     expect(errors.totalSse).toBeGreaterThanOrEqual(errors.focusSse);
     expect(errors.focusSse).toBeCloseTo(previousFocusSse, 6);
+  });
+
+  it.each([false, true])('preserves raw mask intersection, partial cells, and seeded order (same mask: %s)', (sameMask) => {
+    const width = 11;
+    const height = 7;
+    const cell = 4;
+    const pixels = Array.from({ length: width * height }, (_, i) => i);
+    const target = Uint8ClampedArray.from({ length: pixels.length * 4 }, (_, i) => (i * 59 + 29) % 256);
+    const mask = Uint8Array.from(pixels.slice(0, -2), (i) => [0, 2, 255, 0, 255][i % 5]);
+    // Include values >1, focus-only pixels outside scoring mask, and bytes
+    // outside target. Raw values are truthiness masks, not unit weights.
+    const focus = sameMask ? mask : Uint8Array.from([...pixels, 78], (i) => i % 3 === 0 ? 2 : 0);
+    const targetFloat = Float32Array.from(target);
+    const canvas = new Float32Array(target.length);
+    const errors = new ErrorField(canvas, targetFloat, target, mask, width, height, cell, focus);
+    const inspect = errors as unknown as {
+      maskedPixels: Int32Array;
+      focusPixels: Int32Array;
+      cellPixels: Int32Array[];
+    };
+    const masked = pixels.filter((pixel) => mask[pixel]);
+    const focused = masked.filter((pixel) => focus[pixel]);
+    const columns = Math.ceil(width / cell);
+    const cellOf = (pixel: number) =>
+      Math.floor(pixel / (width * cell)) * columns + Math.floor((pixel % width) / cell);
+    const buckets = Array.from({ length: columns * Math.ceil(height / cell) }, (_, c) =>
+      focused.filter((pixel) => cellOf(pixel) === c)
+    );
+    const perPixel = (pixel: number) => {
+      const offset = pixel * 4;
+      return Math.fround(
+        target[offset] ** 2 + target[offset + 1] ** 2 + target[offset + 2] ** 2 +
+        ALPHA_MSE_WEIGHT * target[offset + 3] ** 2
+      );
+    };
+    expect(Array.from(inspect.maskedPixels)).toEqual(masked);
+    expect(Array.from(inspect.focusPixels)).toEqual(focused);
+    expect(inspect.cellPixels.map((entries) => Array.from(entries))).toEqual(buckets);
+    expect(Array.from(errors.cellMaskCount)).toEqual(buckets.map((entries) => entries.length));
+    expect(Array.from(errors.cellColor)).toEqual(buckets.flatMap((entries) => [0, 1, 2].map((channel) =>
+      entries.length ? Math.fround(entries.reduce((sum, pixel) => sum + target[pixel * 4 + channel], 0) / entries.length) : 0
+    )));
+    expect(errors.totalSse).toBe(masked.reduce((sum, pixel) => sum + perPixel(pixel), 0));
+    expect(errors.focusSse).toBe(focused.reduce((sum, pixel) => sum + perPixel(pixel), 0));
+    expect(Array.from(errors.cellW)).toEqual(buckets.map((entries) =>
+      entries.reduce((sum, pixel) => sum + perPixel(pixel), 0)
+    ));
+
+    // Bring some scored pixels to zero error, then reconstruct a new index
+    // from the resulting canvas as a resumed run would.
+    for (let y = 1; y < 6; y++) for (let x = 2; x < 9; x++) {
+      const offset = (y * width + x) * 4;
+      canvas.set(targetFloat.subarray(offset, offset + 4), offset);
+    }
+    errors.updateBBox([2, 1, 9, 6]);
+    const restored = new ErrorField(canvas.slice(), targetFloat, target, mask, width, height, cell, focus);
+    expect(restored.totalSse).toBe(errors.totalSse);
+    expect(restored.focusSse).toBe(errors.focusSse);
+    expect(restored.errorMap).toEqual(errors.errorMap);
+    expect(restored.cellW).toEqual(errors.cellW);
+
+    const rng = new SeededRandom(2927);
+    for (let i = 0; i < 9; i++) errors.chooseFocus(rng);
+    const checkpoint = rng.snapshot();
+    const next = new SeededRandom(1);
+    next.restore(checkpoint.state, checkpoint.spareNormal);
+    expect(Array.from({ length: 200 }, () => restored.chooseFocus(next))).toEqual(
+      Array.from({ length: 200 }, () => errors.chooseFocus(rng))
+    );
+    expect(next.snapshot()).toEqual(rng.snapshot());
+
+    // With no weighted error, the fallback still uses the original global
+    // row-major focus order rather than the contiguous per-cell pool order.
+    const exactCanvas = new ErrorField(targetFloat, targetFloat, target, mask, width, height, cell, focus);
+    const rng1 = new SeededRandom(251);
+    const rng2 = new SeededRandom(251);
+    for (let i = 0; i < 100; i++) {
+      const predicted = focused[rng1.integer(0, focused.length)];
+      const sampled = exactCanvas.chooseFocus(rng2);
+      expect(sampled.y * width + sampled.x).toBe(predicted);
+    }
   });
 
   it('returns a conservative cell-level focus SSE bound for candidate geometry', () => {

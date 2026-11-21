@@ -2,6 +2,7 @@ import { GROUP_ROW_PREFIX, HEAD_LAYER_ID, HEAD_ROW_ID, ITEM_ROW_PREFIX } from '.
 import type { DecorationGroup } from '../../types/role';
 import type { LayerDropIntent, LayerDropPlacement } from '../../lib/editor/editorLayerDrag';
 import { directParentGroup, isGroupDescendant, membersForGroup } from '../../lib/editor/groupTree';
+import type { LayerDragGroupQueries } from './layerDragGroupQueries';
 import type { LayerRowModel } from './layerListModels';
 
 export const ITEM_ROW_HEIGHT = 77;
@@ -56,7 +57,13 @@ export interface LayerDragState {
   anchorGroupId?: string;
 }
 
-export function parseLayerNumberInput(value: string): number[] {
+export class LayerNumberOutOfRangeError extends RangeError {
+  constructor(readonly layerNumber: number) {
+    super(`Layer number out of range: ${layerNumber}`);
+  }
+}
+
+export function parseLayerNumberInput(value: string, maxLayerNumber = Number.MAX_SAFE_INTEGER): number[] {
   const seen = new Set<number>();
   const result: number[] = [];
   const parts = value.split(',').map((item) => item.trim()).filter(Boolean);
@@ -67,20 +74,24 @@ export function parseLayerNumberInput(value: string): number[] {
     if (rangeMatch) {
       const start = Number(rangeMatch[1]);
       const end = Number(rangeMatch[2]);
-      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < 1) throw new Error(`Invalid range: ${part}`);
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < 1) throw new Error(`Invalid range: ${part}`);
+      if (start > maxLayerNumber) throw new LayerNumberOutOfRangeError(start);
+      if (end > maxLayerNumber) throw new LayerNumberOutOfRangeError(end);
       const step = start <= end ? 1 : -1;
-      for (let current = start; current !== end + step; current += step) {
+      for (let current = start; ; current += step) {
         if (!seen.has(current)) {
           seen.add(current);
           result.push(current);
         }
+        if (current === end) break;
       }
       continue;
     }
 
     if (!/^\d+$/.test(part)) throw new Error(`Invalid item number: ${part}`);
     const number = Number(part);
-    if (!Number.isInteger(number) || number < 1) throw new Error(`Invalid item number: ${part}`);
+    if (!Number.isSafeInteger(number) || number < 1) throw new Error(`Invalid item number: ${part}`);
+    if (number > maxLayerNumber) throw new LayerNumberOutOfRangeError(number);
     if (!seen.has(number)) {
       seen.add(number);
       result.push(number);
@@ -155,25 +166,42 @@ function firstRowAfterViewport(offsets: readonly number[], viewportBottom: numbe
   return low;
 }
 
-export function virtualItemsInViewport(
-  rows: VirtualLayerRow[],
+export interface VirtualWindow {
+  startIndex: number;
+  endIndex: number;
+}
+
+export function updateVirtualWindow(
+  previous: VirtualWindow | undefined,
   geometry: Pick<VirtualGeometry, 'offsets' | 'heights'>,
   scrollTop: number,
   viewportHeight: number,
   overscanRows: number
-): VirtualRenderItem[] {
+): VirtualWindow {
   const viewportBottom = scrollTop + Math.max(viewportHeight, 1);
   const startIndex = Math.max(
     0,
     firstVisibleRowIndex(geometry.offsets, geometry.heights, scrollTop) - overscanRows
   );
   const endIndex = Math.min(
-    rows.length,
+    geometry.offsets.length,
     firstRowAfterViewport(geometry.offsets, viewportBottom) + overscanRows
   );
+  return previous?.startIndex === startIndex && previous.endIndex === endIndex
+    ? previous
+    : { startIndex, endIndex };
+}
 
+export function virtualItemsInWindow(
+  rows: VirtualLayerRow[],
+  geometry: Pick<VirtualGeometry, 'offsets' | 'heights'>,
+  { startIndex, endIndex }: VirtualWindow
+): VirtualRenderItem[] {
   const visibleItems: VirtualRenderItem[] = [];
-  for (let index = startIndex; index < endIndex; index += 1) {
+  // A structural change can render once before the layout effect refreshes
+  // the committed viewport window; never read past the new list in that render.
+  const end = Math.min(endIndex, rows.length);
+  for (let index = startIndex; index < end; index += 1) {
     visibleItems.push({
       row: rows[index],
       index,
@@ -182,6 +210,16 @@ export function virtualItemsInViewport(
     });
   }
   return visibleItems;
+}
+
+export function virtualItemsInViewport(
+  rows: VirtualLayerRow[],
+  geometry: Pick<VirtualGeometry, 'offsets' | 'heights'>,
+  scrollTop: number,
+  viewportHeight: number,
+  overscanRows: number
+): VirtualRenderItem[] {
+  return virtualItemsInWindow(rows, geometry, updateVirtualWindow(undefined, geometry, scrollTop, viewportHeight, overscanRows));
 }
 
 /** Convenience wrapper for callers that do not need to cache row geometry. */
@@ -244,34 +282,51 @@ export function groupIdFromRowId(rowId: string): string | null {
   return rowId.startsWith(GROUP_ROW_PREFIX) ? rowId.slice(GROUP_ROW_PREFIX.length) : null;
 }
 
-export function canJoinTargetGroup(activeRowId: string, target: DraggableTarget, groups: DecorationGroup[]): boolean {
+export function canJoinTargetGroup(
+  activeRowId: string,
+  target: DraggableTarget,
+  groups: DecorationGroup[],
+  queries?: LayerDragGroupQueries
+): boolean {
   if (isReferenceImageRowId(activeRowId)) return false;
   if (!target.row.group || target.row.group.collapsed) return false;
   if (target.row.type !== 'group' && !target.row.grouped) return false;
   const activeGroupId = groupIdFromRowId(activeRowId);
   if (activeGroupId) {
-    return target.row.group.id !== activeGroupId && !isGroupDescendant(groups, activeGroupId, target.row.group.id);
+    const targetGroupId = target.row.group.id;
+    return targetGroupId !== activeGroupId && !(queries
+      ? queries.isDescendant(activeGroupId, targetGroupId)
+      : isGroupDescendant(groups, activeGroupId, targetGroupId));
   }
   const activeLayerId = layerIdFromRowId(activeRowId);
-  return Boolean(activeLayerId && !membersForGroup(target.row.group).some((member) => member.type === 'layer' && member.id === activeLayerId));
+  return Boolean(activeLayerId && !(queries
+    ? queries.containsLayer(target.row.group, activeLayerId)
+    : membersForGroup(target.row.group).some((member) => member.type === 'layer' && member.id === activeLayerId)));
 }
 
 export function canJoinGroupId(
   activeRowId: string,
   groupId: string,
   groups: DecorationGroup[],
-  allowExistingLayer = false
+  allowExistingLayer = false,
+  queries?: LayerDragGroupQueries
 ): boolean {
-  const targetGroup = groups.find((group) => group.id === groupId);
+  const targetGroup = queries ? queries.group(groupId) : groups.find((group) => group.id === groupId);
   if (!targetGroup || targetGroup.collapsed) return false;
   const activeGroupId = groupIdFromRowId(activeRowId);
-  if (activeGroupId) return targetGroup.id !== activeGroupId && !isGroupDescendant(groups, activeGroupId, targetGroup.id);
+  if (activeGroupId) {
+    return targetGroup.id !== activeGroupId && !(queries
+      ? queries.isDescendant(activeGroupId, targetGroup.id)
+      : isGroupDescendant(groups, activeGroupId, targetGroup.id));
+  }
   const activeLayerId = layerIdFromRowId(activeRowId);
   return Boolean(
     activeLayerId &&
     (
       allowExistingLayer ||
-      !membersForGroup(targetGroup).some((member) => member.type === 'layer' && member.id === activeLayerId)
+      !(queries
+        ? queries.containsLayer(targetGroup, activeLayerId)
+        : membersForGroup(targetGroup).some((member) => member.type === 'layer' && member.id === activeLayerId))
     )
   );
 }
@@ -282,7 +337,8 @@ export function dropStateForTarget(
   mode: LayerDragState['mode'],
   canJoinGroup: boolean,
   activeRowId: string | undefined,
-  groups: DecorationGroup[]
+  groups: DecorationGroup[],
+  queries?: LayerDragGroupQueries
 ): Pick<LayerDragState, 'overRowId' | 'intent' | 'placement' | 'joinGroupId' | 'parentGroupId' | 'anchorGroupId'> {
   if (target.row.type === 'reference-image') {
     const yInRow = virtualY - target.top;
@@ -306,9 +362,11 @@ export function dropStateForTarget(
     const yInRow = virtualY - target.top;
     const height = Math.max(1, target.bottom - target.top);
     if (target.row.type === 'group' && target.row.grouped && activeRowId) {
-      const parent = directParentGroup(groups, { type: 'group', id: target.row.group.id });
       const placement = yInRow < height * 0.25 ? 'before' : yInRow > height * 0.75 ? 'after' : undefined;
-      if (parent && placement && canJoinGroupId(activeRowId, parent.id, groups, true)) {
+      const parent = placement && (queries
+        ? queries.parentGroup(target.row.group.id)
+        : directParentGroup(groups, { type: 'group', id: target.row.group.id }));
+      if (parent && canJoinGroupId(activeRowId, parent.id, groups, true, queries)) {
         return {
           overRowId: target.rowId,
           intent: 'join-group',

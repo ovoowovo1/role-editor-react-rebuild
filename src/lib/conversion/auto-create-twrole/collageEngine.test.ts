@@ -31,6 +31,7 @@ interface EngineInternals {
   activeTileCount: number;
   canvas: Float32Array;
   spatialIndex: TileSpatialIndex;
+  activeIndices(): number[];
 }
 
 function source(): SourceTile {
@@ -255,6 +256,41 @@ describe('auto-create collage ordering and reversible edits', () => {
       'middle',
       'top'
     ]);
+  });
+
+  it('keeps fused checkpoint exports and precomputed signatures byte-for-byte equivalent', () => {
+    const collage = engine();
+    const internals = collage as unknown as EngineInternals;
+    const bottom = tile('bottom');
+    const middle = { ...tile('inactive'), active: false };
+    const top = tile('top');
+    internals.tiles.push(bottom, middle, top);
+
+    const result = collage.exportResultTiles();
+    expect(result.decorations).toEqual([top.decoration, bottom.decoration]);
+    expect(result.legacy).toEqual([bottom.legacy, top.legacy]);
+    expect(result.decorations).toEqual(collage.exportDecorations());
+    expect(result.legacy).toEqual(collage.exportLegacyDeco());
+
+    const target = { width: 1, height: 1, sourceWidth: 2, sourceHeight: 2 };
+    const warnings = ['fixture warning'];
+    const regular = collage.createSnapshot(1, 2, 0, 123, target, 'target-fixture', warnings);
+    const cached = collage.createSnapshot(1, 2, 0, 123, target, 'target-fixture', warnings, {
+      sourceSignature: regular.sourceSignature,
+      settingsSignature: regular.settingsSignature
+    });
+    expect(JSON.stringify(cached)).toBe(JSON.stringify(regular));
+    expect(cached.tiles.map((entry) => entry.decoration.id)).toEqual(['bottom', 'top']);
+
+    // A sent checkpoint stays self-contained if later search work updates or
+    // prunes its source records. Its JSON values and property order stay fixed.
+    const original = JSON.stringify(cached);
+    bottom.bbox[0] = 99;
+    bottom.decoration.x = 99;
+    bottom.legacy.x = 99;
+    top.active = false;
+    warnings[0] = 'later warning';
+    expect(JSON.stringify(cached)).toBe(original);
   });
 
   it('prunes an invalid out-of-bounds tile and updates active counts', () => {
@@ -578,6 +614,19 @@ describe('auto-create collage ordering and reversible edits', () => {
     expect(collage.tryReplaceOnce(1, 1)).toBe(false);
     expect(collage.replaced).toBe(0);
     expect(collage.exportDecorations()[0].id).toBe('blue-old');
+  });
+
+  it('rebuilds ordered active candidates after callers shuffle or truncate reused scratch', () => {
+    const collage = engine() as unknown as EngineInternals;
+    collage.tiles.push(tile('a'), { ...tile('inactive'), active: false }, tile('c'), tile('d'));
+    const indices = collage.activeIndices();
+    expect(indices).toEqual([0, 2, 3]);
+    new SeededRandom(123).shuffle(indices);
+    indices.length = 1;
+    collage.tiles[0].active = false;
+    collage.tiles[1].active = true;
+    expect(collage.activeIndices()).toBe(indices);
+    expect(indices).toEqual([1, 2, 3]);
   });
 
   it('restores a checkpoint transactionally and rejects the whole snapshot when one tile escapes containment', () => {

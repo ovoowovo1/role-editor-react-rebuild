@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DecorationGroup, DecorationLayer, RoleDocument } from '../../types/role';
 import { DEFAULT_INSERT_SETTINGS } from './editorInsertSettings';
-import { insertDecorationBatchIntoRole, mergeImportedDecorationsIntoRole } from './editorImportMerge';
+import { insertDecorationBatchIntoRole, mergeImportedDecorationsIntoRole, remapImportedGroups } from './editorImportMerge';
 
 function layer(id: string): DecorationLayer {
   return {
@@ -163,4 +163,30 @@ describe('editor import merge helpers', () => {
       itemIds: result?.copiedIds
     });
   });
+});
+
+it('keeps order and duplicate handling when remapping old or cyclic raw group data', () => {
+  const incoming = role({
+    decorations: [layer('a'), layer('b'), layer('c'), layer('d')],
+    groups: [
+      group('first', [{ type: 'layer', id: 'a' }, { type: 'group', id: 'second' }]),
+      group('second', [
+        { type: 'layer', id: 'b' }, { type: 'group', id: 'first' }, { type: 'layer', id: 'c' },
+        { type: 'group', id: 'missing-group' }, { type: 'layer', id: 'missing-layer' },
+        { type: 'layer', id: 'b' }
+      ]),
+      { id: 'item-only', name: 'item-only', itemIds: ['d', 'b', 'd'], visible: true, collapsed: true }
+    ]
+  });
+  const ids = new Map([['a', 'A'], ['b', 'B'], ['c', 'C'], ['d', 'D']]);
+  const [first, second, old] = remapImportedGroups(incoming, ids, (source) => source.id);
+
+  expect(first.itemIds).toEqual(['A', 'B', 'C']);
+  expect(second.itemIds).toEqual(['B', 'A', 'C']);
+  expect(second.members).toEqual([
+    { type: 'layer', id: 'B' }, { type: 'group', id: first.id },
+    { type: 'layer', id: 'C' }, { type: 'layer', id: 'B' }
+  ]);
+  expect(old.itemIds).toEqual(['D', 'B']);
+  expect(old.collapsed).toBe(true);
 });

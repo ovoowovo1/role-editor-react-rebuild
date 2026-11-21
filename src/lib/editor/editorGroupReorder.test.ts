@@ -95,6 +95,15 @@ describe('editor group reorder', () => {
     expect(after?.headLayerIndex).toBe(0);
   });
 
+  it('keeps default direction and the outer boundary for interleaved group members', () => {
+    const input = role({ decorations: ['a', 'c', 'b', 'd'].map(layer) });
+    const forward = reorderGroupWithoutUngrouping(input, `${GROUP_ROW_PREFIX}g1`, `${GROUP_ROW_PREFIX}g2`);
+    const backward = reorderGroupWithoutUngrouping(input, `${GROUP_ROW_PREFIX}g2`, `${GROUP_ROW_PREFIX}g1`);
+    expect(forward?.decorations.map((item) => item.id)).toEqual(['c', 'd', 'a', 'b']);
+    expect(backward?.decorations.map((item) => item.id)).toEqual(['c', 'd', 'a', 'b']);
+    expect(input.decorations.map((item) => item.id)).toEqual(['a', 'c', 'b', 'd']);
+  });
+
   it('returns null for join-group intent or invalid active rows', () => {
     expect(reorderGroupWithoutUngrouping(role(), `${GROUP_ROW_PREFIX}g1`, `${GROUP_ROW_PREFIX}g2`, { intent: 'join-group' })).toBeNull();
     expect(reorderGroupWithoutUngrouping(role(), 'a', `${GROUP_ROW_PREFIX}g2`)).toBeNull();

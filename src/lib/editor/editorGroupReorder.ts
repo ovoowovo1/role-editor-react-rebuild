@@ -17,28 +17,35 @@ export function reorderGroupWithoutUngrouping(
   const movingAtoms = rowIdToAtoms(role, activeRowId);
   const overAtoms = rowIdToAtoms(role, overRowId);
   if (!movingAtoms.length || !overAtoms.length) return null;
-  if (movingAtoms.some((atom) => overAtoms.includes(atom))) return null;
+  const overSet = new Set(overAtoms);
+  if (movingAtoms.some((atom) => overSet.has(atom))) return null;
 
   const originalAtoms = atomsForRole(role);
   const movingSet = new Set(movingAtoms);
-  const overSet = new Set(overAtoms);
-  const sourceIndexes = originalAtoms.map((atom, index) => (movingSet.has(atom) ? index : -1)).filter((index) => index >= 0);
-  const overIndexes = originalAtoms.map((atom, index) => (overSet.has(atom) ? index : -1)).filter((index) => index >= 0);
-  if (!sourceIndexes.length || !overIndexes.length) return null;
+  const remainingAtoms: typeof originalAtoms = [];
+  let sourceStart = -1;
+  let overStart = -1;
+  let firstRemainingOver = -1;
+  let lastRemainingOver = -1;
+  for (let index = 0; index < originalAtoms.length; index += 1) {
+    const atom = originalAtoms[index];
+    if (movingSet.has(atom)) {
+      if (sourceStart < 0) sourceStart = index;
+      continue;
+    }
+    if (overSet.has(atom)) {
+      if (overStart < 0) {
+        overStart = index;
+        firstRemainingOver = remainingAtoms.length;
+      }
+      lastRemainingOver = remainingAtoms.length;
+    }
+    remainingAtoms.push(atom);
+  }
+  if (sourceStart < 0 || overStart < 0) return null;
 
-  const sourceStart = Math.min(...sourceIndexes);
-  const overStart = Math.min(...overIndexes);
-  const remainingAtoms = originalAtoms.filter((atom) => !movingSet.has(atom));
-  const remainingOverIndexes = remainingAtoms.map((atom, index) => (overSet.has(atom) ? index : -1)).filter((index) => index >= 0);
-  if (!remainingOverIndexes.length) return null;
-
-  const targetIndex = options.placement === 'before'
-    ? Math.min(...remainingOverIndexes)
-    : options.placement === 'after'
-      ? Math.max(...remainingOverIndexes) + 1
-      : sourceStart < overStart
-        ? Math.max(...remainingOverIndexes) + 1
-        : Math.min(...remainingOverIndexes);
+  const insertAfter = options.placement === 'after' || (options.placement !== 'before' && sourceStart < overStart);
+  const targetIndex = insertAfter ? lastRemainingOver + 1 : firstRemainingOver;
   const nextAtoms = [...remainingAtoms.slice(0, targetIndex), ...movingAtoms, ...remainingAtoms.slice(targetIndex)];
   const nextRole = deriveRoleFromAtoms(role, nextAtoms);
   const sourceParent = directParentGroup(role.groups ?? [], { type: 'group', id: activeGroupId });

@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import type express from 'express';
@@ -119,6 +122,24 @@ describe('renderer server core', () => {
         payload: { payload: { id: 'role' }, modes: ['base'], width: 12, height: 12, background: '#fff' }
       }
     ]);
+  });
+
+  it('serves the separate batch page at the existing clean route and keeps the editor fallback', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'twrole-renderer-pages-'));
+    try {
+      await writeFile(join(directory, 'index.html'), '<title>Editor</title>');
+      await writeFile(join(directory, 'batch-render.html'), '<title>Batch</title>');
+      const app = createRendererApp({ renderer: fakeRenderer(), commit: 'test', staticDir: directory });
+      await withServer(app, async (baseUrl) => {
+        const batch = await fetch(`${baseUrl}/batch-render?preview=1`, { redirect: 'manual' });
+        expect(batch.status).toBe(200);
+        await expect(batch.text()).resolves.toContain('<title>Batch</title>');
+        await expect((await fetch(`${baseUrl}/`)).text()).resolves.toContain('<title>Editor</title>');
+        await expect((await fetch(`${baseUrl}/batch-render/`)).text()).resolves.toContain('<title>Editor</title>');
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('continues queued tasks after a task fails', async () => {

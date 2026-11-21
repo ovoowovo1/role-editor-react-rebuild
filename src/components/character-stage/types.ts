@@ -99,6 +99,7 @@ export interface ReferenceImageDisplayRecord {
   sprite: Sprite;
   displayKey: string;
   appliedImage?: ReferenceImageLayer;
+  releaseUrl?(): void;
 }
 
 export interface StageSceneState {

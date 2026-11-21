@@ -1,4 +1,5 @@
 import { Container, Sprite, Texture } from 'pixi.js';
+import { retainReferenceImageUrl } from '../../lib/editor/referenceImageUrlResources';
 import type { ReferenceImageLayer } from '../../types/referenceImage';
 import type { ReferenceImageOptions, ReferenceImageDisplayRecord } from './types';
 import type { StagePointerPosition } from './types';
@@ -22,7 +23,24 @@ export function createReferenceImageDisplay(
   container.on('pointerdown', (event: { global: StagePointerPosition }) => {
     options.onPointerDown(image.id, { x: event.global.x, y: event.global.y }, root);
   });
-  return { container, sprite, displayKey: image.src, appliedImage: undefined };
+  return {
+    container,
+    sprite,
+    displayKey: image.src,
+    appliedImage: undefined,
+    releaseUrl: retainReferenceImageUrl(image.src)
+  };
+}
+
+export function destroyReferenceImageDisplay(record: ReferenceImageDisplayRecord): void {
+  try {
+    if (!record.container.destroyed) {
+      record.container.parent?.removeChild(record.container);
+      record.container.destroy({ children: true });
+    }
+  } finally {
+    record.releaseUrl?.();
+  }
 }
 
 export function applyReferenceImageDisplayTransform(
@@ -51,8 +69,7 @@ export function syncReferenceImageDisplayRecords(
   for (const [id, record] of records) {
     const image = byId.get(id);
     if (!image || record.displayKey !== image.src) {
-      record.container.parent?.removeChild(record.container);
-      if (!record.container.destroyed) record.container.destroy({ children: true });
+      destroyReferenceImageDisplay(record);
       records.delete(id);
     }
   }

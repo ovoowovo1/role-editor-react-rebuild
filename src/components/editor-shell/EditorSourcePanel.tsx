@@ -1,22 +1,24 @@
+import { lazy, Suspense } from 'react';
 import { t } from '../../i18n';
 import { colorBlockToRole } from '../../mock/colorBlocks';
-import type { useColorBlockPresets } from '../../hooks/useColorBlockPresets';
+import { useColorBlockPresets } from '../../hooks/useColorBlockPresets';
 import type { useRoleEditor } from '../../hooks/useRoleEditor';
 import type { PartOption } from '../../types/role';
 import { PART_TAB_I18N_KEYS } from '../../constants/tabs';
 import { ChoiceGrid } from '../ChoiceGrid';
 import { ColorBlockGrid } from '../ColorBlockGrid';
-import { ExtraPanel } from '../extra/ExtraPanel';
 import type { useEditorShellUiState } from './useEditorShellUiState';
+
+const ExtraPanel = lazy(() =>
+  import('../extra/ExtraPanel').then(({ ExtraPanel }) => ({ default: ExtraPanel }))
+);
 
 type EditorApi = ReturnType<typeof useRoleEditor>;
 type ShellState = ReturnType<typeof useEditorShellUiState>;
-type ColorBlockPresetState = ReturnType<typeof useColorBlockPresets>;
 
 interface EditorSourcePanelProps {
   editor: EditorApi;
   shell: ShellState;
-  colorBlockPresets: ColorBlockPresetState;
   selectedOptionId?: string;
   setStatus(message: string): void;
   onAddReferenceImage(file: File): Promise<void>;
@@ -25,42 +27,37 @@ interface EditorSourcePanelProps {
 export function EditorSourcePanel({
   editor,
   shell,
-  colorBlockPresets,
   selectedOptionId,
   setStatus,
   onAddReferenceImage
 }: EditorSourcePanelProps) {
   if (shell.topBarMode === 'extra') {
     return (
-      <ExtraPanel
-        decoOptions={editor.visibleOptionsByTab.deco}
-        role={editor.role}
-        insertDraftSettings={editor.insertDraftSettings}
-        brushFillActive={shell.brushFillActive}
-        brushFillBrushSize={shell.brushFillBrushSize}
-        brushFillMask={shell.brushFillMask}
-        onBrushFillActiveChange={shell.setBrushFillActive}
-        onBrushFillBrushSizeChange={shell.setBrushFillBrushSize}
-        onBrushFillClear={shell.clearBrushFillMask}
-        onInsert={editor.insertDecorationBatch}
-        onStatus={setStatus}
-        onAddReferenceImage={onAddReferenceImage}
-      />
+      <Suspense fallback={(
+        <section className="choice-list extra-panel" aria-label={t('extra.title')}>
+          <p className="extra-section" role="status">{t('extra.loading')}</p>
+        </section>
+      )}>
+        <ExtraPanel
+          decoOptions={editor.visibleOptionsByTab.deco}
+          role={editor.role}
+          insertDraftSettings={editor.insertDraftSettings}
+          brushFillActive={shell.brushFillActive}
+          brushFillBrushSize={shell.brushFillBrushSize}
+          brushFillMask={shell.brushFillMask}
+          onBrushFillActiveChange={shell.setBrushFillActive}
+          onBrushFillBrushSizeChange={shell.setBrushFillBrushSize}
+          onBrushFillClear={shell.clearBrushFillMask}
+          onInsert={editor.insertDecorationBatch}
+          onStatus={setStatus}
+          onAddReferenceImage={onAddReferenceImage}
+        />
+      </Suspense>
     );
   }
 
   if (shell.topBarMode === 'colorBlock') {
-    return (
-      <ColorBlockGrid
-        presets={colorBlockPresets.presets}
-        loading={colorBlockPresets.loading}
-        error={colorBlockPresets.error}
-        onPick={(preset: Parameters<typeof colorBlockToRole>[0]) => {
-          editor.mergeImportedRole(colorBlockToRole(preset, editor.role));
-          setStatus(t('status.addedColorBlock', { label: preset.label }));
-        }}
-      />
-    );
+    return <EditorColorBlockPanel role={editor.role} onMerge={editor.mergeImportedRole} setStatus={setStatus} />;
   }
 
   return (
@@ -75,6 +72,25 @@ export function EditorSourcePanel({
             ? t('status.addedDeco', { label: option.label })
             : t('status.changedPart', { tab: t(PART_TAB_I18N_KEYS[editor.selectedTab]), label: option.label })
         );
+      }}
+    />
+  );
+}
+
+function EditorColorBlockPanel({ role, onMerge, setStatus }: {
+  role: EditorApi['role'];
+  onMerge: EditorApi['mergeImportedRole'];
+  setStatus(message: string): void;
+}) {
+  const { presets, loading, error } = useColorBlockPresets(role.camp, setStatus);
+  return (
+    <ColorBlockGrid
+      presets={presets}
+      loading={loading}
+      error={error}
+      onPick={(preset) => {
+        onMerge(colorBlockToRole(preset, role));
+        setStatus(t('status.addedColorBlock', { label: preset.label }));
       }}
     />
   );

@@ -9,6 +9,7 @@ import {
 } from './layerListModels';
 import type { ReferenceImageLayer } from '../../types/referenceImage';
 import { buildVirtualGeometry, type VirtualLayerRow } from './layerListVirtualization';
+import { sameDecorationRow, sameLayerId, sameLayerListInput, sameReferenceImageRow } from './useStableLayerListInput';
 
 function layer(id: string): DecorationLayer {
   return {
@@ -171,6 +172,49 @@ describe('layer list row models', () => {
     expect(rows.map((row) => row.selected)).toEqual([false, false, false]);
     expect(selectedRows.map((row) => row.selected)).toEqual([true, true, false]);
     expect(buildVirtualGeometry(virtualRows)).toEqual(geometry);
+  });
+
+  it('keeps list inputs stable for transform edits but not row changes or reorder', () => {
+    const a = layer('a');
+    const b = layer('b');
+    const input = [a, b];
+
+    expect(sameLayerListInput(input, [{ ...a, x: 3, y: 4, rotation: 15, scaleX: 2, opacity: 0.5 }, b], sameDecorationRow)).toBe(true);
+    expect(sameLayerListInput(input, [{ ...a, assetId: 'new' }, b], sameDecorationRow)).toBe(false);
+    expect(sameLayerListInput(input, [{ ...a, visible: false }, b], sameDecorationRow)).toBe(false);
+    expect(sameLayerListInput(input, [b, a], sameDecorationRow)).toBe(false);
+    expect(sameLayerListInput(input, [a], sameDecorationRow)).toBe(false);
+    expect(sameLayerListInput(input, [{ ...a, visible: false }, b], sameLayerId)).toBe(true);
+    expect(sameLayerListInput(input, [b, a], sameLayerId)).toBe(false);
+  });
+
+  it('refreshes image rows for a changed name, thumbnail or visibility but not a transform', () => {
+    const image = referenceImage('ref');
+    expect(sameReferenceImageRow(image, { ...image, x: 7, y: 8, scale: 3, opacity: 0.5 })).toBe(true);
+    expect(sameReferenceImageRow(image, { ...image, name: 'new.png' })).toBe(false);
+    expect(sameReferenceImageRow(image, { ...image, src: 'blob:new' })).toBe(false);
+    expect(sameReferenceImageRow(image, { ...image, visible: false })).toBe(false);
+  });
+
+  it('keeps adjacent reference images in order around a collapsed group and at stack edges', () => {
+    const rows = buildLayerRowModels({
+      decorations: [layer('a'), layer('b'), layer('c')],
+      groups: [group('g', [{ type: 'layer', id: 'b' }], { collapsed: true })],
+      headLayerIndex: 3
+    });
+    const images = ['top', 'one', 'two', 'bottom'].map(referenceImage);
+    const merged = mergeReferenceImageRows(rows, images, [
+      'reference-image:bottom', HEAD_LAYER_ID, 'c', 'reference-image:two', 'b',
+      'reference-image:one', 'a', 'reference-image:top'
+    ]);
+    expect(merged.map((row) => row.rowId)).toEqual([
+      'reference-image:top', 'item:a', 'reference-image:one', 'reference-image:two',
+      'group:g', 'item:c', HEAD_ROW_ID, 'reference-image:bottom'
+    ]);
+
+    expect(mergeReferenceImageRows(rows, images.slice(1, 3), []).map((row) => row.rowId)).toEqual([
+      'reference-image:two', 'reference-image:one', 'item:a', 'group:g', 'item:c', HEAD_ROW_ID
+    ]);
   });
 
   it('places reference images between role rows using canonical bottom-to-top order', () => {

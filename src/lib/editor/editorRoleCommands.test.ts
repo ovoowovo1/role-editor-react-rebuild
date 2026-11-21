@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { HEAD_LAYER_ID } from '../../constants/layers';
 import { makeDecorationLayer, makePartOption, makeRoleDocument } from '../../test/roleFixtures';
+import { sameRole } from './editorHistoryTypes';
+import { applyRoleHistoryPatch, createRoleHistoryPatch } from './editorRoleHistoryPatch';
+import { cloneRole, syncGroups, touch } from './editorRoleUtils';
 import {
+  applyBaseRoleAppearanceUpdate,
   beginTransientSession,
   centeredMirroredCopiedDecorations,
   centeredMirroredExpansion,
@@ -253,6 +257,76 @@ describe('editor role commands', () => {
     expect(roleWithChosenBodyPart(roleWithoutExistingFrame, 'head', optionWithoutFrame).partFrames.head).toBe(1);
   });
 
+
+  describe('base role appearance commands', () => {
+    it('shares decorations while preserving legacy itemIds-only group normalization', () => {
+      const decoration = makeDecorationLayer('a', { x: 25, rotation: 65, visible: false });
+      const role = makeRoleDocument({
+        decorations: [decoration],
+        groups: [{ id: 'g', name: 'Legacy', itemIds: ['a', HEAD_LAYER_ID, 'a', 'missing'], visible: true, collapsed: true }]
+      });
+      const old = syncGroups(touch({ ...cloneRole(role), camp: 'third' }));
+      const actual = applyBaseRoleAppearanceUpdate(role, { type: 'camp', camp: 'third' });
+      expect(sameRole(actual, old)).toBe(true);
+      expect(actual.decorations).toBe(role.decorations);
+      expect(actual.decorations[0]).toBe(decoration);
+      expect(actual.groups).toEqual(old.groups);
+      expect(actual.groups[0].itemIds).toEqual(['a', HEAD_LAYER_ID]);
+      expect(selectionIdsToRestoreForRole(actual, [HEAD_LAYER_ID, 'a'])).toEqual([HEAD_LAYER_ID, 'a']);
+    });
+
+    it('keeps no-op camp and gender eligible to preserve an existing redo, but records changed gender', () => {
+      const role = makeRoleDocument({ camp: 'royal', gender: 'male', decorations: [makeDecorationLayer('a')] });
+      const changed = applyBaseRoleAppearanceUpdate(role, { type: 'gender', gender: 'female' });
+      const future = createRoleHistoryPatch(role, changed)!;
+      const undone = applyRoleHistoryPatch(changed, future, 'before');
+
+      for (const command of [{ type: 'camp', camp: 'royal' }, { type: 'gender', gender: 'male' }] as const) {
+        const unchanged = applyBaseRoleAppearanceUpdate(undone, command);
+        // These are the exact equality and codec guards used in useEditorState.
+        expect(sameRole(undone, unchanged)).toBe(true);
+        expect(createRoleHistoryPatch(undone, unchanged)).toBeNull();
+      }
+      expect(applyRoleHistoryPatch(undone, future, 'after').gender).toBe('female');
+      expect(undone.decorations).toBe(changed.decorations);
+    });
+
+    it('records a frame change for the same part ID without modifying the pose or decorations', () => {
+      const source = makeRoleDocument();
+      const decoration = makeDecorationLayer('a', { x: 17, scaleX: -2, rotation: 30 });
+      const role = makeRoleDocument({
+        parts: { ...source.parts, head: 'shared-head' },
+        partFrames: { ...source.partFrames, head: 2 },
+        partScales: { ...source.partScales, head: 1.35 },
+        decorations: [decoration],
+        headLayer: { ...source.headLayer, x: 12, scaleX: 1.2, opacity: 0.5 }
+      });
+      const option = makePartOption('shared-head', { category: 'head', mockKind: 'head', frame: 7 });
+      const changed = applyBaseRoleAppearanceUpdate(role, { type: 'part', tab: 'head', option });
+      expect(changed.parts.head).toBe(role.parts.head);
+      expect(changed.partFrames.head).toBe(7);
+      expect(changed.partScales).toEqual(role.partScales);
+      expect(changed.headLayer).toEqual(role.headLayer);
+      expect(changed.decorations).toBe(role.decorations);
+      const patch = createRoleHistoryPatch(role, changed)!;
+      expect(patch.decorations.fields).toEqual([]);
+      const undone = applyRoleHistoryPatch(changed, patch, 'before');
+      expect(undone.partFrames.head).toBe(2);
+      expect(applyRoleHistoryPatch(undone, patch, 'after').partFrames.head).toBe(7);
+    });
+
+    it('retains the old strict history comparison for malformed decoration NaN', () => {
+      const current = makeRoleDocument({ camp: 'royal', decorations: [makeDecorationLayer('a', { x: NaN })] });
+      const old = syncGroups(touch({ ...cloneRole(current), camp: 'royal' }));
+      const actual = applyBaseRoleAppearanceUpdate(current, { type: 'camp', camp: 'royal' });
+      expect(actual.decorations).not.toBe(current.decorations);
+      expect(sameRole(current, actual)).toBe(false);
+      const oldPatch = createRoleHistoryPatch(current, old)!;
+      const actualPatch = createRoleHistoryPatch(current, actual)!;
+      expect(actualPatch.decorations).toEqual(oldPatch.decorations);
+      expect(actualPatch.decorations.fields).toEqual([{ index: 0, before: { x: NaN }, after: { x: NaN } }]);
+    });
+  });
 
   it('captures transient transform sessions before falling back to role snapshots', () => {
     const role = makeRoleDocument({

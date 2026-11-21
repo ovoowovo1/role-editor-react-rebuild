@@ -1,8 +1,6 @@
 import { useCallback } from 'react';
 import { t } from '../i18n';
 import { downloadBlob } from '../lib/math';
-import { parseRoleFileWithWorkerFallback } from '../lib/serialization/roleSerializationImport';
-import { createRoleJsonBlobWithThumb, createTwroleBlobWithThumb } from '../lib/serialization/legacyTwroleExport';
 import type { RoleDocument } from '../types/role';
 
 interface UseRoleFileActionsOptions {
@@ -22,6 +20,7 @@ export function useRoleFileActions({
     async (file: File) => {
       setStatus(t('status.importing', { name: file.name }));
       try {
+        const { parseRoleFileWithWorkerFallback } = await import('../lib/serialization/roleImportClient');
         const result = await parseRoleFileWithWorkerFallback(file);
         importRole(result.role);
         setStatus(result.warnings.length ? result.warnings.join(' ') : t('status.imported', { name: file.name }));
@@ -37,6 +36,7 @@ export function useRoleFileActions({
     async (file: File) => {
       setStatus(t('status.merging', { name: file.name }));
       try {
+        const { parseRoleFileWithWorkerFallback } = await import('../lib/serialization/roleImportClient');
         const result = await parseRoleFileWithWorkerFallback(file);
         mergeImportedRole(result.role);
         setStatus(result.warnings.length ? `${t('status.merged', { name: file.name })}. ${result.warnings.join(' ')}` : t('status.merged', { name: file.name }));
@@ -50,6 +50,7 @@ export function useRoleFileActions({
 
   const handleDownloadTwrole = useCallback(async () => {
     try {
+      const { createTwroleBlobWithThumb } = await import('../lib/serialization/legacyTwroleExport');
       downloadBlob(await createTwroleBlobWithThumb(role), 'role.twrole');
       setStatus(t('status.downloadedTwrole'));
     } catch (error) {
@@ -60,6 +61,7 @@ export function useRoleFileActions({
 
   const handleExportJson = useCallback(async () => {
     try {
+      const { createRoleJsonBlobWithThumb } = await import('../lib/serialization/legacyTwroleExport');
       downloadBlob(await createRoleJsonBlobWithThumb(role), 'role.json');
       setStatus(t('status.exportedJson'));
     } catch (error) {

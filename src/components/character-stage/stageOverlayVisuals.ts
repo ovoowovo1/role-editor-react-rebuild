@@ -15,6 +15,8 @@ interface BrushFillOverlayScene {
   brushFillDraftGraphic: Graphics;
 }
 
+const committedBrushPoints = new WeakMap<Graphics, readonly BrushFillPoint[]>();
+
 function drawBrushPoints(graphic: Graphics, points: readonly BrushFillPoint[], clear = true): void {
   if (clear) graphic.clear();
   if (!points.length) return;
@@ -27,9 +29,13 @@ function drawBrushPoints(graphic: Graphics, points: readonly BrushFillPoint[], c
   graphic.endFill();
 }
 
-/** Synchronize the persisted mask. This is intentionally a full redraw. */
+/** A committed stroke is drawn immediately and then received again as an immutable prop. */
 export function drawBrushFillOverlay(scene: BrushFillOverlayScene, mask: BrushFillMask): void {
-  drawBrushPoints(scene.brushFillCommittedGraphic, mask.points);
+  const committed = scene.brushFillCommittedGraphic;
+  if (committedBrushPoints.get(committed) !== mask.points) {
+    drawBrushPoints(committed, mask.points);
+    committedBrushPoints.set(committed, mask.points);
+  }
   scene.brushFillDraftGraphic.clear();
   scene.brushFillOverlay.visible = mask.points.length > 0;
   scene.brushFillOverlay.eventMode = 'none';

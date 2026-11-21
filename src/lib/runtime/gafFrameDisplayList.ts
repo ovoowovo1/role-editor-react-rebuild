@@ -3,8 +3,9 @@ import type {
   GafFrameInstanceSerialized,
   GafMatrixSerialized,
   GafRuntimeManifest,
-  GafTimelineSerialized
+  GafTimeline
 } from '../../types/gafRuntime';
+import { gafFrameInstances } from './gafFrameInstances';
 
 const IDENTITY_MATRIX: GafMatrixSerialized = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
 const TYPE_TEXTURE = 'texture';
@@ -97,14 +98,14 @@ function elementPivotMatrix(element: GafElementSerialized): GafMatrixSerialized 
   };
 }
 
-function resolveTimeline(manifest: GafRuntimeManifest, linkageOrId: string): GafTimelineSerialized | null {
+function resolveTimeline(manifest: GafRuntimeManifest, linkageOrId: string): GafTimeline | null {
   const linkedId = manifest.timelinesByLinkage[linkageOrId];
   if (linkedId != null && linkedId !== '') return manifest.timelinesById[linkedId] ?? null;
   return manifest.timelinesById[linkageOrId] ?? null;
 }
 
-function sortedFrameOneInstances(timeline: GafTimelineSerialized): GafFrameInstanceSerialized[] {
-  return (timeline.frames['1'] ?? [])
+function sortedFrameOneInstances(manifest: GafRuntimeManifest, timeline: GafTimeline): GafFrameInstanceSerialized[] {
+  return gafFrameInstances(manifest, timeline, '1')
     .map((instance, sourceOrder) => ({ instance, sourceOrder }))
     .sort((left, right) => left.instance.zIndex - right.instance.zIndex || left.sourceOrder - right.sourceOrder)
     .map(({ instance }) => instance);
@@ -135,7 +136,7 @@ export function resolveGafFrameOneDisplayList(
   const activeTimelineIds = new Set<string>();
 
   const visit = (
-    timeline: GafTimelineSerialized,
+    timeline: GafTimeline,
     parentMatrix: GafMatrixSerialized,
     parentAlpha: number,
     zIndexPath: readonly number[],
@@ -145,7 +146,7 @@ export function resolveGafFrameOneDisplayList(
     if (depth > maxDepth || activeTimelineIds.has(timeline.id)) return;
     activeTimelineIds.add(timeline.id);
 
-    for (const instance of sortedFrameOneInstances(timeline)) {
+    for (const instance of sortedFrameOneInstances(manifest, timeline)) {
       const animationObject = timeline.animationObjects[instance.objectId];
       if (!animationObject || animationObject.mask) continue;
 

@@ -3,7 +3,12 @@ import type { PartOption, PartTab } from '../types/role';
 import { PART_TAB_I18N_KEYS } from '../constants/tabs';
 import { t } from '../i18n';
 import { AssetPreview } from './AssetPreview';
-
+import {
+  CHOICE_ROW_HEIGHT,
+  initialChoiceGridViewport,
+  resizeChoiceGridViewport,
+  updateChoiceGridViewport
+} from './choiceGridViewport';
 
 interface ChoiceGridProps {
   tab: PartTab;
@@ -18,22 +23,17 @@ interface VirtualRow {
   start: number;
 }
 
-const ITEM_WIDTH = 86;
-const ROW_HEIGHT = 86;
-const OVERSCAN_ROWS = 6;
-
 export function ChoiceGrid({ tab, options, selectedOptionId, onPick }: ChoiceGridProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
-  const [columns, setColumns] = useState(4);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(520);
+  const [viewport, setViewport] = useState(initialChoiceGridViewport);
+  const { columns, firstRow: startIndex, lastRowExclusive } = viewport;
 
   useLayoutEffect(() => {
     const node = parentRef.current;
     if (!node) return;
     const update = () => {
-      setColumns(Math.max(2, Math.floor(node.clientWidth / ITEM_WIDTH)));
-      setViewportHeight(node.clientHeight || 520);
+      const { clientWidth, clientHeight, scrollTop } = node;
+      setViewport((previous) => resizeChoiceGridViewport(previous, clientWidth, clientHeight, scrollTop));
     };
     update();
     const observer = new ResizeObserver(update);
@@ -42,21 +42,20 @@ export function ChoiceGrid({ tab, options, selectedOptionId, onPick }: ChoiceGri
   }, []);
 
   const rowCount = Math.ceil(options.length / columns);
-  const totalHeight = rowCount * ROW_HEIGHT;
-  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS);
-  const endIndex = Math.min(rowCount, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN_ROWS);
+  const totalHeight = rowCount * CHOICE_ROW_HEIGHT;
+  const endIndex = Math.min(rowCount, lastRowExclusive);
   const rows: VirtualRow[] = useMemo(
     () =>
       Array.from({ length: Math.max(endIndex - startIndex, 0) }, (_, offset) => {
         const index = startIndex + offset;
-        return { index, key: `${tab}-${index}`, start: index * ROW_HEIGHT };
+        return { index, key: `${tab}-${index}`, start: index * CHOICE_ROW_HEIGHT };
       }),
     [endIndex, startIndex, tab]
   );
 
   const visibleSummary = useMemo(() => {
-    const gafCount = options.filter((option) => option.source === 'gaf').length;
-    return gafCount ? t('choices.assetCountGaf', { count: options.length }) : t('choices.assetCountMock', { count: options.length });
+    const hasGaf = options.some((option) => option.source === 'gaf');
+    return hasGaf ? t('choices.assetCountGaf', { count: options.length }) : t('choices.assetCountMock', { count: options.length });
   }, [options]);
 
   return (
@@ -64,7 +63,10 @@ export function ChoiceGrid({ tab, options, selectedOptionId, onPick }: ChoiceGri
       className="choice-list"
       aria-label={t('choices.choices', { tab: t(PART_TAB_I18N_KEYS[tab]) })}
       ref={parentRef}
-      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      onScroll={(event) => {
+        const { scrollTop } = event.currentTarget;
+        setViewport((previous) => updateChoiceGridViewport(previous, scrollTop, previous.columns, previous.viewportHeight));
+      }}
     >
       <div className="choice-list-header">
         <strong>{t(PART_TAB_I18N_KEYS[tab])}</strong>
@@ -78,7 +80,7 @@ export function ChoiceGrid({ tab, options, selectedOptionId, onPick }: ChoiceGri
             <div
               key={virtualRow.key}
               className="choice-row"
-              style={{ transform: `translateY(${virtualRow.start}px)`, height: ROW_HEIGHT }}
+              style={{ transform: `translateY(${virtualRow.start}px)`, height: CHOICE_ROW_HEIGHT }}
             >
               {rowItems.map((option) => (
                 <button

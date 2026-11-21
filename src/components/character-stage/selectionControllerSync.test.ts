@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Container } from 'pixi.js';
+import { Container, Rectangle } from 'pixi.js';
+import { PRECISE_SELECTION_BOUNDS_LIMIT } from '../../constants/stage';
 import { HEAD_LAYER_ID } from '../../constants/layers';
 import { makeDecorationLayer } from '../../test/roleFixtures';
 import type { StageSceneState } from './types';
@@ -20,13 +21,14 @@ vi.mock('./stageOverlayVisuals', () => ({
 import {
   hideSelectionDragController,
   syncHeadLayerSelection,
+  syncSelectionDragController,
   syncSelectionDragControllerVisuals
 } from './selectionControllerSync';
 
 function makeScene(): StageSceneState {
   return {
     selectionDragController: new Container(),
-    selectionDragControllerGraphic: { clear: vi.fn() },
+    selectionDragControllerGraphic: { clear: vi.fn(), beginFill: vi.fn(), drawRect: vi.fn(), endFill: vi.fn() },
     selectionDragControllerVisuals: new Container(),
     selectionDragVisualKey: '',
     selectionDragVisualsById: new Map(),
@@ -45,6 +47,102 @@ describe('selection controller visuals', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.createDecorationVisual.mockImplementation(() => new Container());
+  });
+
+  function makeLargeSelection() {
+    return Array.from({ length: PRECISE_SELECTION_BOUNDS_LIMIT + 1 }, (_, i) =>
+      makeDecorationLayer(`layer-${i}`, { x: i, y: -2 * i })
+    );
+  }
+
+  it('skips an unchanged large point-bounds overlay but rerenders transformed and reordered inputs', () => {
+    const scene = makeScene();
+    const selected = makeLargeSelection();
+    syncSelectionDragController(scene, selected, false);
+    const draw = scene.selectionDragControllerGraphic.drawRect;
+    const originalHitArea = scene.selectionDragController.hitArea;
+    syncSelectionDragController(scene, selected.slice(), false);
+
+    expect(draw).toHaveBeenCalledOnce();
+    expect(scene.selectionDragController.hitArea).toBe(originalHitArea);
+    const transformed = [{ ...selected[0], x: 250 }, ...selected.slice(1)];
+    syncSelectionDragController(scene, transformed, false);
+    expect(draw).toHaveBeenCalledTimes(2);
+    expect(scene.selectionDragController.position.x).toBeCloseTo(60 + 250 / selected.length);
+
+    const reordered = [...transformed].reverse();
+    syncSelectionDragController(scene, reordered, false);
+    expect(draw).toHaveBeenCalledTimes(3);
+    expect(scene.selectionDragTargetId).toBe(reordered[0].id);
+  });
+
+  it('keeps cached identities separate from a caller-owned array', () => {
+    const scene = makeScene();
+    const selected = makeLargeSelection();
+    syncSelectionDragController(scene, selected, false);
+    const draw = scene.selectionDragControllerGraphic.drawRect;
+
+    selected[0] = { ...selected[0], x: 500 };
+    syncSelectionDragController(scene, selected, false);
+
+    expect(draw).toHaveBeenCalledTimes(2);
+    expect(scene.selectionDragController.position.x).toBeCloseTo(60 + 500 / selected.length);
+  });
+
+  it('repairs a large overlay after imperative drag movement, event changes or hit-area changes', () => {
+    const scene = makeScene();
+    const selected = makeLargeSelection();
+    const controller = scene.selectionDragController;
+    const draw = scene.selectionDragControllerGraphic.drawRect;
+    syncSelectionDragController(scene, selected, false);
+    const { x, y } = controller.position;
+
+    controller.position.set(x + 50, y);
+    syncSelectionDragController(scene, [...selected], false);
+    expect(controller.position.x).toBe(x);
+    expect(draw).toHaveBeenCalledTimes(2);
+
+    controller.eventMode = 'none';
+    syncSelectionDragController(scene, selected, false);
+    expect(controller.eventMode).toBe('static');
+    expect(draw).toHaveBeenCalledTimes(3);
+
+    (controller.hitArea as Rectangle).width = 0;
+    syncSelectionDragController(scene, selected, false);
+    expect((controller.hitArea as Rectangle).width).toBeGreaterThan(0);
+    expect(draw).toHaveBeenCalledTimes(4);
+
+    syncSelectionDragController(scene, selected, true);
+    expect(controller.visible).toBe(false);
+    expect(controller.hitArea).toBeNull();
+    syncSelectionDragController(scene, selected, false);
+    expect(controller.visible).toBe(true);
+    expect(draw).toHaveBeenCalledTimes(5);
+  });
+
+  it('keeps recomputing precise bounds at the small visible-selection limit', () => {
+    const scene = makeScene();
+    const selected = makeLargeSelection();
+    selected[0] = { ...selected[0], visible: false };
+    const root = scene.disguiseRoot = new Container();
+    scene.decoDisplays = new Map();
+    for (const layer of selected) {
+      const container = new Container();
+      root.addChild(container);
+      scene.decoDisplays.set(layer.id, {
+        container, displayKey: '', transformKey: ''
+      });
+    }
+    const lead = scene.decoDisplays.get(selected[1].id)!.container;
+    const bounds = vi.spyOn(lead, 'getLocalBounds').mockReturnValue(new Rectangle(0, 0, 20, 10));
+    syncSelectionDragController(scene, selected, false);
+    const oldWidth = (scene.selectionDragController.hitArea as Rectangle).width;
+
+    bounds.mockReturnValue(new Rectangle(0, 0, 500, 10));
+    syncSelectionDragController(scene, selected.slice(), false);
+
+    expect(bounds).toHaveBeenCalledTimes(2);
+    expect((scene.selectionDragController.hitArea as Rectangle).width).toBeGreaterThan(oldWidth);
   });
 
   it('updates transforms in place without creating or destroying visuals', () => {

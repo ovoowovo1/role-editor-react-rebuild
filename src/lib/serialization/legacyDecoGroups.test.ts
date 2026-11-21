@@ -95,6 +95,32 @@ describe('legacy deco groups', () => {
     ]);
   });
 
+  it('keeps valid explicit IDs before index fallbacks, deduplicates, and preserves first cross-group ownership', () => {
+    const normalized = normalizeLegacyDecoGroups([
+      { id: 'g1', members: [
+        { type: 'layer', id: 'a', itemIndex: 0 },
+        { type: 'layer', id: 'invalid', itemIndex: 2 },
+        { type: 'layer', itemIndex: '3' },
+        { type: 'layer', id: HEAD_LAYER_ID },
+        { type: 'layer', itemIndex: -1 },
+        null
+      ], itemIndexes: [0, 1] },
+      { id: 'g2', items: ['3', '1', '1', '0', '99'] }
+    ], role());
+
+    expect(normalized.map(group => group.itemIds)).toEqual([['a', HEAD_LAYER_ID], ['b', 'c']]);
+  });
+
+  it('handles ID-list variants and keeps empty explicit members ahead of flat fallbacks', () => {
+    const normalized = normalizeLegacyDecoGroups([
+      { id: 'ignored', members: [], itemIndexes: [0, 1] },
+      { id: 'by-id', itemIds: ['c', 'c', 'unknown', 'a'] },
+      { id: 'by-items', items: ['b', HEAD_LAYER_ID, 'c'] }
+    ], role());
+
+    expect(normalized.map(group => group.itemIds)).toEqual([['c', 'a'], ['b', HEAD_LAYER_ID]]);
+  });
+
   it('exports legacy groups with sorted bottom-to-top item indexes', () => {
     const current = role({
       groups: [

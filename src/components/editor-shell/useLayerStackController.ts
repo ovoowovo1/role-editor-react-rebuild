@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { HEAD_LAYER_ID, HEAD_ROW_ID } from '../../constants/layers';
-import { layerIdsForRole } from '../../lib/editor/layerOrdering';
+import { atomToLayerId, getHeadLayerIndex } from '../../lib/editor/layerOrdering';
 import {
   createGroupTreeIndex,
   directParentGroup,
@@ -12,6 +12,7 @@ import { referenceImageLayerToken } from '../../types/referenceImage';
 import type { DecorationGroup } from '../../types/role';
 import type { useRoleEditor } from '../../hooks/useRoleEditor';
 import type { useReferenceImageLayers } from '../../hooks/useReferenceImageLayers';
+import { sameLayerId, useStableLayerListInput } from '../layers/useStableLayerListInput';
 
 type EditorApi = ReturnType<typeof useRoleEditor>;
 type ReferenceImageApi = ReturnType<typeof useReferenceImageLayers>;
@@ -162,10 +163,13 @@ export function useLayerStackController({
   editor,
   reference
 }: UseLayerStackControllerOptions) {
-  const roleLayerOrder = useMemo(
-    () => layerIdsForRole(editor.role).reverse(),
-    [editor.role]
-  );
+  const layerSequence = useStableLayerListInput(editor.role.decorations, sameLayerId);
+  const headLayerIndex = getHeadLayerIndex(editor.role);
+  const roleLayerOrder = useMemo(() => {
+    const order = layerSequence.map((layer) => atomToLayerId(layer.id));
+    order.splice(headLayerIndex, 0, HEAD_LAYER_ID);
+    return order.reverse();
+  }, [headLayerIndex, layerSequence]);
   const groups = editor.groups;
   const groupTree = useMemo(() => createGroupTreeIndex(groups), [groups]);
 

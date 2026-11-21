@@ -38,7 +38,7 @@ export function colorBlockPresetErrorMessage(error: unknown): string {
 }
 
 export function useColorBlockPresets(camp: string, onStatus: (message: string) => void): ColorBlockPresetState {
-  const [state, dispatch] = useReducer(colorBlockPresetReducer, initialColorBlockPresetState);
+  const [state, dispatch] = useReducer(colorBlockPresetReducer, { ...initialColorBlockPresetState, loading: true });
 
   useEffect(() => {
     let isCurrentCamp = true;

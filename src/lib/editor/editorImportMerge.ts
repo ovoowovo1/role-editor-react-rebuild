@@ -2,7 +2,7 @@ import type { DecorationGroup, DecorationLayer, EditorClipboardItem, PartOption,
 import { createId } from '../math';
 import { insertDecorations, type InsertDraftSettings } from './editorInsertSettings';
 import { syncGroups } from './editorRoleUtils';
-import { descendantLayerIdsForGroup, membersForGroup, topLevelGroupIds } from './groupTree';
+import { descendantLayerIdsFromIndex, groupById, membersForGroup, topLevelGroupIds } from './groupTree';
 import { nextGroupId } from './headLayerMutations';
 
 export function nextGroupName(role: RoleDocument): string {
@@ -37,8 +37,11 @@ export function remapImportedGroups(
   idMap: Map<string, string>,
   fallbackName: (group: DecorationGroup) => string
 ): DecorationGroup[] {
-  const groupIdMap = new Map((incoming.groups ?? []).map((group) => [group.id, nextGroupId()]));
-  return (incoming.groups ?? [])
+  const groups = incoming.groups ?? [];
+  if (!groups.length) return [];
+  const groupIdMap = new Map(groups.map((group) => [group.id, nextGroupId()]));
+  const incomingGroupsById = groupById(groups);
+  return groups
     .map((group): DecorationGroup | null => {
       const members = membersForGroup(group)
         .map((member) => {
@@ -50,7 +53,7 @@ export function remapImportedGroups(
           return mappedId ? { type: 'layer' as const, id: mappedId } : null;
         })
         .filter((member): member is NonNullable<typeof member> => member !== null);
-      const itemIds = descendantLayerIdsForGroup(incoming.groups ?? [], group.id)
+      const itemIds = descendantLayerIdsFromIndex(incomingGroupsById, group.id)
         .map((id) => idMap.get(id))
         .filter((id): id is string => Boolean(id));
       if (itemIds.length < 2) return null;
@@ -76,9 +79,10 @@ function wrapImportedGroups(
   if (copied.length < 2) return null;
 
   const topLevelIds = topLevelGroupIds(importedGroups);
+  const importedGroupsById = groupById(importedGroups);
   const topLevelGroupByLayerId = new Map<string, string>();
   for (const groupId of topLevelIds) {
-    for (const layerId of descendantLayerIdsForGroup(importedGroups, groupId)) {
+    for (const layerId of descendantLayerIdsFromIndex(importedGroupsById, groupId)) {
       topLevelGroupByLayerId.set(layerId, groupId);
     }
   }

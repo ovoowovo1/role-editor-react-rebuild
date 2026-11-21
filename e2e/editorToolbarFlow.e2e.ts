@@ -120,6 +120,61 @@ test('restores the recorded selection when undoing and redoing a paste', async (
   expectNoPageErrors(monitor);
 });
 
+test('stage scrollbars stay stable during resize and zoom changes', async ({ page }) => {
+  await page.goto('/');
+  const stage = page.locator('.stage-viewport');
+  const zoomIn = page.getByTestId('stage-scale-plus-button');
+  const zoomOut = page.getByTestId('stage-scale-minus-button');
+  await expect(stage.locator('canvas')).toBeVisible();
+
+  const expectStableStage = async (zoomed: boolean) => {
+    await expect(stage).toHaveCSS('overflow', zoomed ? 'scroll' : 'clip');
+    const frames = await stage.evaluate(async (element) => {
+      const canvas = element.querySelector('canvas')!;
+      const measure = () => {
+        const canvasRect = canvas.getBoundingClientRect();
+        return {
+          width: element.clientWidth,
+          height: element.clientHeight,
+          scrollWidth: element.scrollWidth,
+          scrollHeight: element.scrollHeight,
+          canvasWidth: canvasRect.width,
+          canvasHeight: canvasRect.height
+        };
+      };
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      const frames = [];
+      for (let frame = 0; frame < 8; frame++) {
+        frames.push(await new Promise<ReturnType<typeof measure>>((resolve) => {
+          requestAnimationFrame(() => resolve(measure()));
+        }));
+      }
+      return frames;
+    });
+    const first = frames[0];
+    expect(frames).toEqual(Array.from({ length: frames.length }, () => first));
+    expect(Math.abs(first.canvasWidth - first.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(first.canvasHeight - first.height)).toBeLessThanOrEqual(1);
+
+    const position = await stage.evaluate((element) => {
+      element.scrollTo(0, 0);
+      element.scrollTo(40, 40);
+      return [element.scrollLeft, element.scrollTop];
+    });
+    expect(position).toEqual(zoomed ? [40, 40] : [0, 0]);
+  };
+
+  await expectStableStage(false);
+  await zoomIn.click();
+  await expectStableStage(true);
+  await page.setViewportSize({ width: 1283, height: 817 });
+  await expectStableStage(true);
+  await zoomOut.click();
+  await expectStableStage(false);
+  await page.setViewportSize({ width: 1517, height: 911 });
+  await expectStableStage(false);
+});
+
 test('stage scale, face rotate, and animation controls respond without page errors', async ({ page }, testInfo) => {
   const monitor = watchPageErrors(page);
   const fixture = await writeRoleFixture(testInfo, 'stage-controls-source', makeEditorSmokeRole(1));

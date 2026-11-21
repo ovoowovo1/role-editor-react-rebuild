@@ -33,57 +33,70 @@ function bottomToTopLayerIds(role: RoleDocument): string[] {
   return topFirst.reverse();
 }
 
-function normalizeItemIdsFromLegacyGroup(group: LegacyDecoGroupInput, role: RoleDocument): string[] {
-  if (Array.isArray(group.itemIndexes)) {
-    const byLegacyIndex = bottomToTopLayerIds(role);
-    return group.itemIndexes
-      .map((value) => Number(value))
-      .filter((value) => Number.isInteger(value) && value >= 0 && value < byLegacyIndex.length)
-      .map((index) => byLegacyIndex[index])
-      .filter((id, index, ids) => Boolean(id) && ids.indexOf(id) === index);
-  }
-
-  if (Array.isArray(group.itemIds)) {
-    const valid = new Set(role.decorations.map((item) => item.id));
-    valid.add(HEAD_LAYER_ID);
-    return group.itemIds
-      .map((value) => String(value))
-      .filter((id, index, ids) => valid.has(id) && ids.indexOf(id) === index);
-  }
-
-  if (Array.isArray(group.items)) {
-    const itemsAreIndexes = group.items.every((item) => typeof item === 'number' || /^\d+$/.test(String(item)));
-    if (itemsAreIndexes) return normalizeItemIdsFromLegacyGroup({ itemIndexes: group.items }, role);
-    return normalizeItemIdsFromLegacyGroup({ itemIds: group.items }, role);
-  }
-
-  return [];
+interface LegacyLayerLookup {
+  byLegacyIndex: readonly string[];
+  validIds: ReadonlySet<string>;
 }
 
-function normalizeMembersFromLegacyGroup(group: LegacyDecoGroupInput, role: RoleDocument): DecorationGroupMember[] {
-  if (Array.isArray(group.members)) {
-    const validLayers = new Set(role.decorations.map((item) => item.id));
-    validLayers.add(HEAD_LAYER_ID);
-    const byLegacyIndex = bottomToTopLayerIds(role);
-    return group.members
-      .map((raw): DecorationGroupMember | null => {
-        if (!raw || typeof raw !== 'object') return null;
-        const member = raw as { type?: unknown; id?: unknown; itemIndex?: unknown };
-        const id = typeof member.id === 'string' ? member.id : '';
-        if (member.type === 'group') return id ? { type: 'group', id } : null;
-        if (member.type !== 'layer') return null;
-        if (id && validLayers.has(id)) return { type: 'layer', id };
-        const itemIndex = Number(member.itemIndex);
-        if (Number.isInteger(itemIndex) && itemIndex >= 0 && itemIndex < byLegacyIndex.length) {
-          const indexedId = byLegacyIndex[itemIndex];
-          if (validLayers.has(indexedId)) return { type: 'layer', id: indexedId };
-        }
-        return null;
-      })
-      .filter((member): member is DecorationGroupMember => member !== null)
-      .filter((member, index, members) => members.findIndex((item) => item.type === member.type && item.id === member.id) === index);
+function normalizeItemIdsFromLegacyGroup(group: LegacyDecoGroupInput, lookup: LegacyLayerLookup): string[] {
+  const seen = new Set<string>();
+  if (Array.isArray(group.itemIndexes)) {
+    for (const value of group.itemIndexes) {
+      const index = Number(value);
+      if (!Number.isInteger(index) || index < 0 || index >= lookup.byLegacyIndex.length) continue;
+      const id = lookup.byLegacyIndex[index];
+      if (id) seen.add(id);
+    }
+  } else if (Array.isArray(group.itemIds)) {
+    group.itemIds.forEach((value) => {
+      const id = String(value);
+      if (lookup.validIds.has(id)) seen.add(id);
+    });
+  } else if (Array.isArray(group.items)) {
+    const itemsAreIndexes = group.items.every((item) => typeof item === 'number' || /^\d+$/.test(String(item)));
+    return normalizeItemIdsFromLegacyGroup(
+      itemsAreIndexes ? { itemIndexes: group.items } : { itemIds: group.items }, lookup
+    );
   }
-  return normalizeItemIdsFromLegacyGroup(group, role).map((id) => ({ type: 'layer', id }));
+  return [...seen];
+}
+
+function normalizeMembersFromLegacyGroup(group: LegacyDecoGroupInput, lookup: LegacyLayerLookup): DecorationGroupMember[] {
+  if (!Array.isArray(group.members)) {
+    return normalizeItemIdsFromLegacyGroup(group, lookup).map((id) => ({ type: 'layer', id }));
+  }
+
+  const members: DecorationGroupMember[] = [];
+  const seenGroups = new Set<string>();
+  const seenLayers = new Set<string>();
+  for (const raw of group.members) {
+    if (!raw || typeof raw !== 'object') continue;
+    const member = raw as { type?: unknown; id?: unknown; itemIndex?: unknown };
+    const id = typeof member.id === 'string' ? member.id : '';
+    if (member.type === 'group') {
+      if (id && !seenGroups.has(id)) {
+        seenGroups.add(id);
+        members.push({ type: 'group', id });
+      }
+      continue;
+    }
+    if (member.type !== 'layer') continue;
+    let layerId: string | undefined;
+    if (id && lookup.validIds.has(id)) {
+      layerId = id;
+    } else {
+      const itemIndex = Number(member.itemIndex);
+      if (Number.isInteger(itemIndex) && itemIndex >= 0 && itemIndex < lookup.byLegacyIndex.length) {
+        const indexedId = lookup.byLegacyIndex[itemIndex];
+        if (lookup.validIds.has(indexedId)) layerId = indexedId;
+      }
+    }
+    if (layerId !== undefined && !seenLayers.has(layerId)) {
+      seenLayers.add(layerId);
+      members.push({ type: 'layer', id: layerId });
+    }
+  }
+  return members;
 }
 
 function legacyMembersForExport(
@@ -111,9 +124,10 @@ function legacyMembersForExport(
 }
 
 export function exportLegacyDecoGroups(role: RoleDocument): LegacyDecoGroup[] {
+  const groups = role.groups ?? [];
+  if (!groups.length) return [];
   const indexByLayerId = new Map<string, number>();
   bottomToTopLayerIds(role).forEach((id, index) => indexByLayerId.set(id, index));
-  const groups = role.groups ?? [];
   const groupIndex = createGroupTreeIndex(groups);
 
   return groups
@@ -136,14 +150,16 @@ export function exportLegacyDecoGroups(role: RoleDocument): LegacyDecoGroup[] {
 }
 
 export function normalizeLegacyDecoGroups(rawGroups: unknown, role: RoleDocument): DecorationGroup[] {
-  if (!Array.isArray(rawGroups)) return [];
+  if (!Array.isArray(rawGroups) || rawGroups.length === 0) return [];
+  const byLegacyIndex = bottomToTopLayerIds(role);
+  const lookup = { byLegacyIndex, validIds: new Set(byLegacyIndex) };
   const claimedIds = new Set<string>();
 
   const groups = rawGroups
     .map((raw, index): DecorationGroup | null => {
       if (!raw || typeof raw !== 'object') return null;
       const group = raw as LegacyDecoGroupInput;
-      const members = normalizeMembersFromLegacyGroup(group, role);
+      const members = normalizeMembersFromLegacyGroup(group, lookup);
       const cleanMembers = members.filter((member) => {
         if (member.type === 'group') return true;
         if (claimedIds.has(member.id)) return false;

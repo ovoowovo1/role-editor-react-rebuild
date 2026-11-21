@@ -1,5 +1,12 @@
 import { Assets } from 'pixi.js';
-import { renderFullRoleToDataUrl, type FullRoleRenderOptions, type FullRoleRenderResult } from './lib/stage/fullRoleRenderer';
+import {
+  captureFullRoleForBatch,
+  createBatchRoleCapture,
+  renderFullRoleToDataUrl,
+  type FullRoleBatchCapture,
+  type FullRoleRenderOptions,
+  type FullRoleRenderResult
+} from './lib/stage/fullRoleRenderer';
 import {
   computeRenderMetrics,
   compositeScore,
@@ -132,13 +139,12 @@ function rendererOptions(request: {
   height?: number;
   background?: FullRoleRenderOptions['background'];
   debug?: FullRoleRenderOptions['debug'];
-}, includeImageData = false): FullRoleRenderOptions {
+}): FullRoleRenderOptions {
   return {
     width: request.width,
     height: request.height,
     background: request.background ?? 'transparent',
-    debug: request.debug,
-    includeImageData
+    debug: request.debug
   };
 }
 
@@ -148,7 +154,7 @@ function errorMessage(error: unknown): string {
 
 async function renderRole(request: RenderRoleRequest): Promise<RenderRoleResponse> {
   const start = performance.now();
-  const rendered = await renderFullRoleToDataUrl(request.payload, rendererOptions(request));
+  const rendered = await captureFullRoleForBatch(request.payload, rendererOptions(request), 'png');
   lastCanvasSize = { width: rendered.width, height: rendered.height };
   return {
     ok: true,
@@ -228,12 +234,13 @@ function mergedDebug(
 }
 
 async function renderImageData(
-  payload: unknown,
-  options: Omit<FullRoleRenderOptions, 'includeImageData'>
-): Promise<FullRoleRenderResult & { imageData: ImageData }> {
-  const rendered = await renderFullRoleToDataUrl(payload, { ...options, includeImageData: true });
+  capture: ReturnType<typeof createBatchRoleCapture>,
+  options: FullRoleRenderOptions,
+  includePng = false
+): Promise<FullRoleBatchCapture & { imageData: ImageData }> {
+  const rendered = await capture(options, includePng ? 'both' : 'pixels');
   if (!rendered.imageData) throw new Error('Renderer did not return ImageData.');
-  return rendered as FullRoleRenderResult & { imageData: ImageData };
+  return { ...rendered, imageData: rendered.imageData };
 }
 
 async function scoreRole(request: ScoreRoleRequest): Promise<ScoreRoleResponse> {
@@ -241,56 +248,53 @@ async function scoreRole(request: ScoreRoleRequest): Promise<ScoreRoleResponse> 
   const target = await decodePngBase64ToImageData(request.targetPngBase64);
   const width = request.width ?? target.width;
   const height = request.height ?? target.height;
-  const candidate = await renderImageData(request.candidate, {
-    ...rendererOptions({ ...request, width, height }, true),
+  const capture = createBatchRoleCapture(request.candidate);
+  const candidate = await renderImageData(capture, {
+    ...rendererOptions({ ...request, width, height }),
     width,
     height
   });
   let contribution: PartContribution | undefined;
 
   if (request.metrics.includes('fake_part_score')) {
-    const full = await renderImageData(request.candidate, {
-      width,
-      height,
-      background: request.background ?? 'transparent',
-      debug: request.debug
-    });
-    const withoutHead = await renderImageData(request.candidate, {
+    // The primary candidate is already the full render with these same options.
+    const full = candidate.imageData;
+    const withoutHead = await renderImageData(capture, {
       width,
       height,
       background: request.background ?? 'transparent',
       debug: mergedDebug(request.debug, ablationOptions('without_head'))
     });
-    const withoutHand = await renderImageData(request.candidate, {
+    const withoutHand = await renderImageData(capture, {
       width,
       height,
       background: request.background ?? 'transparent',
       debug: mergedDebug(request.debug, ablationOptions('without_hand'))
     });
-    const withoutFoot = await renderImageData(request.candidate, {
+    const withoutFoot = await renderImageData(capture, {
       width,
       height,
       background: request.background ?? 'transparent',
       debug: mergedDebug(request.debug, ablationOptions('without_foot'))
     });
-    const withoutCape = await renderImageData(request.candidate, {
+    const withoutCape = await renderImageData(capture, {
       width,
       height,
       background: request.background ?? 'transparent',
       debug: mergedDebug(request.debug, ablationOptions('without_cape'))
     });
-    const withoutDeco = await renderImageData(request.candidate, {
+    const withoutDeco = await renderImageData(capture, {
       width,
       height,
       background: request.background ?? 'transparent',
       debug: mergedDebug(request.debug, ablationOptions('without_decorations'))
     });
     contribution = contributionFromAblations({
-      head: imageDeltaMagnitude(full.imageData, withoutHead.imageData),
-      hand: imageDeltaMagnitude(full.imageData, withoutHand.imageData),
-      foot: imageDeltaMagnitude(full.imageData, withoutFoot.imageData),
-      cape: imageDeltaMagnitude(full.imageData, withoutCape.imageData),
-      deco: imageDeltaMagnitude(full.imageData, withoutDeco.imageData)
+      head: imageDeltaMagnitude(full, withoutHead.imageData),
+      hand: imageDeltaMagnitude(full, withoutHand.imageData),
+      foot: imageDeltaMagnitude(full, withoutFoot.imageData),
+      cape: imageDeltaMagnitude(full, withoutCape.imageData),
+      deco: imageDeltaMagnitude(full, withoutDeco.imageData)
     });
   }
 
@@ -305,25 +309,26 @@ async function scoreRole(request: ScoreRoleRequest): Promise<ScoreRoleResponse> 
 
 async function renderAblation(request: RenderAblationRequest): Promise<RenderAblationResponse> {
   const modes: RenderMode[] = request.modes?.length ? request.modes : ['full'];
-  const baseOptions = rendererOptions(request, true);
+  const baseOptions = rendererOptions(request);
+  const capture = createBatchRoleCapture(request.payload);
   const renders: Record<string, string> = {};
   const imageDataByMode = new Map<RenderMode, ImageData>();
 
   for (const mode of modes) {
-    const rendered = await renderImageData(request.payload, {
+    const rendered = await renderImageData(capture, {
       ...baseOptions,
       debug: mergedDebug(baseOptions.debug, ablationOptions(mode))
-    });
+    }, true);
     renders[mode] = stripPngDataUrlPrefix(rendered.dataUrl);
     imageDataByMode.set(mode, rendered.imageData);
     lastCanvasSize = { width: rendered.width, height: rendered.height };
   }
 
-  const full = imageDataByMode.get('full') ?? (await renderImageData(request.payload, baseOptions)).imageData;
+  const full = imageDataByMode.get('full') ?? (await renderImageData(capture, baseOptions)).imageData;
   const ablated = async (mode: RenderMode) => {
     const existing = imageDataByMode.get(mode);
     if (existing) return existing;
-    const rendered = await renderImageData(request.payload, {
+    const rendered = await renderImageData(capture, {
       ...baseOptions,
       debug: mergedDebug(baseOptions.debug, ablationOptions(mode))
     });
@@ -383,7 +388,8 @@ window.twroleBatchRenderer = {
 async function initializeRenderer(): Promise<void> {
   document.body.style.margin = '0';
   document.body.style.background = 'transparent';
-  const textures = [gafSources.actorTexture, gafSources.decorationsTexture, gafSources.assetsTexture].filter(Boolean);
+  // The optional weapon atlas is loaded by the selected render, not batch boot.
+  const textures = [gafSources.actorTexture, gafSources.decorationsTexture].filter(Boolean);
   await Assets.load([...new Set(textures)]);
   assetsReady = true;
   browserRenderer.ready = true;

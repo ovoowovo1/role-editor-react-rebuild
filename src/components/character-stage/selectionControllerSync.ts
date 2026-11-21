@@ -15,7 +15,30 @@ import {
 import { createDecorationVisual } from './pixiVisuals';
 import { getCachedControllerGlowFilter } from './stageOverlayVisuals';
 import type { StageSceneState } from './types';
-import { getDisplayRootPosition } from './sceneGeometry';
+import { directDisplayTransformInRoot, getDisplayRootPosition } from './sceneGeometry';
+
+interface StablePointSelection {
+  selected: readonly DecorationLayer[];
+  controller: Container;
+  targetId: string;
+  centerX: number;
+  centerY: number;
+  hitArea: Rectangle;
+  hitRect: { x: number; y: number; width: number; height: number };
+}
+
+const stablePointSelections = new WeakMap<StageSceneState, StablePointSelection>();
+
+function sameOrderedSelection(
+  previous: readonly DecorationLayer[],
+  current: readonly DecorationLayer[]
+): boolean {
+  if (previous.length !== current.length) return false;
+  for (let i = 0; i < current.length; i++) {
+    if (previous[i] !== current[i]) return false;
+  }
+  return true;
+}
 
 function containerBoundsInRoot(container: Container, root: Container): LocalBounds {
   const localBounds = container.getLocalBounds();
@@ -37,9 +60,9 @@ function containerBoundsInRoot(container: Container, root: Container): LocalBoun
     { x: localBounds.x, y: localBounds.y + localBounds.height }
   ];
 
+  const direct = directDisplayTransformInRoot(container, root);
   for (const corner of corners) {
-    const global = container.toGlobal(corner);
-    const local = root.toLocal(global);
+    const local = direct ? direct.apply(corner) : root.toLocal(container.toGlobal(corner));
     bounds = mergeBounds(bounds, {
       minX: local.x,
       minY: local.y,
@@ -52,6 +75,7 @@ function containerBoundsInRoot(container: Container, root: Container): LocalBoun
 }
 
 export function hideSelectionDragController(scene: StageSceneState): void {
+  stablePointSelections.delete(scene);
   scene.selectionDragTargetId = null;
   scene.selectionDragVisualKey = '';
   scene.selectionDragVisualsById.clear();
@@ -163,6 +187,22 @@ export function syncSelectionDragController(
     return;
   }
 
+  // A large overlay uses only immutable layer coordinates for its bounds.
+  // Small selections still need actual Pixi bounds, which can change when a
+  // texture becomes ready without a new layer object.
+  const previous = stablePointSelections.get(scene);
+  const controller = scene.selectionDragController;
+  if (previous && previous.controller === controller && controller.visible &&
+    controller.eventMode === 'static' && controller.cursor === 'pointer' &&
+    scene.selectionDragTargetId === previous.targetId &&
+    controller.position.x === previous.centerX && controller.position.y === previous.centerY &&
+    controller.hitArea === previous.hitArea &&
+    previous.hitArea.x === previous.hitRect.x && previous.hitArea.y === previous.hitRect.y &&
+    previous.hitArea.width === previous.hitRect.width && previous.hitArea.height === previous.hitRect.height &&
+    sameOrderedSelection(previous.selected, selectedDecorations)) {
+    return;
+  }
+
   const visibleSelections = selectedDecorations.filter((deco) => deco.visible !== false);
   const target = visibleSelections[0];
   if (!target) {
@@ -192,6 +232,22 @@ export function syncSelectionDragController(
   scene.selectionDragControllerGraphic.beginFill(0x000000, 0.001);
   scene.selectionDragControllerGraphic.drawRect(hitArea.x, hitArea.y, hitArea.width, hitArea.height);
   scene.selectionDragControllerGraphic.endFill();
+
+  if (shouldUsePointBoundsForSelection(visibleSelections.length)) {
+    stablePointSelections.set(scene, {
+      // The filtered array is privately owned and exactly matches the input
+      // order if no layers were hidden. Otherwise snapshot the full selection.
+      selected: visibleSelections.length === selectedDecorations.length ? visibleSelections : selectedDecorations.slice(),
+      controller,
+      targetId: target.id,
+      centerX: center.x,
+      centerY: center.y,
+      hitArea,
+      hitRect
+    });
+  } else {
+    stablePointSelections.delete(scene);
+  }
 }
 
 export function syncHeadLayerSelection(

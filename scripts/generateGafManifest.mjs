@@ -21,6 +21,7 @@ import {
   validateAtlasAgainstPng
 } from './lib/gafManifestExtract.mjs';
 import { splitGafManifestPayload } from './lib/gafManifestPayload.mjs';
+import { encodeActorFloat32MatrixPool, packGafRuntimeManifest, splitPackedWeaponRuntime } from './lib/gafRuntimePacking.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -29,6 +30,7 @@ const GAFDIR = path.join(root, 'public', 'assets', 'gaf');
 const FALLBACK = path.join(root, 'scripts', 'gafManifest.fallback.json');
 const METADATA_OUT = path.join(root, 'src', 'generated', 'gafManifest.json');
 const RUNTIME_OUT = path.join(root, 'src', 'generated', 'gafRuntimeManifest.json');
+const WEAPON_RUNTIME_OUT = path.join(root, 'src', 'generated', 'gafWeaponRuntimeManifest.json');
 const DECORATION_RUNTIME_OUT = path.join(root, 'src', 'generated', 'gafDecorationRuntimeManifest.json');
 
 const DEC_GAF = path.join(GAFDIR, 'decorations.gaf');
@@ -59,7 +61,10 @@ function writeGeneratedManifests(payload) {
   const { metadata, runtime } = splitGafManifestPayload(payload);
   fs.mkdirSync(path.dirname(METADATA_OUT), { recursive: true });
   const metadataChanged = writeIfChanged(METADATA_OUT, `${JSON.stringify(metadata, null, 2)}\n`);
-  const runtimeChanged = writeIfChanged(RUNTIME_OUT, `${JSON.stringify(runtime)}\n`);
+  const packedRuntime = encodeActorFloat32MatrixPool(packGafRuntimeManifest(runtime));
+  const { startupRuntime, weaponRuntime } = splitPackedWeaponRuntime(packedRuntime);
+  const runtimeChanged = writeIfChanged(RUNTIME_OUT, `${JSON.stringify(startupRuntime)}\n`);
+  const weaponRuntimeChanged = writeIfChanged(WEAPON_RUNTIME_OUT, `${JSON.stringify(weaponRuntime)}\n`);
   const decorationRuntimeChanged = writeIfChanged(
     DECORATION_RUNTIME_OUT,
     `${JSON.stringify(runtime.decorationRuntime ?? null)}\n`
@@ -67,6 +72,7 @@ function writeGeneratedManifests(payload) {
   const actions = [
     `${metadataChanged ? 'Wrote' : 'Unchanged'} ${path.relative(root, METADATA_OUT)}`,
     `${runtimeChanged ? 'Wrote' : 'Unchanged'} ${path.relative(root, RUNTIME_OUT)}`,
+    `${weaponRuntimeChanged ? 'Wrote' : 'Unchanged'} ${path.relative(root, WEAPON_RUNTIME_OUT)}`,
     `${decorationRuntimeChanged ? 'Wrote' : 'Unchanged'} ${path.relative(root, DECORATION_RUNTIME_OUT)}`
   ];
   console.log(`[generate:gaf] ${actions.join('; ')} (${metadata.decorationGafSymbols.length} deco symbols)`);

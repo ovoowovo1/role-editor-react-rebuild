@@ -5,15 +5,41 @@ import type {
   GafElementSerialized,
   GafFrameInstanceSerialized,
   GafSequenceSerialized,
-  GafTimelineSerialized
+  GafTimeline
 } from '../../types/gafRuntime';
 import type { GafAtlasFrame } from '../../types/role';
 import { applyGafAtlasToSprite } from './gafAtlasSprite';
-import { resolveGafFrameOneDisplayList } from './gafFrameDisplayList';
+import { resolveGafFrameOneGeometry } from './gafFrameOneGeometry';
+import { gafFrameInstances } from './gafFrameInstances';
 
 const TYPE_TEXTURE = 'texture';
 const TYPE_TIMELINE = 'timeline';
 type NestedTimelineFrameMode = 'current' | 'first' | 'sequence-relative';
+
+// The generated manifest and its decoded frames are immutable for their
+// lifetime. Cache ordering by frame identity, not by a clip or frame number,
+// so multiple instances (and animation loops) share it without mixing manifests.
+const sortedTimelineFrames = new WeakMap<
+  readonly GafFrameInstanceSerialized[], readonly GafFrameInstanceSerialized[]
+>();
+
+function timelineRenderOrder(
+  frame: readonly GafFrameInstanceSerialized[]
+): readonly GafFrameInstanceSerialized[] {
+  if (frame.length < 2) return frame;
+  const cached = sortedTimelineFrames.get(frame);
+  if (cached) return cached;
+  let ordered = frame;
+  for (let index = 1; index < frame.length; index++) {
+    if (!(frame[index - 1].zIndex <= frame[index].zIndex)) {
+      ordered = [...frame].sort((a, b) => a.zIndex - b.zIndex);
+      break;
+    }
+  }
+  sortedTimelineFrames.set(frame, ordered);
+  return ordered;
+}
+
 
 export type GafMovieClipSpec =
   | { kind: 'atlas'; frames: readonly GafAtlasFrame[] }
@@ -155,7 +181,7 @@ export class GafMovieClip extends Container {
   private _sprite: Sprite | null = null;
 
   private _manifest: GafRuntimeManifest | null = null;
-  private _timeline: GafTimelineSerialized | null = null;
+  private _timeline: GafTimeline | null = null;
   private _textureUrl = '';
   private _alphaMask = false;
   private _hiddenNamedParts = new Set<string>();
@@ -339,8 +365,7 @@ export class GafMovieClip extends Container {
     }
 
     const key = String(this._currentFrame);
-    const raw = tl.frames[key] ?? [];
-    const insts = [...raw].sort((a, b) => a.zIndex - b.zIndex);
+    const insts = timelineRenderOrder(gafFrameInstances(manifest, tl, key));
     const renderedNamedParts = new Set<string>();
 
     for (const inst of insts) {
@@ -404,9 +429,7 @@ export class GafMovieClip extends Container {
 
   private _renderResolvedFrameOne(manifest: GafRuntimeManifest, timelineId: string): void {
     if (this._failedTextures.has(this._textureUrl)) return;
-    const items = resolveGafFrameOneDisplayList(manifest, timelineId, {
-      timelineScale: this._timelineScale
-    });
+    const items = resolveGafFrameOneGeometry(manifest, timelineId, this._timelineScale);
 
     for (const item of items) {
       const element = manifest.elements[item.elementId];

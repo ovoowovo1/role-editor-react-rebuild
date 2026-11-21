@@ -110,8 +110,8 @@ export function useEditorSessionController({
   const addReferenceImage = useCallback(async (file: File) => {
     try {
       clearSelection();
-      await reference.addImageFile(file);
-      setStatus(t('status.referenceImageAdded', { name: file.name }));
+      const imageId = await reference.addImageFile(file);
+      if (imageId) setStatus(t('status.referenceImageAdded', { name: file.name }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setStatus(message);

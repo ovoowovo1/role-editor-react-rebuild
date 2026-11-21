@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { referenceImageLayerToken } from '../../types/referenceImage';
+import { sameRole } from './editorHistoryTypes';
+import { applyRoleHistoryPatch, createHistoryIdPool, makeBaseRoleHistoryEntry } from './editorRoleHistoryPatch';
+import { cloneRole, syncGroups, touch } from './editorRoleUtils';
+import { layerIdsForRole } from './layerOrdering';
+import { reconcileReferenceImageLayerOrder } from './referenceImageModel';
 import { makeDecorationGroup, makeDecorationLayer, makeRoleDocument } from '../../test/roleFixtures';
 import {
+  applyGroupMetadataUpdate,
   createGroupFromSelection,
   groupMembershipSignature,
   hasUngroupedSelected,
@@ -9,7 +16,8 @@ import {
   setGroupVisibleInRole,
   toggleGroupCollapsedInRole,
   ungroupInRole,
-  ungroupedSelectedIds
+  ungroupedSelectedIds,
+  type GroupMetadataUpdate
 } from './editorGroupMutations';
 
 function groupedRole() {
@@ -99,6 +107,71 @@ describe('editor group mutations', () => {
 
     expect(role.groups.find((group) => group.id === 'child')).toMatchObject({ collapsed: true, name: 'Details' });
     expect(role.groups.find((group) => group.id === 'parent')?.name).toBe('parent');
+  });
+
+  it('shares decorations in sequential group metadata edits, preserving normalized output and the base history codec', () => {
+    const before = syncGroups(groupedRole());
+    const collapse: GroupMetadataUpdate = { type: 'toggle-collapsed', groupId: 'parent' };
+    const rename: GroupMetadataUpdate = { type: 'rename', groupId: 'child', name: '  Details  ' };
+    const collapsed = applyGroupMetadataUpdate(before, collapse);
+    const renamed = applyGroupMetadataUpdate(collapsed, rename);
+    expect(renamed.groups[0].collapsed).toBe(true);
+    expect(renamed.groups[1].name).toBe('Details');
+
+    for (const [current, next, operation] of [[before, collapsed, collapse], [collapsed, renamed, rename]] as const) {
+      const oldDraft = cloneRole(current);
+      if (operation.type === 'toggle-collapsed') toggleGroupCollapsedInRole(oldDraft, operation.groupId);
+      else renameGroupInRole(oldDraft, operation.groupId, operation.name);
+      const old = { ...syncGroups(touch(oldDraft)), updatedAt: next.updatedAt };
+      expect(next).toEqual(old);
+      expect(next.decorations).toBe(current.decorations);
+      expect(next.headLayer).toBe(current.headLayer);
+      expect(next.parts).toBe(current.parts);
+      expect(next.partFrames).toBe(current.partFrames);
+
+      const baselineEntry = makeBaseRoleHistoryEntry(current, old, createHistoryIdPool());
+      const entry = makeBaseRoleHistoryEntry(current, next, createHistoryIdPool());
+      expect(entry).toEqual(baselineEntry);
+      if (!entry) throw new Error('Expected a base history entry.');
+      expect(entry.patch.decorations.order).toBeNull();
+      expect(entry.patch.decorations.fields).toHaveLength(0);
+      const undone = applyRoleHistoryPatch(next, entry.patch, 'before');
+      const redone = applyRoleHistoryPatch(undone, entry.patch, 'after');
+      expect(undone).toEqual(current);
+      expect(redone).toEqual(next);
+
+      const roleOrder = layerIdsForRole(current).reverse();
+      const ref = referenceImageLayerToken('ref');
+      const imageStack = [roleOrder[0], ref, ...roleOrder.slice(1)];
+      for (const snapshot of [next, undone, redone]) {
+        expect(reconcileReferenceImageLayerOrder(imageStack, layerIdsForRole(snapshot).reverse(), new Set(['ref'])))
+          .toEqual(imageStack);
+      }
+    }
+  });
+
+  it('preserves the history no-op boundary and legacy group normalization', () => {
+    const before = syncGroups(groupedRole());
+    for (const update of [
+      { type: 'rename', groupId: 'child', name: '  ' },
+      { type: 'rename', groupId: 'child', name: 'child' },
+      { type: 'toggle-collapsed', groupId: 'missing' }
+    ] as const) {
+      const after = applyGroupMetadataUpdate(before, update);
+      expect(sameRole(before, after)).toBe(true);
+      expect(makeBaseRoleHistoryEntry(before, after, createHistoryIdPool())).toBeNull();
+    }
+
+    const legacy = makeRoleDocument({
+      decorations: ['', 'a', 'b'].map((id) => makeDecorationLayer(id)),
+      groups: [makeDecorationGroup('legacy', { members: undefined, itemIds: ['', 'a', 'b'] })]
+    });
+    const oldDraft = cloneRole(legacy);
+    renameGroupInRole(oldDraft, 'legacy', 'Legacy');
+    const afterLegacy = applyGroupMetadataUpdate(legacy, { type: 'rename', groupId: 'legacy', name: 'Legacy' });
+    expect(afterLegacy).toEqual({ ...syncGroups(touch(oldDraft)), updatedAt: afterLegacy.updatedAt });
+    expect(afterLegacy.groups[0].itemIds).toEqual(['a', 'b']);
+    expect(afterLegacy.groups[0].members).toEqual([{ type: 'layer', id: 'a' }, { type: 'layer', id: 'b' }]);
   });
 
   it('updates visibility recursively for nested groups and their layers', () => {
