@@ -94,7 +94,15 @@ export function loadAutoCreateWasmExports(): Promise<AutoCreateWasmExports | nul
     if (typeof WebAssembly !== 'object' || typeof fetch !== 'function') return null;
     try {
       const response = await fetch(wasmUrl);
-      if (!response.ok) return null;
+      if (!response.ok) {
+        console.warn(`[AutoCreateTwrole] Failed to fetch Wasm (${response.status} ${response.statusText}) at ${wasmUrl}; falling back to TypeScript engine.`);
+        return null;
+      }
+      const contentType = response.headers?.get('content-type')?.toLowerCase() ?? '';
+      if (contentType.includes('text/html')) {
+        console.warn(`[AutoCreateTwrole] Received HTML instead of Wasm at ${wasmUrl} (SPA fallback); falling back to TypeScript engine.`);
+        return null;
+      }
       let instance: WebAssembly.Instance;
       if (typeof WebAssembly.instantiateStreaming === 'function') {
         try {
@@ -108,7 +116,8 @@ export function loadAutoCreateWasmExports(): Promise<AutoCreateWasmExports | nul
         ({ instance } = await WebAssembly.instantiate(bytes, {}));
       }
       return instance.exports as unknown as AutoCreateWasmExports;
-    } catch {
+    } catch (error) {
+      console.warn('[AutoCreateTwrole] Failed to load Wasm module; falling back to TypeScript engine.', error);
       return null;
     }
   })();

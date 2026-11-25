@@ -231,7 +231,8 @@ async function runAutoCreateTwroleInternal({
       rejected: engine.rejected,
       pruned: engine.pruned,
       replaced: engine.replaced,
-      warnings: sourceLoad.warnings
+      warnings: sourceLoad.warnings,
+      engine: wasmEngine ? 'wasm' : 'ts'
     };
   };
   const createResult = async (): Promise<AutoCreateTwroleResult> => {

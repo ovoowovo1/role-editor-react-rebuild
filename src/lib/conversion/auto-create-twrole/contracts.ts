@@ -204,6 +204,7 @@ export interface AutoCreateTwroleResult {
   pruned: number;
   replaced: number;
   warnings: string[];
+  engine?: 'wasm' | 'ts';
 }
 
 export interface AutoCreateTwroleSnapshotTile {

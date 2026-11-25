@@ -130,6 +130,9 @@ test('real Chromium Worker completes, checkpoints on stop, and resumes determini
       decoOptions,
       settings
     });
+    if (uninterrupted.engine !== 'wasm') {
+      throw new Error(`Expected AutoCreate worker to use Wasm engine, got ${String(uninterrupted.engine)}.`);
+    }
 
     const blankRole = makeRoleDocument({ decorations: [], groups: [] });
     const preview = await renderAutoCreateWorkspacePreview({ role: blankRole, result: uninterrupted });
