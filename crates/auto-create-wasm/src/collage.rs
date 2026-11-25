@@ -57,11 +57,11 @@ pub struct SourceEntry {
 }
 
 #[derive(Clone, Copy, Default)]
-struct MemStat {
-    trials: i32,
-    accepted: i32,
-    gain_sum: f64,
-    ema_gain: f64,
+pub struct MemStat {
+    pub trials: i32,
+    pub accepted: i32,
+    pub gain_sum: f64,
+    pub ema_gain: f64,
 }
 
 pub struct ExperienceMemory {
@@ -128,6 +128,30 @@ impl ExperienceMemory {
         }
         c.gain_sum += gain_mse;
         c.ema_gain = c.ema_gain * 0.9 + gain_mse * 0.1;
+    }
+
+    pub fn source_stats_slice(&self) -> &[MemStat] {
+        &self.source_stats
+    }
+
+    pub fn color_stats_len(&self) -> usize {
+        self.color_stats.len()
+    }
+
+    pub fn color_stats_iter(&self) -> impl Iterator<Item = (u64, MemStat)> + '_ {
+        self.color_stats.iter().map(|(&k, &v)| (k, v))
+    }
+
+    pub fn restore_stats(&mut self, source_stats: &[MemStat], color_stats: &[(u64, MemStat)]) {
+        let copy_len = self.source_stats.len().min(source_stats.len());
+        self.source_stats[..copy_len].copy_from_slice(&source_stats[..copy_len]);
+        for s in &mut self.source_stats[copy_len..] {
+            *s = MemStat::default();
+        }
+        self.color_stats.clear();
+        for &(k, v) in color_stats {
+            self.color_stats.insert(k, v);
+        }
     }
 }
 
@@ -1353,5 +1377,103 @@ impl CollageEngine {
             self.recompute_errors();
         }
         did_work
+    }
+
+    pub fn restore_tiles(
+        &mut self,
+        source_ids: &[u32],
+        params: &[f64],
+        accepted: u32,
+        rejected: u32,
+        pruned: u32,
+        replaced: u32,
+    ) -> bool {
+        self.tiles.clear();
+        self.spatial_index = TileSpatialIndex::new(self.settings.error_cell_size * 2);
+        self.canvas.fill(0.0);
+
+        let count = source_ids.len();
+        let wu = self.width as usize;
+        for i in 0..count {
+            let source_id = source_ids[i] as usize;
+            if source_id >= self.sources.len() {
+                return false;
+            }
+            let p = i * 6;
+            let center_x = params[p];
+            let center_y = params[p + 1];
+            let sx_internal = params[p + 2];
+            let sy_internal = params[p + 3];
+            let r_deg = params[p + 4];
+            let gain_mse = params[p + 5];
+
+            let (rgba, bbox) = {
+                let s = &self.sources[source_id];
+                let rgba = self.cache.get_or_render(
+                    source_id,
+                    &s.mipmap,
+                    s.thumb_w,
+                    s.thumb_h,
+                    sx_internal,
+                    sy_internal,
+                    r_deg,
+                    true,
+                );
+                let left = (center_x - (rgba.width as f64) * 0.5).round() as i32;
+                let top = (center_y - (rgba.height as f64) * 0.5).round() as i32;
+                let bbox = [left, top, left + rgba.width, top + rgba.height];
+                (rgba, bbox)
+            };
+
+            let mode = self.containment_mode(&rgba, bbox);
+            if mode == 0 {
+                return false;
+            }
+            if mode == 2 {
+                let [left, top, _, _] = bbox;
+                let rw = rgba.width as usize;
+                let rh = rgba.height as usize;
+                for ly in 0..rh {
+                    let start = rgba.alpha_row_start[ly];
+                    let end = rgba.alpha_row_end[ly];
+                    if end <= start {
+                        continue;
+                    }
+                    let y = (top + ly as i32) as usize;
+                    let mut src_off = (ly * rw + start as usize) * 4;
+                    let mut pixel = y * wu + (left + start) as usize;
+                    for _lx in start..end {
+                        if rgba.data[src_off + 3] > 0 && self.placement_mask[pixel] == 0 {
+                            return false;
+                        }
+                        src_off += 4;
+                        pixel += 1;
+                    }
+                }
+            }
+
+            self.alpha_over_full(bbox, &rgba);
+            let idx = self.tiles.len();
+            self.tiles.push(TileRecord {
+                active: true,
+                source_id,
+                sx_internal,
+                sy_internal,
+                r_deg,
+                bbox,
+                center_x,
+                center_y,
+                gain_mse,
+            });
+            self.spatial_index.update(idx, bbox);
+        }
+
+        self.active_tile_count = self.tiles.len() as u32;
+        self.accepted = accepted;
+        self.rejected = rejected;
+        self.pruned = pruned;
+        self.replaced = replaced;
+        self.recompute_errors();
+        true
     }
 }

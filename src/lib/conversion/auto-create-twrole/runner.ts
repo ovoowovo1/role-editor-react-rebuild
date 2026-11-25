@@ -149,7 +149,7 @@ async function runAutoCreateTwroleInternal({
 
   const fallbackSeed = settings.seed > 0 ? settings.seed : Math.floor(Date.now() % 2147483647);
   let seed = canResume && resumeSnapshot ? resumeSnapshot.seed : fallbackSeed;
-  const wasmExports = !canResume ? await loadAutoCreateWasmExports() : null;
+  const wasmExports = await loadAutoCreateWasmExports();
   let rng = new SeededRandom(seed);
 
   const createTsCollage = (collageRng: SeededRandom) => new ColorLearningCollage(
@@ -164,7 +164,7 @@ async function runAutoCreateTwroleInternal({
     settings,
     diagnostics
   );
-  const createWasmEngine = () => new WasmCollageEngine(
+  const createWasmEngine = (engineSeed: number) => new WasmCollageEngine(
     wasmExports!,
     sourceLoad.sources,
     target.straight,
@@ -172,29 +172,41 @@ async function runAutoCreateTwroleInternal({
     target.placementMask,
     target.width,
     target.height,
-    seed,
+    engineSeed,
     settings,
     diagnostics
   );
 
-  const wasmEngine: WasmCollageEngine | null = wasmExports
-    ? (diagnostics ? diagnostics.measure('engineInit', createWasmEngine) : createWasmEngine())
+  let wasmEngine: WasmCollageEngine | null = wasmExports
+    ? (diagnostics ? diagnostics.measure('engineInit', () => createWasmEngine(seed)) : createWasmEngine(seed))
     : null;
   let tsCollage: ColorLearningCollage | null = wasmEngine
     ? null
     : (diagnostics ? diagnostics.measure('engineInit', () => createTsCollage(rng)) : createTsCollage(rng));
 
   let didResume = false;
-  if (canResume && resumeSnapshot && tsCollage) {
-    if (tsCollage.restoreFromSnapshot(resumeSnapshot)) {
-      rng.restore(resumeSnapshot.rngState, resumeSnapshot.rngSpareNormal);
-      didResume = true;
-    } else {
-      seed = fallbackSeed;
-      rng = new SeededRandom(seed);
-      tsCollage = diagnostics
-        ? diagnostics.measure('engineInit', () => createTsCollage(rng))
-        : createTsCollage(rng);
+  if (canResume && resumeSnapshot) {
+    if (wasmEngine) {
+      if (wasmEngine.restoreFromSnapshot(resumeSnapshot)) {
+        didResume = true;
+      } else {
+        wasmEngine.destroy();
+        seed = fallbackSeed;
+        wasmEngine = diagnostics
+          ? diagnostics.measure('engineInit', () => createWasmEngine(seed))
+          : createWasmEngine(seed);
+      }
+    } else if (tsCollage) {
+      if (tsCollage.restoreFromSnapshot(resumeSnapshot)) {
+        rng.restore(resumeSnapshot.rngState, resumeSnapshot.rngSpareNormal);
+        didResume = true;
+      } else {
+        seed = fallbackSeed;
+        rng = new SeededRandom(seed);
+        tsCollage = diagnostics
+          ? diagnostics.measure('engineInit', () => createTsCollage(rng))
+          : createTsCollage(rng);
+      }
     }
   }
 

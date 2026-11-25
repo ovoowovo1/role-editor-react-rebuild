@@ -2,16 +2,19 @@ import type { DecorationLayer } from '../../../types/role';
 import {
   AUTO_CREATE_SNAPSHOT_VERSION,
   DEFAULT_ROLE_EXPORT_MAX_SIDE,
+  MEMORY_VERSION,
   autoCreateSnapshotSettingsSignature,
   type AutoCreateTwroleLegacyDecoEntry,
   type AutoCreateTwroleSettings,
   type AutoCreateTwroleSnapshot
 } from './contracts';
-import type { AutoCreateCanvas, SourceTile, TargetImageData } from './internalTypes';
-import { buildDecoDraft, decorationFromDraft } from './candidateSearch';
+import type { AutoCreateCanvas, BBox, MemoryStat, SourceTile, TargetImageData } from './internalTypes';
+import { buildDecoDraft, canonicalCandidateTransform, decorationFromDraft } from './candidateSearch';
 import type { AutoCreateDiagnosticsCollector } from './diagnostics';
+import { ExperienceMemory } from './experienceMemory';
 import { canvasToDataUrl, createCanvas, get2d } from './platform';
 import { sourceSignatureForTiles } from './sourcePipeline';
+import { variantGeometry } from './variantCache';
 import wasmUrl from './wasm/auto_create_wasm.wasm?url';
 
 export interface AutoCreateWasmExports {
@@ -54,6 +57,33 @@ export interface AutoCreateWasmExports {
   engine_write_preview_rgba(ptr: number, outPtr: number): void;
   engine_export_tile_count(ptr: number): number;
   engine_export_tiles(ptr: number, outSourceIdsPtr: number, outF64ParamsPtr: number): void;
+  engine_rng_state(ptr: number): number;
+  engine_rng_has_spare(ptr: number): number;
+  engine_rng_spare(ptr: number): number;
+  engine_set_rng(ptr: number, state: number, hasSpare: number, spare: number): void;
+  engine_export_source_stats(ptr: number, outCountsPtr: number, outFloatsPtr: number): void;
+  engine_color_stat_count(ptr: number): number;
+  engine_export_color_stats(ptr: number, outKeysPtr: number, outCountsPtr: number, outFloatsPtr: number): void;
+  engine_restore_memory(
+    ptr: number,
+    nSources: number,
+    srcCountsPtr: number,
+    srcFloatsPtr: number,
+    nColor: number,
+    colorKeysPtr: number,
+    colorCountsPtr: number,
+    colorFloatsPtr: number
+  ): void;
+  engine_restore_tiles(
+    ptr: number,
+    count: number,
+    sourceIdsPtr: number,
+    paramsPtr: number,
+    accepted: number,
+    rejected: number,
+    pruned: number,
+    replaced: number
+  ): number;
 }
 
 let cachedWasmPromise: Promise<AutoCreateWasmExports | null> | null = null;
@@ -317,6 +347,297 @@ export class WasmCollageEngine {
     }
   }
 
+  private exportExperienceState(): string {
+    const nSources = this.sources.length;
+    const sourceStats: Record<string, MemoryStat> = {};
+    if (nSources > 0) {
+      const countsPtr = this.wasm.wasm_alloc(nSources * 2 * 4);
+      const floatsPtr = this.wasm.wasm_alloc(nSources * 2 * 8);
+      try {
+        this.wasm.engine_export_source_stats(this.ptr, countsPtr, floatsPtr);
+        const counts = new Int32Array(this.wasm.memory.buffer, countsPtr, nSources * 2);
+        const floats = new Float64Array(this.wasm.memory.buffer, floatsPtr, nSources * 2);
+        for (let i = 0; i < nSources; i += 1) {
+          sourceStats[this.sources[i].code] = {
+            trials: counts[i * 2],
+            accepted: counts[i * 2 + 1],
+            gain_sum: floats[i * 2],
+            ema_gain: floats[i * 2 + 1]
+          };
+        }
+      } finally {
+        this.wasm.wasm_dealloc(countsPtr, nSources * 2 * 4);
+        this.wasm.wasm_dealloc(floatsPtr, nSources * 2 * 8);
+      }
+    }
+
+    const colorCount = this.wasm.engine_color_stat_count(this.ptr);
+    const colorStats: Record<string, MemoryStat> = {};
+    if (colorCount > 0) {
+      const keysPtr = this.wasm.wasm_alloc(colorCount * 8);
+      const countsPtr = this.wasm.wasm_alloc(colorCount * 2 * 4);
+      const floatsPtr = this.wasm.wasm_alloc(colorCount * 2 * 8);
+      try {
+        this.wasm.engine_export_color_stats(this.ptr, keysPtr, countsPtr, floatsPtr);
+        const keyWords = new Uint32Array(this.wasm.memory.buffer, keysPtr, colorCount * 2);
+        const counts = new Int32Array(this.wasm.memory.buffer, countsPtr, colorCount * 2);
+        const floats = new Float64Array(this.wasm.memory.buffer, floatsPtr, colorCount * 2);
+        for (let i = 0; i < colorCount; i += 1) {
+          const lo = keyWords[i * 2];
+          const sourceIdx = lo >>> 16;
+          const source = this.sources[sourceIdx];
+          if (!source) continue;
+          const r = (lo >>> 8) & 0xf;
+          const g = (lo >>> 4) & 0xf;
+          const b = lo & 0xf;
+          colorStats[`${source.code}|${r},${g},${b}`] = {
+            trials: counts[i * 2],
+            accepted: counts[i * 2 + 1],
+            gain_sum: floats[i * 2],
+            ema_gain: floats[i * 2 + 1]
+          };
+        }
+      } finally {
+        this.wasm.wasm_dealloc(keysPtr, colorCount * 8);
+        this.wasm.wasm_dealloc(countsPtr, colorCount * 2 * 4);
+        this.wasm.wasm_dealloc(floatsPtr, colorCount * 2 * 8);
+      }
+    }
+
+    const sortStats = (stats: Record<string, MemoryStat>): Record<string, MemoryStat> =>
+      Object.fromEntries(Object.keys(stats).sort().map((key) => [key, stats[key]]));
+
+    return JSON.stringify({
+      version: MEMORY_VERSION,
+      source_stats: sortStats(sourceStats),
+      color_stats: sortStats(colorStats)
+    });
+  }
+
+  restoreFromSnapshot(snapshot: AutoCreateTwroleSnapshot): boolean {
+    const memoryValidator = new ExperienceMemory('', this.sources, true);
+    const restoredExperience = memoryValidator.prepareSnapshotState(snapshot.experienceState);
+    if (!restoredExperience) return false;
+
+    const count = snapshot.tiles.length;
+    const sourceIds = new Uint32Array(count);
+    const params = new Float64Array(count * 6);
+
+    for (let i = 0; i < count; i += 1) {
+      const tile = snapshot.tiles[i];
+      if (
+        !tile ||
+        typeof tile !== 'object' ||
+        !tile.active ||
+        !Number.isInteger(tile.sourceId) ||
+        !Number.isFinite(tile.sxInternal) ||
+        !Number.isFinite(tile.syInternal) ||
+        Math.abs(tile.sxInternal) < 1.0e-9 ||
+        Math.abs(tile.syInternal) < 1.0e-9 ||
+        !Number.isFinite(tile.rDeg) ||
+        Math.abs(tile.rDeg) > 180 ||
+        !Number.isFinite(tile.centerX) ||
+        !Number.isFinite(tile.centerY) ||
+        !Number.isFinite(tile.gainMse) ||
+        !tile.decoration ||
+        typeof tile.decoration !== 'object' ||
+        !tile.legacy ||
+        typeof tile.legacy !== 'object' ||
+        !Array.isArray(tile.bbox) ||
+        tile.bbox.length !== 4 ||
+        tile.bbox.some((value) => !Number.isInteger(value))
+      ) return false;
+
+      const source = this.sources[tile.sourceId];
+      if (!source || source.idx !== tile.sourceId) return false;
+
+      const canonical = canonicalCandidateTransform(
+        source,
+        tile.sxInternal,
+        tile.syInternal,
+        tile.rDeg,
+        this.width,
+        this.height
+      );
+      if (
+        Math.abs(canonical.sxInternal - tile.sxInternal) > 1.0e-12 ||
+        Math.abs(canonical.syInternal - tile.syInternal) > 1.0e-12 ||
+        canonical.rDeg !== tile.rDeg ||
+        canonical.sxInternal === 0 ||
+        canonical.syInternal === 0
+      ) return false;
+
+      const geometry = variantGeometry(source, tile.sxInternal, tile.syInternal, tile.rDeg);
+      if (
+        !Number.isFinite(geometry.width) ||
+        !Number.isFinite(geometry.height) ||
+        geometry.width > this.width * 1.5 ||
+        geometry.height > this.height * 1.5
+      ) return false;
+
+      const left = Math.round(tile.centerX - geometry.width / 2);
+      const top = Math.round(tile.centerY - geometry.height / 2);
+      const right = left + geometry.width;
+      const bottom = top + geometry.height;
+      if (tile.centerX !== left + geometry.width / 2 || tile.centerY !== top + geometry.height / 2) return false;
+      const bbox: BBox = [left, top, right, bottom];
+      if (bbox.some((value, index) => value !== tile.bbox[index])) return false;
+
+      const draft = buildDecoDraft(
+        source,
+        tile.centerX,
+        tile.centerY,
+        tile.sxInternal,
+        tile.syInternal,
+        tile.rDeg,
+        this.width,
+        this.height
+      );
+      const decorationMatches =
+        typeof tile.decoration.id === 'string' &&
+        tile.decoration.id.length > 0 &&
+        tile.decoration.code === draft.code &&
+        tile.decoration.assetId === draft.assetId &&
+        tile.decoration.name === draft.name &&
+        tile.decoration.x === draft.x &&
+        tile.decoration.y === draft.y &&
+        tile.decoration.scaleX === draft.scaleX &&
+        tile.decoration.scaleY === draft.scaleY &&
+        tile.decoration.rotation === draft.rotation &&
+        tile.decoration.visible === true &&
+        tile.decoration.opacity === 1;
+      const legacyMatches =
+        tile.legacy.c === draft.legacy.c &&
+        tile.legacy.x === draft.legacy.x &&
+        tile.legacy.y === draft.legacy.y &&
+        tile.legacy.sx === draft.legacy.sx &&
+        tile.legacy.sy === draft.legacy.sy &&
+        tile.legacy.r === draft.legacy.r;
+      if (!decorationMatches || !legacyMatches) return false;
+
+      sourceIds[i] = tile.sourceId >>> 0;
+      const p = i * 6;
+      params[p] = tile.centerX;
+      params[p + 1] = tile.centerY;
+      params[p + 2] = tile.sxInternal;
+      params[p + 3] = tile.syInternal;
+      params[p + 4] = tile.rDeg;
+      params[p + 5] = tile.gainMse;
+    }
+
+    const codeToIndex = new Map<string, number>();
+    for (let i = 0; i < this.sources.length; i += 1) {
+      codeToIndex.set(this.sources[i].code, i);
+    }
+
+    const nSources = this.sources.length;
+    const srcCountsPtr = nSources > 0 ? this.wasm.wasm_alloc(nSources * 2 * 4) : 0;
+    const srcFloatsPtr = nSources > 0 ? this.wasm.wasm_alloc(nSources * 2 * 8) : 0;
+    const colorEntries: Array<{ lo: number; stat: MemoryStat }> = [];
+    for (const [key, stat] of Object.entries(restoredExperience.color_stats)) {
+      const sep = key.lastIndexOf('|');
+      if (sep <= 0) continue;
+      const sourceIdx = codeToIndex.get(key.slice(0, sep));
+      if (sourceIdx === undefined) continue;
+      const parts = key.slice(sep + 1).split(',');
+      if (parts.length !== 3) continue;
+      const r = Number(parts[0]);
+      const g = Number(parts[1]);
+      const b = Number(parts[2]);
+      if (
+        !Number.isInteger(r) || r < 0 || r > 15 ||
+        !Number.isInteger(g) || g < 0 || g > 15 ||
+        !Number.isInteger(b) || b < 0 || b > 15
+      ) continue;
+      colorEntries.push({
+        lo: ((sourceIdx << 16) | (r << 8) | (g << 4) | b) >>> 0,
+        stat
+      });
+    }
+
+    const nColor = colorEntries.length;
+    const colorKeysPtr = nColor > 0 ? this.wasm.wasm_alloc(nColor * 8) : 0;
+    const colorCountsPtr = nColor > 0 ? this.wasm.wasm_alloc(nColor * 2 * 4) : 0;
+    const colorFloatsPtr = nColor > 0 ? this.wasm.wasm_alloc(nColor * 2 * 8) : 0;
+    const tileIdsPtr = count > 0 ? this.wasm.wasm_alloc(count * 4) : 0;
+    const tileParamsPtr = count > 0 ? this.wasm.wasm_alloc(count * 6 * 8) : 0;
+
+    try {
+      if (nSources > 0) {
+        const sc = new Int32Array(this.wasm.memory.buffer, srcCountsPtr, nSources * 2);
+        const sf = new Float64Array(this.wasm.memory.buffer, srcFloatsPtr, nSources * 2);
+        for (let i = 0; i < nSources; i += 1) {
+          const st = restoredExperience.source_stats[this.sources[i].code];
+          if (st) {
+            sc[i * 2] = st.trials;
+            sc[i * 2 + 1] = st.accepted;
+            sf[i * 2] = st.gain_sum;
+            sf[i * 2 + 1] = st.ema_gain;
+          }
+        }
+      }
+
+      if (nColor > 0) {
+        const ck = new Uint32Array(this.wasm.memory.buffer, colorKeysPtr, nColor * 2);
+        const cc = new Int32Array(this.wasm.memory.buffer, colorCountsPtr, nColor * 2);
+        const cf = new Float64Array(this.wasm.memory.buffer, colorFloatsPtr, nColor * 2);
+        for (let i = 0; i < nColor; i += 1) {
+          const entry = colorEntries[i];
+          ck[i * 2] = entry.lo;
+          ck[i * 2 + 1] = 0;
+          cc[i * 2] = entry.stat.trials;
+          cc[i * 2 + 1] = entry.stat.accepted;
+          cf[i * 2] = entry.stat.gain_sum;
+          cf[i * 2 + 1] = entry.stat.ema_gain;
+        }
+      }
+
+      if (count > 0) {
+        new Uint32Array(this.wasm.memory.buffer, tileIdsPtr, count).set(sourceIds);
+        new Float64Array(this.wasm.memory.buffer, tileParamsPtr, count * 6).set(params);
+      }
+
+      this.wasm.engine_restore_memory(
+        this.ptr,
+        nSources,
+        srcCountsPtr,
+        srcFloatsPtr,
+        nColor,
+        colorKeysPtr,
+        colorCountsPtr,
+        colorFloatsPtr
+      );
+      const restored = this.wasm.engine_restore_tiles(
+        this.ptr,
+        count,
+        tileIdsPtr,
+        tileParamsPtr,
+        snapshot.accepted >>> 0,
+        snapshot.rejected >>> 0,
+        snapshot.pruned >>> 0,
+        snapshot.replaced >>> 0
+      ) !== 0;
+      if (!restored) return false;
+      this.wasm.engine_set_rng(
+        this.ptr,
+        snapshot.rngState >>> 0,
+        snapshot.rngSpareNormal !== null ? 1 : 0,
+        snapshot.rngSpareNormal ?? 0
+      );
+      this.canvasRevision += 1;
+      this.refreshStats();
+      return true;
+    } finally {
+      if (srcCountsPtr) this.wasm.wasm_dealloc(srcCountsPtr, nSources * 2 * 4);
+      if (srcFloatsPtr) this.wasm.wasm_dealloc(srcFloatsPtr, nSources * 2 * 8);
+      if (colorKeysPtr) this.wasm.wasm_dealloc(colorKeysPtr, nColor * 8);
+      if (colorCountsPtr) this.wasm.wasm_dealloc(colorCountsPtr, nColor * 2 * 4);
+      if (colorFloatsPtr) this.wasm.wasm_dealloc(colorFloatsPtr, nColor * 2 * 8);
+      if (tileIdsPtr) this.wasm.wasm_dealloc(tileIdsPtr, count * 4);
+      if (tileParamsPtr) this.wasm.wasm_dealloc(tileParamsPtr, count * 6 * 8);
+    }
+  }
+
   createSnapshot(
     step: number,
     totalSteps: number,
@@ -327,6 +648,64 @@ export class WasmCollageEngine {
     warnings: string[],
     signatures?: Pick<AutoCreateTwroleSnapshot, 'sourceSignature' | 'settingsSignature'>
   ): AutoCreateTwroleSnapshot {
+    const count = this.wasm.engine_export_tile_count(this.ptr);
+    const tiles: AutoCreateTwroleSnapshot['tiles'] = [];
+    if (count > 0) {
+      const idsPtr = this.wasm.wasm_alloc(count * 4);
+      const paramsPtr = this.wasm.wasm_alloc(count * 6 * 8);
+      try {
+        this.wasm.engine_export_tiles(this.ptr, idsPtr, paramsPtr);
+        const ids = new Uint32Array(this.wasm.memory.buffer, idsPtr, count);
+        const params = new Float64Array(this.wasm.memory.buffer, paramsPtr, count * 6);
+        for (let i = 0; i < count; i += 1) {
+          const sourceId = ids[i];
+          const source = this.sources[sourceId];
+          const p = i * 6;
+          const centerX = params[p];
+          const centerY = params[p + 1];
+          const sxInternal = params[p + 2];
+          const syInternal = params[p + 3];
+          const rDeg = params[p + 4];
+          const gainMse = params[p + 5];
+          const geom = variantGeometry(source, sxInternal, syInternal, rDeg);
+          const left = Math.round(centerX - geom.width / 2);
+          const top = Math.round(centerY - geom.height / 2);
+          const bbox: BBox = [left, top, left + geom.width, top + geom.height];
+          const draft = buildDecoDraft(
+            source,
+            centerX,
+            centerY,
+            sxInternal,
+            syInternal,
+            rDeg,
+            this.width,
+            this.height
+          );
+          tiles.push({
+            active: true,
+            sourceId,
+            sxInternal,
+            syInternal,
+            rDeg,
+            centerX,
+            centerY,
+            bbox,
+            decoration: decorationFromDraft(draft),
+            legacy: draft.legacy,
+            gainMse
+          });
+        }
+      } finally {
+        this.wasm.wasm_dealloc(idsPtr, count * 4);
+        this.wasm.wasm_dealloc(paramsPtr, count * 6 * 8);
+      }
+    }
+
+    const rngState = this.wasm.engine_rng_state(this.ptr) >>> 0;
+    const rngSpareNormal = this.wasm.engine_rng_has_spare(this.ptr) !== 0
+      ? this.wasm.engine_rng_spare(this.ptr)
+      : null;
+
     return {
       version: AUTO_CREATE_SNAPSHOT_VERSION,
       targetWidth: target.width,
@@ -337,19 +716,19 @@ export class WasmCollageEngine {
       sourceSignature: signatures?.sourceSignature ?? sourceSignatureForTiles(this.sources),
       targetSignature,
       settingsSignature: signatures?.settingsSignature ?? autoCreateSnapshotSettingsSignature(this.settings),
-      experienceState: '{"version":1,"source_stats":{},"color_stats":{}}',
+      experienceState: this.exportExperienceState(),
       step: Math.max(0, Math.round(step)),
       totalSteps: Math.max(1, Math.round(totalSteps)),
       finalPruneStep: Math.max(0, Math.round(finalPruneStep)),
       seed,
-      rngState: 1,
-      rngSpareNormal: null,
+      rngState,
+      rngSpareNormal,
       accepted: this._accepted,
       rejected: this._rejected,
       pruned: this._pruned,
       replaced: this._replaced,
       mse: this.currentMse(),
-      tiles: [],
+      tiles,
       warnings: [...warnings]
     };
   }

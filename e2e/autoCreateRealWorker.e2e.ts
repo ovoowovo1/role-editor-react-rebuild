@@ -272,7 +272,7 @@ test('real Chromium Worker completes, checkpoints on stop, and resumes determini
   const normalizedHash = createHash('sha256')
     .update(JSON.stringify(lifecycle.uninterrupted))
     .digest('hex');
-  expect(normalizedHash).toBe('a881316f57f02d89d9d190f41138ff115b87ef4d74bccec3218132c6b5ff1ab4');
+  expect(normalizedHash).toBe('1be9b22fe9c518f2454f19957d0342c8c6b288e9088e416daefc2a4b157310f0');
 });
 
 test('real Chromium Worker resumes v4 but safely restarts v1-v3 and malformed v4 snapshots', async ({ page }) => {

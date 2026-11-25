@@ -4,7 +4,7 @@ mod rng;
 mod variant_cache;
 
 use core::slice;
-use crate::collage::{CollageEngine, EngineSettings};
+use crate::collage::{CollageEngine, EngineSettings, MemStat};
 
 #[no_mangle]
 pub extern "C" fn wasm_alloc(bytes: usize) -> *mut u8 {
@@ -230,5 +230,138 @@ pub unsafe extern "C" fn engine_export_tiles(
         params[p + 4] = t.r_deg;
         params[p + 5] = t.gain_mse;
         k += 1;
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_rng_state(ptr: *mut CollageEngine) -> u32 {
+    (&*ptr).rng.state
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_rng_has_spare(ptr: *mut CollageEngine) -> u32 {
+    if (&*ptr).rng.spare_normal.is_some() { 1 } else { 0 }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_rng_spare(ptr: *mut CollageEngine) -> f64 {
+    (&*ptr).rng.spare_normal.unwrap_or(0.0)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_set_rng(ptr: *mut CollageEngine, state: u32, has_spare: u32, spare: f64) {
+    let e = &mut *ptr;
+    e.rng.state = if state == 0 { 0x9e37_79b9 } else { state };
+    e.rng.spare_normal = if has_spare != 0 { Some(spare) } else { None };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_export_source_stats(
+    ptr: *mut CollageEngine,
+    out_counts_ptr: *mut i32,
+    out_floats_ptr: *mut f64,
+) {
+    let e = &*ptr;
+    let stats = e.memory.source_stats_slice();
+    let counts = slice::from_raw_parts_mut(out_counts_ptr, stats.len() * 2);
+    let floats = slice::from_raw_parts_mut(out_floats_ptr, stats.len() * 2);
+    for (i, s) in stats.iter().enumerate() {
+        counts[i * 2] = s.trials;
+        counts[i * 2 + 1] = s.accepted;
+        floats[i * 2] = s.gain_sum;
+        floats[i * 2 + 1] = s.ema_gain;
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_color_stat_count(ptr: *mut CollageEngine) -> u32 {
+    (&*ptr).memory.color_stats_len() as u32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_export_color_stats(
+    ptr: *mut CollageEngine,
+    out_keys_ptr: *mut u64,
+    out_counts_ptr: *mut i32,
+    out_floats_ptr: *mut f64,
+) {
+    let e = &*ptr;
+    let n = e.memory.color_stats_len();
+    let keys = slice::from_raw_parts_mut(out_keys_ptr, n);
+    let counts = slice::from_raw_parts_mut(out_counts_ptr, n * 2);
+    let floats = slice::from_raw_parts_mut(out_floats_ptr, n * 2);
+    for (i, (k, s)) in e.memory.color_stats_iter().enumerate() {
+        keys[i] = k;
+        counts[i * 2] = s.trials;
+        counts[i * 2 + 1] = s.accepted;
+        floats[i * 2] = s.gain_sum;
+        floats[i * 2 + 1] = s.ema_gain;
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_restore_memory(
+    ptr: *mut CollageEngine,
+    n_sources: u32,
+    src_counts_ptr: *const i32,
+    src_floats_ptr: *const f64,
+    n_color: u32,
+    color_keys_ptr: *const u64,
+    color_counts_ptr: *const i32,
+    color_floats_ptr: *const f64,
+) {
+    let e = &mut *ptr;
+    let ns = n_sources as usize;
+    let src_counts = slice::from_raw_parts(src_counts_ptr, ns * 2);
+    let src_floats = slice::from_raw_parts(src_floats_ptr, ns * 2);
+    let mut src_stats = Vec::with_capacity(ns);
+    for i in 0..ns {
+        src_stats.push(MemStat {
+            trials: src_counts[i * 2],
+            accepted: src_counts[i * 2 + 1],
+            gain_sum: src_floats[i * 2],
+            ema_gain: src_floats[i * 2 + 1],
+        });
+    }
+
+    let nc = n_color as usize;
+    let c_keys = slice::from_raw_parts(color_keys_ptr, nc);
+    let c_counts = slice::from_raw_parts(color_counts_ptr, nc * 2);
+    let c_floats = slice::from_raw_parts(color_floats_ptr, nc * 2);
+    let mut color_stats = Vec::with_capacity(nc);
+    for i in 0..nc {
+        color_stats.push((
+            c_keys[i],
+            MemStat {
+                trials: c_counts[i * 2],
+                accepted: c_counts[i * 2 + 1],
+                gain_sum: c_floats[i * 2],
+                ema_gain: c_floats[i * 2 + 1],
+            },
+        ));
+    }
+
+    e.memory.restore_stats(&src_stats, &color_stats);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_restore_tiles(
+    ptr: *mut CollageEngine,
+    count: u32,
+    source_ids_ptr: *const u32,
+    params_ptr: *const f64,
+    accepted: u32,
+    rejected: u32,
+    pruned: u32,
+    replaced: u32,
+) -> u32 {
+    let e = &mut *ptr;
+    let n = count as usize;
+    let source_ids = slice::from_raw_parts(source_ids_ptr, n);
+    let params = slice::from_raw_parts(params_ptr, n * 6);
+    if e.restore_tiles(source_ids, params, accepted, rejected, pruned, replaced) {
+        1
+    } else {
+        0
     }
 }
