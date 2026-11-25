@@ -54,7 +54,14 @@ type CollageProgressSource = Pick<
   'currentMse' | 'activeCount' | 'accepted' | 'rejected' | 'pruned' | 'replaced'
 >;
 
-export function createProgress(collage: CollageProgressSource, stage: AutoCreateTwroleProgressStage, step: number, total: number, message?: string): AutoCreateTwroleProgress {
+export function createProgress(
+  collage: CollageProgressSource,
+  stage: AutoCreateTwroleProgressStage,
+  step: number,
+  total: number,
+  message?: string,
+  engine?: 'wasm' | 'ts'
+): AutoCreateTwroleProgress {
   return {
     stage,
     step,
@@ -65,7 +72,8 @@ export function createProgress(collage: CollageProgressSource, stage: AutoCreate
     rejected: collage.rejected,
     pruned: collage.pruned,
     replaced: collage.replaced,
-    message
+    message,
+    ...(engine ? { engine } : {})
   };
 }
 
@@ -211,6 +219,7 @@ async function runAutoCreateTwroleInternal({
   }
 
   const activeEngine = (): CollageProgressSource => wasmEngine ?? tsCollage!;
+  const engineKind = (): 'wasm' | 'ts' => (wasmEngine ? 'wasm' : 'ts');
 
   try {
   const buildResult = (previewDataUrl: string): AutoCreateTwroleResult => {
@@ -269,7 +278,7 @@ async function runAutoCreateTwroleInternal({
     message?: string
   ): Promise<AutoCreateTwroleCheckpoint> => {
     const buildCheckpoint = async (): Promise<AutoCreateTwroleCheckpoint> => {
-      const progress = createProgress(activeEngine(), stage, progressStep, progressTotal, message);
+      const progress = createProgress(activeEngine(), stage, progressStep, progressTotal, message, engineKind());
       const result = await createResult();
       return {
         progress,
@@ -293,7 +302,7 @@ async function runAutoCreateTwroleInternal({
     finalPruneStep: number
   ): AutoCreateTwroleCheckpoint => {
     const buildCheckpoint = (): AutoCreateTwroleCheckpoint => ({
-      progress: createProgress(activeEngine(), stage, progressStep, progressTotal, 'stopped'),
+      progress: createProgress(activeEngine(), stage, progressStep, progressTotal, 'stopped', engineKind()),
       result,
       snapshot: makeSnapshot(snapshotStep, finalPruneStep)
     });
@@ -309,7 +318,7 @@ async function runAutoCreateTwroleInternal({
   if (didResume && resumeSnapshot) {
     const restoredStep = Math.min(totalSteps, Math.max(0, Math.round(resumeSnapshot.step)));
     startStep = Math.min(totalSteps + 1, restoredStep + 1);
-    onProgress?.(createProgress(activeEngine(), 'run', restoredStep, totalSteps, 'resumed'));
+    onProgress?.(createProgress(activeEngine(), 'run', restoredStep, totalSteps, 'resumed', engineKind()));
   }
 
   const finishRunDiagnostics = diagnostics?.begin('run');
@@ -325,7 +334,7 @@ async function runAutoCreateTwroleInternal({
         const didWork = wasmEngine.runStep(step, totalSteps);
 
         if (step === 1 || step % logEvery === 0 || step === totalSteps) {
-          onProgress?.(createProgress(activeEngine(), 'run', step, totalSteps, didWork ? 'accepted/refined' : 'searched'));
+          onProgress?.(createProgress(activeEngine(), 'run', step, totalSteps, didWork ? 'accepted/refined' : 'searched', engineKind()));
           await nextFrame();
         }
 
@@ -363,7 +372,7 @@ async function runAutoCreateTwroleInternal({
         }
 
         if (step === 1 || step % logEvery === 0 || step === totalSteps) {
-          onProgress?.(createProgress(activeEngine(), 'run', step, totalSteps, didWork ? 'accepted/refined' : 'searched'));
+          onProgress?.(createProgress(activeEngine(), 'run', step, totalSteps, didWork ? 'accepted/refined' : 'searched', engineKind()));
           await nextFrame();
         }
 
@@ -404,7 +413,7 @@ async function runAutoCreateTwroleInternal({
         }
         completedFinalPruneRounds = i + 1;
         if (i % 10 === 0) {
-          onProgress?.(createProgress(activeEngine(), 'final', i + 1, finalRounds, 'final prune'));
+          onProgress?.(createProgress(activeEngine(), 'final', i + 1, finalRounds, 'final prune', engineKind()));
           await nextFrame();
         }
       }
@@ -432,7 +441,7 @@ async function runAutoCreateTwroleInternal({
     tsCollage.recomputeErrors();
     tsCollage.saveMemory();
   }
-  onProgress?.(createProgress(activeEngine(), 'final', finalRounds, finalRounds || 1, 'done'));
+  onProgress?.(createProgress(activeEngine(), 'final', finalRounds, finalRounds || 1, 'done', engineKind()));
 
   const result = await createResult();
   if (signal?.aborted) {

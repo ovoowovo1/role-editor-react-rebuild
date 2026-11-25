@@ -481,7 +481,10 @@ export function AutoCreateTwrolePanelContent({ decoOptions, role, insertDraftSet
 
         <div className="extra-progress auto-create-progress">
           <div>
-            <span>{stageLabel}</span>
+            <span>
+              {stageLabel}
+              {(result?.engine ?? progress?.engine) ? ` [${(result?.engine ?? progress?.engine) === 'wasm' ? 'Wasm' : 'TS'}]` : ''}
+            </span>
             <strong>{progress ? `${formatNumber(progress.step)} / ${formatNumber(progress.total)}` : '0 / 0'}</strong>
           </div>
           <ProgressBar value={progressPercent} label={stageLabel} />

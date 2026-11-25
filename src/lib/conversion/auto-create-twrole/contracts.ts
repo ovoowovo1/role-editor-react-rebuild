@@ -177,6 +177,7 @@ export interface AutoCreateTwroleProgress {
   pruned: number;
   replaced: number;
   message?: string;
+  engine?: 'wasm' | 'ts';
 }
 
 export interface AutoCreateTwroleLegacyDecoEntry {
