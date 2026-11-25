@@ -32,7 +32,7 @@ function timelineRenderOrder(
   let ordered = frame;
   for (let index = 1; index < frame.length; index++) {
     if (!(frame[index - 1].zIndex <= frame[index].zIndex)) {
-      ordered = [...frame].sort((a, b) => a.zIndex - b.zIndex);
+      ordered = frame.toSorted((a, b) => a.zIndex - b.zIndex);
       break;
     }
   }

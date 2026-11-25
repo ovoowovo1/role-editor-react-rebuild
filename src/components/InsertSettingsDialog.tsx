@@ -112,6 +112,7 @@ export function InsertSettingsDialog({ open, settings, onChange, onClose }: Inse
               onChange={(event) => updateDraft({ index: event.target.value })}
               onKeyDown={(event) => {
                 event.stopPropagation();
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                 if (event.key === 'Enter') saveAndClose();
               }}
             />

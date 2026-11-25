@@ -43,8 +43,13 @@ async function requestColorBlockPresets(cacheKey: ColorBlockPresetCacheKey): Pro
   const url = new URL(`${base}/color-block-presets`, getRequestOrigin());
   if (cacheKey !== 'all') url.searchParams.set('camp', cacheKey);
 
+  const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(15_000)
+    : undefined;
+
   const response = await fetch(url, {
-    headers: { Accept: 'application/json' }
+    headers: { Accept: 'application/json' },
+    ...(signal ? { signal } : {})
   });
 
   if (!response.ok) {

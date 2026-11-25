@@ -1,5 +1,32 @@
-import type { Sprite } from 'pixi.js';
+import { Rectangle, Texture, type BaseTexture, type Sprite } from 'pixi.js';
 import type { GafAtlasFrame } from '../../types/role';
+
+const subTextureCache = new WeakMap<BaseTexture, Map<string, Texture>>();
+
+/**
+ * Reuse cropped sub-textures per BaseTexture + frame rectangle so 5,000-layer
+ * scenes and frame-by-frame actor playback do not allocate fresh Texture objects.
+ */
+export function getCachedSubTexture(
+  baseTexture: BaseTexture,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): Texture {
+  let cache = subTextureCache.get(baseTexture);
+  if (!cache) {
+    cache = new Map();
+    subTextureCache.set(baseTexture, cache);
+  }
+  const key = `${x},${y},${width},${height}`;
+  let texture = cache.get(key);
+  if (!texture || texture.destroyed) {
+    texture = new Texture(baseTexture, new Rectangle(x, y, width, height));
+    cache.set(key, texture);
+  }
+  return texture;
+}
 
 /**
  * Applies GAF atlas registration to a sprite: pivot + inner scale, optional

@@ -137,6 +137,8 @@ export function CharacterStage({
   });
 
   useBodyAnimationPlayback({
+    appRef: stageRuntime.appRef,
+    hostRef,
     sceneRef: stageRuntime.sceneRef,
     lastPlaybackResetRef: stageRuntime.lastPlaybackResetRef,
     sceneVersion,
@@ -144,7 +146,7 @@ export function CharacterStage({
     bodyAnimationPlaying,
     bodyAnimationRestartKey
   });
-  useStageTransform(stageRuntime.sceneRef, stageScale, facingQuarterTurns);
+  useStageTransform(stageRuntime.appRef, stageRuntime.sceneRef, stageScale, facingQuarterTurns);
 
   return (
     <StageViewport

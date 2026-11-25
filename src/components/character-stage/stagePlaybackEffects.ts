@@ -1,6 +1,8 @@
 import { useEffect, type MutableRefObject } from 'react';
+import type { Application } from 'pixi.js';
 import { BODY_ANIMATION_FRAME_MS } from '../../constants/stage';
 import { quarterTurnRotationRadians } from '../../lib/stage/characterStageHelpers';
+import { requestStageRender } from './stageApplicationLifecycle';
 import type { StageSceneState } from './types';
 import {
   clearLoadedWeaponAtlasFailure,
@@ -61,6 +63,8 @@ export function calculateBodyAnimationAdvance(
 }
 
 export function useBodyAnimationPlayback({
+  appRef,
+  hostRef,
   sceneRef,
   lastPlaybackResetRef,
   sceneVersion,
@@ -68,6 +72,8 @@ export function useBodyAnimationPlayback({
   bodyAnimationPlaying,
   bodyAnimationRestartKey
 }: {
+  appRef: MutableRefObject<Application | null>;
+  hostRef: MutableRefObject<HTMLDivElement | null>;
   sceneRef: MutableRefObject<StageSceneState | null>;
   lastPlaybackResetRef: MutableRefObject<PlaybackResetState>;
   sceneVersion: number;
@@ -83,10 +89,14 @@ export function useBodyAnimationPlayback({
     let rafId = 0;
     let lastTime = 0;
     let accumulated = 0;
+    let contentSkipped = false;
 
     const isActive = () => !cancelled && sceneRef.current === scene && !scene.actorClip.destroyed;
+    const canAnimate = () => isActive() && bodyAnimationPlaying && !document.hidden && !contentSkipped;
+
     const tick = (time: number) => {
-      if (!isActive()) return;
+      rafId = 0;
+      if (!canAnimate()) return;
       accumulated += time - lastTime;
       lastTime = time;
       const range = scene.actorClip.getBodyFrameRange(bodyAnimationLabel);
@@ -97,10 +107,55 @@ export function useBodyAnimationPlayback({
       );
       if (advance.nextFrame !== null) {
         scene.actorClip.setBodyFrame(advance.nextFrame);
+        const app = appRef.current;
+        if (app && !app.stage?.destroyed) {
+          app.render();
+        }
       }
       accumulated = advance.remainingMs;
       rafId = requestAnimationFrame(tick);
     };
+
+    const syncLoop = () => {
+      if (canAnimate()) {
+        if (!rafId) {
+          lastTime = performance.now();
+          rafId = requestAnimationFrame(tick);
+        }
+      } else if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+    };
+
+    const handleVisibilityChange = () => syncLoop();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const host = hostRef.current;
+    const supportsContentVisibility =
+      typeof document !== 'undefined' && 'contentVisibility' in document.documentElement.style;
+    let intersectionObserver: IntersectionObserver | null = null;
+    const handleContentVisibilityStateChange = (event: Event) => {
+      const skipped = Boolean((event as Event & { skipped?: boolean }).skipped);
+      contentSkipped = skipped;
+      syncLoop();
+    };
+    if (host) {
+      if (supportsContentVisibility) {
+        host.addEventListener('contentvisibilityautostatechange', handleContentVisibilityStateChange);
+      } else if (typeof IntersectionObserver !== 'undefined') {
+        intersectionObserver = new IntersectionObserver(
+          (entries) => {
+            const entry = entries[0];
+            if (!entry) return;
+            contentSkipped = !entry.isIntersecting;
+            syncLoop();
+          },
+          { rootMargin: '200px' }
+        );
+        intersectionObserver.observe(host);
+      }
+    }
 
     const begin = (weaponAtlasReady?: boolean) => {
       if (!isActive()) return;
@@ -120,11 +175,9 @@ export function useBodyAnimationPlayback({
           label: bodyAnimationLabel,
           restartKey: bodyAnimationRestartKey
         };
+        requestStageRender(appRef.current);
       }
-      if (bodyAnimationPlaying) {
-        lastTime = performance.now();
-        rafId = requestAnimationFrame(tick);
-      }
+      syncLoop();
     };
 
     const weaponAtlas = prepareWeaponAtlasForAnimation(bodyAnimationLabel);
@@ -134,11 +187,17 @@ export function useBodyAnimationPlayback({
     return () => {
       cancelled = true;
       if (rafId) cancelAnimationFrame(rafId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (host && supportsContentVisibility) {
+        host.removeEventListener('contentvisibilityautostatechange', handleContentVisibilityStateChange);
+      }
+      intersectionObserver?.disconnect();
     };
-  }, [bodyAnimationLabel, bodyAnimationPlaying, bodyAnimationRestartKey, lastPlaybackResetRef, sceneRef, sceneVersion]);
+  }, [appRef, bodyAnimationLabel, bodyAnimationPlaying, bodyAnimationRestartKey, hostRef, lastPlaybackResetRef, sceneRef, sceneVersion]);
 }
 
 export function useStageTransform(
+  appRef: MutableRefObject<Application | null>,
   sceneRef: MutableRefObject<StageSceneState | null>,
   stageScale: number,
   facingQuarterTurns: number
@@ -148,5 +207,6 @@ export function useStageTransform(
     if (!scene) return;
     scene.actorStage.scale.set(stageScale);
     scene.actorStage.rotation = quarterTurnRotationRadians(facingQuarterTurns);
-  }, [facingQuarterTurns, sceneRef, stageScale]);
+    requestStageRender(appRef.current);
+  }, [appRef, facingQuarterTurns, sceneRef, stageScale]);
 }

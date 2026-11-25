@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useLayoutEffect,
   useMemo,
@@ -68,7 +69,7 @@ const LAYER_SPACER: VirtualLayerRow = {
   selected: false
 };
 
-export function LayerList({
+export const LayerList = memo(function LayerList({
   decorations,
   headLayer,
   headLayerIndex,
@@ -321,4 +322,4 @@ export function LayerList({
       />
     </aside>
   );
-}
+});

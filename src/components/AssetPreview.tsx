@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { PartOption } from '../types/role';
 import { shouldUseActorPartRuntimePreview } from '../lib/runtime/actorPartPreviewPolicy';
-import { probeAtlasTextureUrl } from '../lib/runtime/atlasTextureAvailability';
+import { getCachedAtlasTextureStatus, probeAtlasTextureUrl } from '../lib/runtime/atlasTextureAvailability';
 
 interface AssetPreviewProps {
   option?: PartOption;
@@ -25,7 +25,8 @@ function runtimePreviewKey(option: PartOption | undefined): string | null {
 }
 
 export function AssetPreview({ option, size = 50, className = '' }: AssetPreviewProps) {
-  const [atlasOk, setAtlasOk] = useState<boolean | null>(null);
+  const atlasTextureUrl = option?.atlas?.texture;
+  const [atlasOk, setAtlasOk] = useState<boolean | null>(() => getCachedAtlasTextureStatus(atlasTextureUrl));
   const [runtimePreview, setRuntimePreview] = useState<RuntimePreviewState | null>(null);
   const actorPreviewKey = runtimePreviewKey(option);
 
@@ -50,19 +51,24 @@ export function AssetPreview({ option, size = 50, className = '' }: AssetPreview
   }, [actorPreviewKey, option]);
 
   useEffect(() => {
-    if (!option?.atlas) {
+    if (!atlasTextureUrl) {
       setAtlasOk(null);
+      return;
+    }
+    const cached = getCachedAtlasTextureStatus(atlasTextureUrl);
+    if (cached !== null) {
+      setAtlasOk(cached);
       return;
     }
     let cancelled = false;
     setAtlasOk(null);
-    probeAtlasTextureUrl(option.atlas.texture).then((ok) => {
+    probeAtlasTextureUrl(atlasTextureUrl).then((ok) => {
       if (!cancelled) setAtlasOk(ok);
     });
     return () => {
       cancelled = true;
     };
-  }, [option?.atlas?.texture]);
+  }, [atlasTextureUrl]);
 
   if (!option) return <span className={className}>?</span>;
   const activeRuntimePreview = runtimePreview?.key === actorPreviewKey ? runtimePreview : null;

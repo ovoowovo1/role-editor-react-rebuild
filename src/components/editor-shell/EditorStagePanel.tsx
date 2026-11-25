@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, memo } from 'react';
 import { DEFAULT_POSITION_RANGE } from '../../constants/editor';
 import type { useRoleEditor } from '../../hooks/useRoleEditor';
 import { EditControls } from '../EditControls';
@@ -19,7 +19,7 @@ interface EditorStagePanelProps {
   onCommitReferenceImageDrag(id: string, dx: number, dy: number): void;
 }
 
-export function EditorStagePanel({ editor, shell, reference, onClearSelection, onCommitReferenceImageDrag }: EditorStagePanelProps) {
+export const EditorStagePanel = memo(function EditorStagePanel({ editor, shell, reference, onClearSelection, onCommitReferenceImageDrag }: EditorStagePanelProps) {
   return (
     <section className="edit-block">
       <Suspense fallback={<div className="stage-panel" />}>
@@ -88,4 +88,4 @@ export function EditorStagePanel({ editor, shell, reference, onClearSelection, o
       />
     </section>
   );
-}
+});

@@ -6,6 +6,12 @@ import { getBodyPartOption, optionById } from '../../mock/options';
  * Cached per URL to avoid repeated network work when rebuilding PIXI stage.
  */
 const probeCache = new Map<string, Promise<boolean>>();
+const probeStatusCache = new Map<string, boolean>();
+
+export function getCachedAtlasTextureStatus(url: string | undefined): boolean | null {
+  if (!url) return null;
+  return probeStatusCache.get(url) ?? null;
+}
 
 export function probeAtlasTextureUrl(url: string): Promise<boolean> {
   const existing = probeCache.get(url);
@@ -13,8 +19,14 @@ export function probeAtlasTextureUrl(url: string): Promise<boolean> {
 
   const promise = new Promise<boolean>((resolve) => {
     const img = new Image();
-    img.onload = () => resolve(true);
-    img.onerror = () => resolve(false);
+    img.onload = () => {
+      probeStatusCache.set(url, true);
+      resolve(true);
+    };
+    img.onerror = () => {
+      probeStatusCache.set(url, false);
+      resolve(false);
+    };
     img.src = url;
   });
   probeCache.set(url, promise);

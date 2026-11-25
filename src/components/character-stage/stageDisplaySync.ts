@@ -13,6 +13,8 @@ import {
   syncSelectionControllerForIds,
 } from './sceneSync';
 import { drawBrushFillOverlay } from './stageOverlayVisuals';
+import { ensureRenderWhenTexturesLoad, requestStageRender } from './stageApplicationLifecycle';
+import { gafSources } from '../../mock/gafManifest';
 import type { BrushDrawState, DisguiseDecoOptions, DragState, ReferenceImageOptions, StageSceneState } from './types';
 import type { ReferenceImageLayer } from '../../types/referenceImage';
 
@@ -102,6 +104,11 @@ export function useStageDisplaySync({
           layerOrder
         );
       }
+      ensureRenderWhenTexturesLoad(appRef.current, [
+        gafSources.decorationsTexture,
+        ...referenceImages.map((img) => img.src)
+      ]);
+      requestStageRender(appRef.current);
     };
 
     if (role.decorations.length >= DEFER_STAGE_SYNC_DECO_COUNT) {
@@ -145,17 +152,20 @@ export function useStageDisplaySync({
       Boolean(dragRef.current),
       headGlowAlwaysOn
     );
-  }, [dragRef, headGlowAlwaysOn, role, sceneRef, sceneVersion, selectedIds]);
+    requestStageRender(appRef.current);
+  }, [appRef, dragRef, headGlowAlwaysOn, role, sceneRef, sceneVersion, selectedIds]);
 
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene || brushDrawRef.current) return;
     drawBrushFillOverlay(scene, brushFillMask);
-  }, [brushDrawRef, brushFillMask, sceneRef, sceneVersion]);
+    requestStageRender(appRef.current);
+  }, [appRef, brushDrawRef, brushFillMask, sceneRef, sceneVersion]);
 
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
     syncDisguiseChildOrder(scene, role, layerOrder);
-  }, [dragRef, layerOrder, referenceImages, role.decorations, role.headLayerIndex, sceneRef, sceneVersion]);
+    requestStageRender(appRef.current);
+  }, [appRef, dragRef, layerOrder, referenceImages, role.decorations, role.headLayerIndex, sceneRef, sceneVersion]);
 }

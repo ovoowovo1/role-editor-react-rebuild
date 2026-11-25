@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent } from 'react';
+import { memo, useRef, type KeyboardEvent } from 'react';
 import { t } from '../i18n';
 import { TOP_BAR_I18N_KEYS, TOP_BAR_MODES, type TopBarMode } from '../constants/tabs';
 
@@ -9,7 +9,7 @@ interface TabBarProps {
   onChange(tab: TopBarMode): void;
 }
 
-export function TabBar({ value, onChange }: TabBarProps) {
+export const TabBar = memo(function TabBar({ value, onChange }: TabBarProps) {
   const tabListRef = useRef<HTMLElement | null>(null);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
@@ -54,4 +54,4 @@ export function TabBar({ value, onChange }: TabBarProps) {
       ))}
     </nav>
   );
-}
+});

@@ -1,8 +1,8 @@
-import { Container, Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
+import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { DecorationLayer, PartOption } from '../../types/role';
 import { decorationAtlasFrames, gafSources } from '../../mock/gafManifest';
 import { optionById } from '../../mock/options';
-import { applyGafAtlasToSprite } from '../runtime/gafAtlasSprite';
+import { applyGafAtlasToSprite, getCachedSubTexture } from '../runtime/gafAtlasSprite';
 import { createGafClip } from '../runtime/gafMovieClip';
 import { decorationRuntimeManifest } from '../runtime/gafRuntimeManifest';
 import { isMissingDecoAssetId } from '../serialization/roleSerializationLegacy';
@@ -17,9 +17,12 @@ function makeOptionSprite(option: PartOption | undefined, failedTextures: Set<st
   }
   if (failedTextures.has(option.atlas.texture)) return null;
   const atlasTexture = Texture.from(option.atlas.texture);
-  const texture = new Texture(
+  const texture = getCachedSubTexture(
     atlasTexture.baseTexture,
-    new Rectangle(option.atlas.x, option.atlas.y, option.atlas.width, option.atlas.height)
+    option.atlas.x,
+    option.atlas.y,
+    option.atlas.width,
+    option.atlas.height
   );
   return new Sprite(texture);
 }

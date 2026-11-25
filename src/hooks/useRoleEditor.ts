@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { EDITOR_STAGE_MAX_SCALE, EDITOR_STAGE_MIN_SCALE } from '../constants/editor';
 import {
   type InsertDraftPlacement,
@@ -46,7 +47,7 @@ export function useRoleEditor() {
     stableSelectedDecorations: commands.stableSelectedDecorations
   });
 
-  return {
+  return useMemo(() => ({
     role,
     selectedTab,
     setSelectedTab,
@@ -116,5 +117,16 @@ export function useRoleEditor() {
     importRole: commands.importRole,
     mergeImportedRole: commands.mergeImportedRole,
     insertDecorationBatch: commands.insertDecorationBatch
-  };
+  }), [
+    commands,
+    derived,
+    insertDraftSettings,
+    role,
+    roleHistory.cancelTransient,
+    selectedTab,
+    setInsertDraftSettings,
+    setSelectedTab,
+    setStageScale,
+    stageScale
+  ]);
 }

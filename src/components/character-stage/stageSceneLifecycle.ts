@@ -16,6 +16,8 @@ import {
   syncSelectionControllerForIds
 } from './sceneSync';
 import { createStagePointerHandlers } from './stageInteractions';
+import { ensureRenderWhenTexturesLoad, requestStageRender } from './stageApplicationLifecycle';
+import { gafSources } from '../../mock/gafManifest';
 import { destroyReferenceImageDisplay } from './referenceImageVisuals';
 import { drawBrushFillOverlay } from './stageOverlayVisuals';
 import { buildStageScene } from './stageSceneBuilder';
@@ -108,7 +110,8 @@ export function useStageSceneLifecycle({
             { x: event.global.x, y: event.global.y },
             currentScene.disguiseRoot
           );
-        }
+        },
+        onPositionUpdated: () => requestStageRender(app)
       });
       sceneRef.current = scene;
       setSceneVersion((version) => version + 1);
@@ -133,8 +136,14 @@ export function useStageSceneLifecycle({
       );
       syncDisguiseChildOrder(scene, currentRole, stageRuntimeRefs.layerOrderRef?.current);
       scene.updatePosition();
+      const cleanupTextureListeners = ensureRenderWhenTexturesLoad(app, [
+        ...urls,
+        gafSources.actorTexture,
+        gafSources.decorationsTexture
+      ]);
+      requestStageRender(app);
 
-      const pointerHandlers = createStagePointerHandlers(stageRuntimeRefs);
+      const pointerHandlers = createStagePointerHandlers(stageRuntimeRefs, () => requestStageRender(app));
       stage.on('pointerdown', pointerHandlers.handlePointerDown);
       stage.on('pointermove', pointerHandlers.handleMove);
       stage.on('pointerup', pointerHandlers.handleUp);
@@ -142,6 +151,7 @@ export function useStageSceneLifecycle({
       stage.on('pointercancel', pointerHandlers.handleUpOutside);
 
       stageTeardownRef.current = () => {
+        cleanupTextureListeners();
         pointerHandlers.dispose();
         dragRef.current = null;
         stageRuntimeRefs.brushDrawRef.current = null;

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PartOption, PartTab } from '../types/role';
 import { PART_TAB_I18N_KEYS } from '../constants/tabs';
 import { t } from '../i18n';
@@ -23,7 +23,7 @@ interface VirtualRow {
   start: number;
 }
 
-export function ChoiceGrid({ tab, options, selectedOptionId, onPick }: ChoiceGridProps) {
+export const ChoiceGrid = memo(function ChoiceGrid({ tab, options, selectedOptionId, onPick }: ChoiceGridProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState(initialChoiceGridViewport);
   const { columns, firstRow: startIndex, lastRowExclusive } = viewport;
@@ -102,4 +102,4 @@ export function ChoiceGrid({ tab, options, selectedOptionId, onPick }: ChoiceGri
       </div>
     </section>
   );
-}
+});

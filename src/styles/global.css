@@ -56,18 +56,26 @@ input:disabled {
   cursor: not-allowed;
 }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+:root {
+  --scrollbar-thumb: rgba(255, 255, 255, 0.65);
+  --scrollbar-track: rgba(0, 0, 0, 0.18);
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
-::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.18);
-}
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.65);
-  border-radius: 999px;
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 999px;
+  }
 }
 
 .role-editor-page {
@@ -314,6 +322,14 @@ input:disabled {
 .color-block-choice {
   height: 108px;
   grid-template-rows: 32px 20px minmax(16px, 1fr) 13px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 76px auto 108px;
+}
+
+@supports not (content-visibility: auto) {
+  .color-block-choice {
+    contain: layout style paint;
+  }
 }
 
 .choice-preview,

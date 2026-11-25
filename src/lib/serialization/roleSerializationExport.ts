@@ -21,7 +21,7 @@ interface ExportEnvelope {
 }
 
 function cloneRole(role: RoleDocument): RoleDocument {
-  return JSON.parse(JSON.stringify(role)) as RoleDocument;
+  return structuredClone(role);
 }
 
 export function roleToEnvelope(role: RoleDocument): ExportEnvelope {

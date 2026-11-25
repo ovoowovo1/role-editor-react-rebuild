@@ -243,6 +243,7 @@ button:not(:disabled):active {
   border-radius: var(--radius-md);
   background: linear-gradient(180deg, rgba(13, 55, 69, 0.68), rgba(4, 18, 27, 0.72));
   box-shadow: var(--shadow-panel);
+  contain: layout style paint;
 }
 
 .choice-list {
@@ -255,6 +256,7 @@ button:not(:disabled):active {
 .edit-block {
   min-width: 360px;
   flex: 1 1 500px;
+  contain: layout style paint;
 }
 
 .edit-list {
@@ -377,29 +379,34 @@ button:not(:disabled):active {
 }
 
 /* Shared modal and form */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.66);
-  backdrop-filter: blur(5px);
-}
-
-.modal {
+dialog.modal {
   width: min(560px, calc(100vw - 32px));
   max-height: min(760px, calc(100dvh - 48px));
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  margin: auto;
+  padding: 0;
   overflow: hidden;
   border: 1px solid rgba(174, 244, 255, 0.52);
   border-radius: var(--radius-lg);
   background: linear-gradient(180deg, #08384a, #02141d);
   color: #fff;
   box-shadow: 0 28px 90px rgba(0, 0, 0, 0.72), inset 0 0 42px rgba(53, 208, 255, 0.07);
+}
+
+dialog.modal[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+dialog.modal:modal {
+  overscroll-behavior: contain;
+}
+
+dialog.modal::backdrop {
+  background: rgba(0, 0, 0, 0.66);
+  backdrop-filter: blur(5px);
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
 
 .modal--small {
@@ -688,16 +695,12 @@ button:not(:disabled):active {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .modal-backdrop {
-    align-items: end;
-    padding: 10px;
-  }
-
-  .modal,
+  dialog.modal,
   .modal--small,
   .modal--large {
-    width: 100%;
+    width: calc(100vw - 20px);
     max-height: calc(100dvh - 20px);
+    margin-bottom: 10px;
     border-radius: 16px 16px 10px 10px;
   }
 

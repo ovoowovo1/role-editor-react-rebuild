@@ -33,16 +33,27 @@ function titleFromCode(code: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function makeOption(category: PartTab, code: string, index: number, source: 'gaf' | 'mock', atlas?: GafAtlasFrame): PartOption {
+function makeOption(
+  category: PartTab,
+  code: string,
+  index: number,
+  source: 'gaf' | 'mock',
+  atlas?: GafAtlasFrame,
+  iconLabel = code
+): PartOption {
   const [accent, secondary] = palette[index % palette.length];
   const id = `${category}-${code.replace(/[^a-z0-9_-]/gi, '-')}`;
   const label = titleFromCode(code);
+  let cachedIcon: string | undefined;
   return {
     id,
     code,
     category,
     label,
-    icon: makeMockAsset(category, accent, secondary, code, index),
+    get icon() {
+      cachedIcon ??= makeMockAsset(category, accent, secondary, iconLabel, index);
+      return cachedIcon;
+    },
     accent,
     secondary,
     mockKind: category,
@@ -53,12 +64,12 @@ function makeOption(category: PartTab, code: string, index: number, source: 'gaf
 }
 
 function makeMockOptions(category: PartTab, count: number, label: string): PartOption[] {
-  return Array.from({ length: count }, (_, i) => makeOption(category, `${category}_${pad(i + 1)}`, i, 'mock')).map((option, i) => ({
-    ...option,
-    label: `${label} ${pad(i + 1)}`,
-    icon: makeMockAsset(category, option.accent, option.secondary, `${label[0]}${i + 1}`, i),
-    sourceFile: undefined
-  }));
+  return Array.from({ length: count }, (_, i) => {
+    const option = makeOption(category, `${category}_${pad(i + 1)}`, i, 'mock', undefined, `${label[0]}${i + 1}`);
+    option.label = `${label} ${pad(i + 1)}`;
+    option.sourceFile = undefined;
+    return option;
+  });
 }
 
 function makeActorFrameOptions(category: BodyPartTab): PartOption[] {
@@ -76,17 +87,14 @@ function makeActorFrameOptions(category: BodyPartTab): PartOption[] {
     // RoleDecosConfig JSON line up with TWLibLib.ActorPart.setFrame(frame, scale).
     const code = String(frame);
     const atlas = atlasFrames[frame - 1];
-    const option = makeOption(category, code, index, 'gaf', atlas);
+    const option = makeOption(category, code, index, 'gaf', atlas, `${category[0]}-${frame}`);
     const isEmpty = frame === runtime.emptyFrame;
-    options.push({
-      ...option,
-      label: isEmpty ? `Empty (${titleFromCode(category)})` : `${titleFromCode(library)} ${pad(frame)}`,
-      icon: makeMockAsset(category, option.accent, option.secondary, `${category[0]}-${frame}`, index),
-      actorLibrary: library,
-      frame,
-      emptyFrame: runtime.emptyFrame,
-      isEmpty
-    });
+    option.label = isEmpty ? `Empty (${titleFromCode(category)})` : `${titleFromCode(library)} ${pad(frame)}`;
+    option.actorLibrary = library;
+    option.frame = frame;
+    option.emptyFrame = runtime.emptyFrame;
+    option.isEmpty = isEmpty;
+    options.push(option);
   }
 
   const emptyIndex = options.findIndex((option) => option.isEmpty);
@@ -192,7 +200,7 @@ function compareDecoOptions(left: PartOption, right: PartOption): number {
 }
 
 function sortDecoOptions(options: PartOption[]): PartOption[] {
-  return [...options].sort(compareDecoOptions);
+  return options.toSorted(compareDecoOptions);
 }
 
 function filterBodyPartOptionsByCamp(tab: BodyPartTab, camp: PlayerCampCode): PartOption[] {
@@ -210,25 +218,35 @@ function filterBodyPartOptionsByCamp(tab: BodyPartTab, camp: PlayerCampCode): Pa
   return emptyCape ? [emptyCape, ...filtered] : filtered;
 }
 
+const filteredOptionsCache = new Map<string, PartOption[]>();
+
 export function filterPartOptionsByCamp(tab: PartTab, campRaw: string): PartOption[] {
   const normalizedCamp = toPlayerCampCode(campRaw);
-  if (!normalizedCamp) return partOptions[tab];
-  if (normalizedCamp === 'civil') {
+  const cacheKey = `${tab}:${normalizedCamp ?? 'default'}`;
+  const cached = filteredOptionsCache.get(cacheKey);
+  if (cached) return cached;
+
+  let result: PartOption[];
+  if (!normalizedCamp) {
+    result = partOptions[tab];
+  } else if (normalizedCamp === 'civil') {
     if (tab === 'deco') {
-      return sortDecoOptions(
+      result = sortDecoOptions(
         partOptions.deco.filter((option) =>
           isAllCampDeco(option.code) || playerCampCodes.some((camp) => option.code.startsWith(`${camp}_`))
         )
       );
+    } else {
+      result = partOptions[tab];
     }
-    return partOptions[tab];
+  } else if (tab === 'deco') {
+    result = sortDecoOptions(partOptions.deco.filter((option) => isAllCampDeco(option.code) || option.code.startsWith(`${normalizedCamp}_`)));
+  } else {
+    result = filterBodyPartOptionsByCamp(tab, normalizedCamp);
   }
 
-  if (tab === 'deco') {
-    return sortDecoOptions(partOptions.deco.filter((option) => isAllCampDeco(option.code) || option.code.startsWith(`${normalizedCamp}_`)));
-  }
-
-  return filterBodyPartOptionsByCamp(tab, normalizedCamp);
+  filteredOptionsCache.set(cacheKey, result);
+  return result;
 }
 
 export const genders: { code: GenderCode; name: string }[] = [

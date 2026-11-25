@@ -6,15 +6,6 @@ import {
   type RefObject
 } from 'react';
 
-const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])'
-].join(',');
-
 type FocusableElement = HTMLElement & { focus(options?: FocusOptions): void };
 
 export type ModalSize = 'small' | 'medium' | 'large';
@@ -36,10 +27,9 @@ interface ModalProps {
   titleId?: string;
 }
 
-function getFocusableElements(container: HTMLElement): FocusableElement[] {
-  return Array.from(container.querySelectorAll<FocusableElement>(FOCUSABLE_SELECTOR)).filter(
-    (element) => !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true'
-  );
+function isOutsideDialog(clientX: number, clientY: number, dialog: HTMLDialogElement): boolean {
+  const rect = dialog.getBoundingClientRect();
+  return clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom;
 }
 
 export function Modal({
@@ -61,88 +51,95 @@ export function Modal({
   const generatedTitleId = useId();
   const generatedSubtitleId = useId();
   const resolvedTitleId = titleId ?? generatedTitleId;
-  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    if (!open) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
 
-    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusTarget = initialFocusRef?.current
-      ?? closeButtonRef.current
-      ?? (dialogRef.current ? getFocusableElements(dialogRef.current)[0] : null)
-      ?? dialogRef.current;
-    window.setTimeout(() => focusTarget?.focus({ preventScroll: true }), 0);
-
-    return () => {
-      previouslyFocused?.focus({ preventScroll: true });
-    };
+    if (open) {
+      if (!dialog.open) {
+        if (typeof dialog.showModal === 'function') {
+          dialog.showModal();
+        } else {
+          dialog.setAttribute('open', '');
+        }
+      }
+      const focusTarget = initialFocusRef?.current ?? closeButtonRef.current;
+      if (focusTarget) {
+        window.setTimeout(() => focusTarget.focus({ preventScroll: true }), 0);
+      }
+    } else if (dialog.open) {
+      if (typeof dialog.close === 'function') {
+        dialog.close();
+      } else {
+        dialog.removeAttribute('open');
+      }
+    }
   }, [initialFocusRef, open]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || !open) return;
+    if (typeof HTMLDialogElement !== 'undefined' && 'closedBy' in HTMLDialogElement.prototype) return;
+
+    let pressedOutside = false;
+    const handlePointerDown = (event: PointerEvent) => {
+      pressedOutside = isOutsideDialog(event.clientX, event.clientY, dialog);
+    };
+    const handlePointerUp = (event: PointerEvent) => {
+      if (pressedOutside && isOutsideDialog(event.clientX, event.clientY, dialog)) {
+        onClose();
+      }
+      pressedOutside = false;
+    };
+
+    dialog.addEventListener('pointerdown', handlePointerDown);
+    dialog.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      dialog.removeEventListener('pointerdown', handlePointerDown);
+      dialog.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [onClose, open]);
 
   if (!open) return null;
 
   return (
-    <div
-      className="modal-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+    <dialog
+      ref={dialogRef}
+      className={`modal modal--${size} ${className}`.trim()}
+      aria-labelledby={resolvedTitleId}
+      aria-describedby={subtitle ? generatedSubtitleId : undefined}
+      {...({ closedby: 'any' } as Record<string, string>)}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClose={() => {
+        if (open) onClose();
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
       }}
     >
-      <div
-        ref={dialogRef}
-        className={`modal modal--${size} ${className}`.trim()}
-        role="dialog"
-        tabIndex={-1}
-        aria-modal="true"
-        aria-labelledby={resolvedTitleId}
-        aria-describedby={subtitle ? generatedSubtitleId : undefined}
-        onMouseDown={(event) => event.stopPropagation()}
-        onKeyDown={(event) => {
-          event.stopPropagation();
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            onClose();
-            return;
-          }
+      <header className="modal-header">
+        <div className="modal-heading">
+          <strong id={resolvedTitleId}>{title}</strong>
+          {subtitle ? <span id={generatedSubtitleId}>{subtitle}</span> : null}
+        </div>
+        <div className="modal-header-actions">
+          {headerActions}
+          {showCloseButton ? (
+            <button ref={closeButtonRef} type="button" className="button button--secondary" onClick={onClose}>
+              {closeLabel}
+            </button>
+          ) : null}
+        </div>
+      </header>
 
-          if (event.key !== 'Tab' || !dialogRef.current) return;
-          const focusable = getFocusableElements(dialogRef.current);
-          if (!focusable.length) {
-            event.preventDefault();
-            return;
-          }
-
-          const first = focusable[0];
-          const last = focusable[focusable.length - 1];
-          const active = document.activeElement;
-          if (event.shiftKey && active === first) {
-            event.preventDefault();
-            last.focus();
-          } else if (!event.shiftKey && active === last) {
-            event.preventDefault();
-            first.focus();
-          }
-        }}
-      >
-        <header className="modal-header">
-          <div className="modal-heading">
-            <strong id={resolvedTitleId}>{title}</strong>
-            {subtitle ? <span id={generatedSubtitleId}>{subtitle}</span> : null}
-          </div>
-          <div className="modal-header-actions">
-            {headerActions}
-            {showCloseButton ? (
-              <button ref={closeButtonRef} type="button" className="button button--secondary" onClick={onClose}>
-                {closeLabel}
-              </button>
-            ) : null}
-          </div>
-        </header>
-
-        <div className={`modal-content ${contentClassName}`.trim()}>{children}</div>
-        {footer ? <footer className="modal-footer">{footer}</footer> : null}
-      </div>
-    </div>
+      <div className={`modal-content ${contentClassName}`.trim()}>{children}</div>
+      {footer ? <footer className="modal-footer">{footer}</footer> : null}
+    </dialog>
   );
 }

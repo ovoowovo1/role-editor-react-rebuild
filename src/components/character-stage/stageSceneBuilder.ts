@@ -23,7 +23,8 @@ export function buildStageScene({
   stageScale,
   facingQuarterTurns,
   bodyAnimationLabel,
-  onSelectionDragPointerDown
+  onSelectionDragPointerDown,
+  onPositionUpdated
 }: {
   stage: Container;
   hitArea: Rectangle;
@@ -35,6 +36,7 @@ export function buildStageScene({
   facingQuarterTurns: number;
   bodyAnimationLabel: string;
   onSelectionDragPointerDown(event: FederatedPointerEvent, scene: StageSceneState): void;
+  onPositionUpdated?(): void;
 }): StageSceneState {
   stage.removeChildren();
   stage.eventMode = 'static';
@@ -91,6 +93,7 @@ export function buildStageScene({
       backgroundRect.left - hostRect.left + backgroundRect.width / 2,
       backgroundRect.top - hostRect.top + backgroundRect.height / 2
     );
+    onPositionUpdated?.();
   };
 
   const scene: StageSceneState = {

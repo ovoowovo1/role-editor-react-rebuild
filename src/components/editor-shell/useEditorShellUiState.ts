@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DEFAULT_ACTOR_BODY_ANIMATION_LABEL } from '../../lib/runtime/actorBodyAnimation';
 import type { BrushFillMask } from '../../lib/conversion/brushFillToDeco';
 import type { PartTab } from '../../types/role';
@@ -59,7 +59,7 @@ export function useEditorShellUiState(initialTopBarMode: TopBarMode, onPartTabCh
     setBodyAnimationPlaying(false);
   }, []);
 
-  return {
+  return useMemo(() => ({
     shortcutsOpen,
     setShortcutsOpen,
     insertSettingsOpen,
@@ -88,5 +88,25 @@ export function useEditorShellUiState(initialTopBarMode: TopBarMode, onPartTabCh
     clearBrushFillMask,
     rotateFacing,
     restartBodyAnimation
-  };
+  }), [
+    bodyAnimationLabel,
+    bodyAnimationPlaying,
+    bodyAnimationRestartKey,
+    brushFillActive,
+    brushFillBrushSize,
+    brushFillMask,
+    clearBrushFillMask,
+    facingQuarterTurns,
+    handleTopBarChange,
+    headGlowAlwaysOn,
+    insertSettingsOpen,
+    playbackToolVisible,
+    restartBodyAnimation,
+    rotateFacing,
+    shortcutsOpen,
+    toggleHeadGlowAlwaysOn,
+    togglePlaybackToolVisible,
+    topBarMode,
+    weaponAnimationOpen
+  ]);
 }

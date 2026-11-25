@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, memo, Suspense } from 'react';
 import { t } from '../../i18n';
 import { colorBlockToRole } from '../../mock/colorBlocks';
 import { useColorBlockPresets } from '../../hooks/useColorBlockPresets';
@@ -24,7 +24,7 @@ interface EditorSourcePanelProps {
   onAddReferenceImage(file: File): Promise<void>;
 }
 
-export function EditorSourcePanel({
+export const EditorSourcePanel = memo(function EditorSourcePanel({
   editor,
   shell,
   selectedOptionId,
@@ -75,7 +75,7 @@ export function EditorSourcePanel({
       }}
     />
   );
-}
+});
 
 function EditorColorBlockPanel({ role, onMerge, setStatus }: {
   role: EditorApi['role'];

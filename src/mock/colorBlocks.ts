@@ -23,7 +23,7 @@ export interface ColorBlockPreset {
 export function colorBlockToRole(preset: ColorBlockPreset, baseRole: RoleDocument): RoleDocument {
   // The source preset is stored in legacy bottom-to-top order. The rebuild UI/runtime
   // uses top-first decoration order, so reverse the block before creating layers.
-  const decorations: DecorationLayer[] = preset.deco.slice().reverse().map((item) => {
+  const decorations: DecorationLayer[] = preset.deco.toReversed().map((item) => {
     const option = findOptionByCode('deco', item.c);
     return {
       id: createId('deco'),

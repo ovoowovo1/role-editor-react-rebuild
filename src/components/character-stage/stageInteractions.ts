@@ -18,7 +18,10 @@ function pointerPosition(event: FederatedPointerEvent): StagePointerPosition {
   return { x: event.global.x, y: event.global.y };
 }
 
-export function createStagePointerHandlers(refs: StageRuntimeRefs) {
+export function createStagePointerHandlers(
+  refs: StageRuntimeRefs,
+  onRenderRequest?: () => void
+) {
   let pointerDown: { x: number; y: number; emptyStageTarget: boolean } | null = null;
   let pendingMove: StagePointerPosition | null = null;
   let moveRafId = 0;
@@ -35,10 +38,11 @@ export function createStagePointerHandlers(refs: StageRuntimeRefs) {
   );
 
   const applyPointerMove = (position: StagePointerPosition): boolean => {
-    if (refs.brushDrawRef.current) {
-      return appendBrushFillPoint(position, refs);
-    }
-    return updateDecorationDrag(position, refs);
+    const updated = refs.brushDrawRef.current
+      ? appendBrushFillPoint(position, refs)
+      : updateDecorationDrag(position, refs);
+    if (updated) onRenderRequest?.();
+    return updated;
   };
 
   const cancelScheduledMove = () => {
@@ -80,6 +84,7 @@ export function createStagePointerHandlers(refs: StageRuntimeRefs) {
 
     if (refs.brushFillRef.current.active) {
       beginBrushFillDraw(pointerPosition(event), refs);
+      onRenderRequest?.();
     }
   };
 
@@ -97,8 +102,15 @@ export function createStagePointerHandlers(refs: StageRuntimeRefs) {
     if (hasActivePointerOperation()) {
       flushScheduledMove(pointerPosition(event));
     }
-    if (commitBrushFillDraw(refs)) return true;
-    return commitDecorationDrag(refs);
+    if (commitBrushFillDraw(refs)) {
+      onRenderRequest?.();
+      return true;
+    }
+    if (commitDecorationDrag(refs)) {
+      onRenderRequest?.();
+      return true;
+    }
+    return false;
   };
 
   const handleUp = (event: FederatedPointerEvent) => {

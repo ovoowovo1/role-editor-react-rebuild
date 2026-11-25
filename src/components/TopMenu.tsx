@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { t } from '../i18n';
 import { camps, genders } from '../mock/options';
 import type { GenderCode } from '../types/role';
@@ -23,7 +24,7 @@ interface TopMenuProps {
 
 const ROLE_FILE_ACCEPT = '.twrole,.json,application/json';
 
-export function TopMenu({
+export const TopMenu = memo(function TopMenu({
   camp,
   gender,
   canUndo,
@@ -123,4 +124,4 @@ export function TopMenu({
       </div>
     </header>
   );
-}
+});

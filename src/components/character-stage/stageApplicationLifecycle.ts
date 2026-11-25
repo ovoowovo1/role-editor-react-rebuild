@@ -1,7 +1,57 @@
 import { useEffect, type MutableRefObject } from 'react';
-import { Application } from 'pixi.js';
+import { Application, Texture } from 'pixi.js';
 import { stageRendererResolution } from '../../lib/stage/characterStageHelpers';
 import type { StageSceneState } from './types';
+
+const pendingStageRenderRaf = new WeakMap<Application, number>();
+
+export function cancelStageRender(app: Application | null | undefined): void {
+  if (!app) return;
+  const rafId = pendingStageRenderRaf.get(app);
+  if (rafId !== undefined) {
+    cancelAnimationFrame(rafId);
+    pendingStageRenderRaf.delete(app);
+  }
+}
+
+/**
+ * Coalesce multiple scene/selection/transform updates within the same frame
+ * into a single imperative Pixi render, avoiding idle 60fps ticker burn.
+ */
+export function requestStageRender(app: Application | null | undefined): void {
+  if (!app || app.stage?.destroyed) return;
+  if (pendingStageRenderRaf.has(app)) return;
+  const rafId = requestAnimationFrame(() => {
+    pendingStageRenderRaf.delete(app);
+    if (!app.stage?.destroyed) {
+      app.render();
+    }
+  });
+  pendingStageRenderRaf.set(app, rafId);
+}
+
+export function ensureRenderWhenTexturesLoad(
+  app: Application | null | undefined,
+  urls: readonly string[]
+): () => void {
+  if (!app || app.stage?.destroyed || !urls.length) return () => {};
+  const cleanups: Array<() => void> = [];
+  for (const url of new Set(urls)) {
+    if (!url) continue;
+    const baseTexture = Texture.from(url).baseTexture;
+    if (baseTexture.valid) continue;
+    const onReady = () => requestStageRender(app);
+    baseTexture.once('loaded', onReady);
+    baseTexture.once('update', onReady);
+    cleanups.push(() => {
+      baseTexture.off('loaded', onReady);
+      baseTexture.off('update', onReady);
+    });
+  }
+  return () => {
+    for (const cleanup of cleanups) cleanup();
+  };
+}
 
 export function usePixiApplicationLifecycle({
   hostRef,
@@ -22,6 +72,7 @@ export function usePixiApplicationLifecycle({
 
     const app = new Application({
       antialias: true,
+      autoStart: false,
       backgroundAlpha: 0,
       width: Math.max(1, host.clientWidth),
       height: Math.max(1, host.clientHeight),
@@ -48,6 +99,7 @@ export function usePixiApplicationLifecycle({
       lastHeight = height;
       app.renderer.resize(width, height);
       app.stage.hitArea = app.screen;
+      app.render();
     };
     const scheduleRendererResize = () => {
       if (!resizeRafId) resizeRafId = requestAnimationFrame(resizeRenderer);
@@ -60,6 +112,7 @@ export function usePixiApplicationLifecycle({
     return () => {
       resizeObserver.disconnect();
       if (resizeRafId) cancelAnimationFrame(resizeRafId);
+      cancelStageRender(app);
       cancelDeferredStageSync();
       stageTeardownRef.current?.();
       stageTeardownRef.current = null;

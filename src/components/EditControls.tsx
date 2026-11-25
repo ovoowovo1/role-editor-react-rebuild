@@ -1,10 +1,13 @@
+import { memo } from 'react';
 import { t } from '../i18n';
 import { EditToolbar } from './edit-controls/EditToolbar';
 import { TransformRangePanel } from './edit-controls/TransformRangePanel';
 import { ReferenceImageControls } from './edit-controls/ReferenceImageControls';
 import type { EditControlsProps } from './edit-controls/types';
 
-export function EditControls({
+const NOOP = () => undefined;
+
+export const EditControls = memo(function EditControls({
   disabled,
   faceAlwaysEnabled = false,
   editValues,
@@ -81,9 +84,9 @@ export function EditControls({
         <ReferenceImageControls
           image={referenceImage}
           positionRange={positionRange}
-          onBegin={onReferenceImageBeginTransform ?? (() => undefined)}
-          onCommit={onReferenceImageCommitTransform ?? (() => undefined)}
-          onChange={onReferenceImageTransformChange ?? (() => undefined)}
+          onBegin={onReferenceImageBeginTransform ?? NOOP}
+          onCommit={onReferenceImageCommitTransform ?? NOOP}
+          onChange={onReferenceImageTransformChange ?? NOOP}
         />
       ) : (
         <TransformRangePanel
@@ -101,4 +104,4 @@ export function EditControls({
       )}
     </section>
   );
-}
+});

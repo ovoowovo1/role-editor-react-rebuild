@@ -65,6 +65,7 @@ export function SelectLayerDialog({
 
   const handleInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     event.stopPropagation();
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if (event.key === 'Enter') handleConfirm();
   };
 
