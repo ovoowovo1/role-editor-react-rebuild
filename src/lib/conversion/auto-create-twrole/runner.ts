@@ -11,6 +11,7 @@ import {
   type RunAutoCreateTwroleOptions
 } from './contracts';
 import { ColorLearningCollage } from './collageEngine';
+import { loadAutoCreateWasmExports, WasmCollageEngine } from './wasmCollageEngine';
 import { roleExportScaleForTarget } from './candidateSearch';
 import { SeededRandom } from './numericCore';
 import { nextFrame, throwIfAborted } from './platform';
@@ -48,7 +49,12 @@ function hasValidSnapshotState(snapshot: NonNullable<RunAutoCreateTwroleOptions[
   );
 }
 
-export function createProgress(collage: ColorLearningCollage, stage: AutoCreateTwroleProgressStage, step: number, total: number, message?: string): AutoCreateTwroleProgress {
+type CollageProgressSource = Pick<
+  ColorLearningCollage,
+  'currentMse' | 'activeCount' | 'accepted' | 'rejected' | 'pruned' | 'replaced'
+>;
+
+export function createProgress(collage: CollageProgressSource, stage: AutoCreateTwroleProgressStage, step: number, total: number, message?: string): AutoCreateTwroleProgress {
   return {
     stage,
     step,
@@ -143,8 +149,10 @@ async function runAutoCreateTwroleInternal({
 
   const fallbackSeed = settings.seed > 0 ? settings.seed : Math.floor(Date.now() % 2147483647);
   let seed = canResume && resumeSnapshot ? resumeSnapshot.seed : fallbackSeed;
+  const wasmExports = !canResume ? await loadAutoCreateWasmExports() : null;
   let rng = new SeededRandom(seed);
-  const createCollage = (collageRng: SeededRandom) => new ColorLearningCollage(
+
+  const createTsCollage = (collageRng: SeededRandom) => new ColorLearningCollage(
     sourceLoad.sources,
     target.straight,
     target.premult,
@@ -156,27 +164,46 @@ async function runAutoCreateTwroleInternal({
     settings,
     diagnostics
   );
-  const instantiateCollage = (collageRng: SeededRandom) => diagnostics
-    ? diagnostics.measure('engineInit', () => createCollage(collageRng))
-    : createCollage(collageRng);
-  let collage = instantiateCollage(rng);
-  let didResume = false;
+  const createWasmEngine = () => new WasmCollageEngine(
+    wasmExports!,
+    sourceLoad.sources,
+    target.straight,
+    target.mask,
+    target.placementMask,
+    target.width,
+    target.height,
+    seed,
+    settings,
+    diagnostics
+  );
 
-  if (canResume && resumeSnapshot) {
-    if (collage.restoreFromSnapshot(resumeSnapshot)) {
+  const wasmEngine: WasmCollageEngine | null = wasmExports
+    ? (diagnostics ? diagnostics.measure('engineInit', createWasmEngine) : createWasmEngine())
+    : null;
+  let tsCollage: ColorLearningCollage | null = wasmEngine
+    ? null
+    : (diagnostics ? diagnostics.measure('engineInit', () => createTsCollage(rng)) : createTsCollage(rng));
+
+  let didResume = false;
+  if (canResume && resumeSnapshot && tsCollage) {
+    if (tsCollage.restoreFromSnapshot(resumeSnapshot)) {
       rng.restore(resumeSnapshot.rngState, resumeSnapshot.rngSpareNormal);
       didResume = true;
     } else {
-      // Restore is transactional. If any tile fails strict geometry or alpha
-      // validation, discard the complete checkpoint and start from a clean RNG.
       seed = fallbackSeed;
       rng = new SeededRandom(seed);
-      collage = instantiateCollage(rng);
+      tsCollage = diagnostics
+        ? diagnostics.measure('engineInit', () => createTsCollage(rng))
+        : createTsCollage(rng);
     }
   }
 
+  const activeEngine = (): CollageProgressSource => wasmEngine ?? tsCollage!;
+
+  try {
   const buildResult = (previewDataUrl: string): AutoCreateTwroleResult => {
-    const { decorations, legacy } = collage.exportResultTiles();
+    const engine = activeEngine();
+    const { decorations, legacy } = wasmEngine ? wasmEngine.exportResultTiles() : tsCollage!.exportResultTiles();
     return {
       decorations,
       exportJson: { deco: legacy },
@@ -187,22 +214,38 @@ async function runAutoCreateTwroleInternal({
       sourceHeight: target.sourceHeight,
       sourceCount: sourceLoad.sources.length,
       insertScale: roleExportScaleForTarget(target.width, target.height),
-      mse: collage.currentMse(),
-      accepted: collage.accepted,
-      rejected: collage.rejected,
-      pruned: collage.pruned,
-      replaced: collage.replaced,
+      mse: engine.currentMse(),
+      accepted: engine.accepted,
+      rejected: engine.rejected,
+      pruned: engine.pruned,
+      replaced: engine.replaced,
       warnings: sourceLoad.warnings
     };
   };
   const createResult = async (): Promise<AutoCreateTwroleResult> => {
     const previewDataUrl = diagnostics
-      ? await diagnostics.measureAsync('workerPreview', () => collage.previewDataUrl())
-      : await collage.previewDataUrl();
+      ? await diagnostics.measureAsync('workerPreview', () =>
+        wasmEngine ? wasmEngine.previewDataUrl() : tsCollage!.previewDataUrl()
+      )
+      : await (wasmEngine ? wasmEngine.previewDataUrl() : tsCollage!.previewDataUrl());
     return diagnostics
       ? diagnostics.measure('resultBuild', () => buildResult(previewDataUrl))
       : buildResult(previewDataUrl);
   };
+
+  const makeSnapshot = (
+    snapshotStep: number,
+    finalPruneStep: number
+  ) => (wasmEngine ?? tsCollage!).createSnapshot(
+    snapshotStep,
+    totalSteps,
+    finalPruneStep,
+    seed,
+    target,
+    targetSignature,
+    sourceLoad.warnings,
+    checkpointSignatures
+  );
 
   const publishCheckpoint = async (
     stage: AutoCreateTwroleProgressStage,
@@ -213,21 +256,12 @@ async function runAutoCreateTwroleInternal({
     message?: string
   ): Promise<AutoCreateTwroleCheckpoint> => {
     const buildCheckpoint = async (): Promise<AutoCreateTwroleCheckpoint> => {
-      const progress = createProgress(collage, stage, progressStep, progressTotal, message);
+      const progress = createProgress(activeEngine(), stage, progressStep, progressTotal, message);
       const result = await createResult();
       return {
         progress,
         result,
-        snapshot: collage.createSnapshot(
-          snapshotStep,
-          totalSteps,
-          finalPruneStep,
-          seed,
-          target,
-          targetSignature,
-          sourceLoad.warnings,
-          checkpointSignatures
-        )
+        snapshot: makeSnapshot(snapshotStep, finalPruneStep)
       };
     };
     const checkpoint = diagnostics
@@ -246,18 +280,9 @@ async function runAutoCreateTwroleInternal({
     finalPruneStep: number
   ): AutoCreateTwroleCheckpoint => {
     const buildCheckpoint = (): AutoCreateTwroleCheckpoint => ({
-      progress: createProgress(collage, stage, progressStep, progressTotal, 'stopped'),
+      progress: createProgress(activeEngine(), stage, progressStep, progressTotal, 'stopped'),
       result,
-      snapshot: collage.createSnapshot(
-        snapshotStep,
-        totalSteps,
-        finalPruneStep,
-        seed,
-        target,
-        targetSignature,
-        sourceLoad.warnings,
-        checkpointSignatures
-      )
+      snapshot: makeSnapshot(snapshotStep, finalPruneStep)
     });
     const checkpoint = diagnostics
       ? diagnostics.measure('checkpoint', buildCheckpoint)
@@ -271,47 +296,69 @@ async function runAutoCreateTwroleInternal({
   if (didResume && resumeSnapshot) {
     const restoredStep = Math.min(totalSteps, Math.max(0, Math.round(resumeSnapshot.step)));
     startStep = Math.min(totalSteps + 1, restoredStep + 1);
-    onProgress?.(createProgress(collage, 'run', restoredStep, totalSteps, 'resumed'));
+    onProgress?.(createProgress(activeEngine(), 'run', restoredStep, totalSteps, 'resumed'));
   }
 
   const finishRunDiagnostics = diagnostics?.begin('run');
   try {
-    for (let step = startStep; step <= totalSteps; step += 1) {
-      if (signal?.aborted) {
-        const stoppedStep = Math.max(0, step - 1);
-        const checkpoint = await publishCheckpoint('run', stoppedStep, totalSteps, stoppedStep, 0, 'stopped');
-        throw new AutoCreateTwroleStoppedError({ result: checkpoint.result, checkpoint });
-      }
-
-      let didWork = false;
-      const active = collage.activeCount();
-
-      if (settings.tileBudget > 0 && active >= settings.tileBudget) {
-        if (step % 2 === 0) didWork = collage.tryReplaceOnce(step, totalSteps);
-        if (!didWork) didWork = collage.tryPruneOnce();
-      } else {
-        didWork = collage.tryAdd(step, totalSteps);
-        if (step % Math.max(1, Math.round(settings.removeEvery)) === 0 && collage.activeCount() > 0) {
-          collage.tryPrune(settings.pruneRounds);
+    if (wasmEngine) {
+      for (let step = startStep; step <= totalSteps; step += 1) {
+        if (signal?.aborted) {
+          const stoppedStep = Math.max(0, step - 1);
+          const checkpoint = await publishCheckpoint('run', stoppedStep, totalSteps, stoppedStep, 0, 'stopped');
+          throw new AutoCreateTwroleStoppedError({ result: checkpoint.result, checkpoint });
         }
-        if (step % Math.max(1, Math.round(settings.replaceEvery)) === 0 && collage.activeCount() > 0) {
-          collage.tryReplaceOnce(step, totalSteps);
+
+        const didWork = wasmEngine.runStep(step, totalSteps);
+
+        if (step === 1 || step % logEvery === 0 || step === totalSteps) {
+          onProgress?.(createProgress(activeEngine(), 'run', step, totalSteps, didWork ? 'accepted/refined' : 'searched'));
+          await nextFrame();
+        }
+
+        if (exportEvery > 0 && (step === 1 || step % exportEvery === 0 || step === totalSteps)) {
+          await publishCheckpoint('run', step, totalSteps, step, 0, 'checkpoint');
+          await nextFrame();
         }
       }
+    } else {
+      for (let step = startStep; step <= totalSteps; step += 1) {
+        if (signal?.aborted) {
+          const stoppedStep = Math.max(0, step - 1);
+          const checkpoint = await publishCheckpoint('run', stoppedStep, totalSteps, stoppedStep, 0, 'stopped');
+          throw new AutoCreateTwroleStoppedError({ result: checkpoint.result, checkpoint });
+        }
 
-      if (step % Math.max(250, Math.round(settings.fullErrorRecomputeEvery)) === 0) {
-        collage.recomputeErrors();
-      }
+        let didWork = false;
+        if (tsCollage) {
+          const active = tsCollage.activeCount();
+          if (settings.tileBudget > 0 && active >= settings.tileBudget) {
+            if (step % 2 === 0) didWork = tsCollage.tryReplaceOnce(step, totalSteps);
+            if (!didWork) didWork = tsCollage.tryPruneOnce();
+          } else {
+            didWork = tsCollage.tryAdd(step, totalSteps);
+            if (step % Math.max(1, Math.round(settings.removeEvery)) === 0 && tsCollage.activeCount() > 0) {
+              tsCollage.tryPrune(settings.pruneRounds);
+            }
+            if (step % Math.max(1, Math.round(settings.replaceEvery)) === 0 && tsCollage.activeCount() > 0) {
+              tsCollage.tryReplaceOnce(step, totalSteps);
+            }
+          }
+          if (step % Math.max(250, Math.round(settings.fullErrorRecomputeEvery)) === 0) {
+            tsCollage.recomputeErrors();
+          }
+        }
 
-      if (step === 1 || step % logEvery === 0 || step === totalSteps) {
-        onProgress?.(createProgress(collage, 'run', step, totalSteps, didWork ? 'accepted/refined' : 'searched'));
-        await nextFrame();
-      }
+        if (step === 1 || step % logEvery === 0 || step === totalSteps) {
+          onProgress?.(createProgress(activeEngine(), 'run', step, totalSteps, didWork ? 'accepted/refined' : 'searched'));
+          await nextFrame();
+        }
 
-      if (exportEvery > 0 && (step === 1 || step % exportEvery === 0 || step === totalSteps)) {
-        collage.saveMemory();
-        await publishCheckpoint('run', step, totalSteps, step, 0, 'checkpoint');
-        await nextFrame();
+        if (exportEvery > 0 && (step === 1 || step % exportEvery === 0 || step === totalSteps)) {
+          tsCollage?.saveMemory();
+          await publishCheckpoint('run', step, totalSteps, step, 0, 'checkpoint');
+          await nextFrame();
+        }
       }
     }
   } finally {
@@ -337,13 +384,14 @@ async function runAutoCreateTwroleInternal({
           );
           throw new AutoCreateTwroleStoppedError({ result: checkpoint.result, checkpoint });
         }
-        if (!collage.tryPruneOnce()) {
+        const pruned = wasmEngine ? wasmEngine.tryPruneOnce() : tsCollage!.tryPruneOnce();
+        if (!pruned) {
           completedFinalPruneRounds = finalRounds;
           break;
         }
         completedFinalPruneRounds = i + 1;
         if (i % 10 === 0) {
-          onProgress?.(createProgress(collage, 'final', i + 1, finalRounds, 'final prune'));
+          onProgress?.(createProgress(activeEngine(), 'final', i + 1, finalRounds, 'final prune'));
           await nextFrame();
         }
       }
@@ -364,9 +412,14 @@ async function runAutoCreateTwroleInternal({
     throw new AutoCreateTwroleStoppedError({ result: checkpoint.result, checkpoint });
   }
 
-  collage.recomputeErrors();
-  collage.saveMemory();
-  onProgress?.(createProgress(collage, 'final', finalRounds, finalRounds || 1, 'done'));
+  if (wasmEngine) {
+    wasmEngine.recomputeErrors();
+    wasmEngine.syncDiagnostics();
+  } else if (tsCollage) {
+    tsCollage.recomputeErrors();
+    tsCollage.saveMemory();
+  }
+  onProgress?.(createProgress(activeEngine(), 'final', finalRounds, finalRounds || 1, 'done'));
 
   const result = await createResult();
   if (signal?.aborted) {
@@ -381,4 +434,7 @@ async function runAutoCreateTwroleInternal({
     throw new AutoCreateTwroleStoppedError({ result, checkpoint });
   }
   return result;
+  } finally {
+    wasmEngine?.destroy();
+  }
 }

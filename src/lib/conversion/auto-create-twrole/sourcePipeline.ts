@@ -228,8 +228,8 @@ export async function optionToSourceTile(
   const origH = exactGaf?.height ?? size!.height;
   const renderCanvas = exactGaf?.canvas ?? createCanvas(renderW, renderH);
 
+  const renderContext = get2d(renderCanvas);
   if (!exactGaf) {
-    const renderContext = get2d(renderCanvas);
     renderContext.clearRect(0, 0, renderW, renderH);
     if (atlas) {
       renderContext.drawImage(image as CanvasImageSource, atlas.x, atlas.y, atlas.width, atlas.height, 0, 0, renderW, renderH);
@@ -237,6 +237,7 @@ export async function optionToSourceTile(
       renderContext.drawImage(image as CanvasImageSource, 0, 0, renderW, renderH);
     }
   }
+  const thumbStraight = renderContext.getImageData(0, 0, renderW, renderH).data;
 
   // Keep maxTileSize as a color-statistics budget only. Candidate transforms
   // use the native renderCanvas so the Worker evaluates the same source detail
@@ -302,6 +303,7 @@ export async function optionToSourceTile(
     assetId: option.id,
     label: option.label,
     canvas: renderCanvas,
+    thumbStraight,
     origW,
     origH,
     thumbW: renderW,

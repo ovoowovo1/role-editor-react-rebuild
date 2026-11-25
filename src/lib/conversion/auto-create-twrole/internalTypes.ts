@@ -30,6 +30,7 @@ export interface SourceTile {
   assetId: string;
   label: string;
   canvas: AutoCreateCanvas;
+  thumbStraight?: Uint8ClampedArray;
   origW: number;
   origH: number;
   thumbW: number;

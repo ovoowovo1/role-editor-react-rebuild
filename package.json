@@ -10,6 +10,7 @@
   "type": "module",
   "scripts": {
     "generate:gaf": "node scripts/generateGafManifest.mjs",
+    "build:wasm": "cargo build --manifest-path crates/auto-create-wasm/Cargo.toml --target wasm32-unknown-unknown --release",
     "bench:auto-create": "node scripts/benchAutoCreate.mjs",
     "predev": "npm run generate:gaf",
     "prebuild": "npm run generate:gaf",
