@@ -16,6 +16,7 @@ import {
 import type { DisguiseDecoOptions, StageSceneState } from './types';
 import { syncHeadLayerSelection, syncSelectionDragController } from './selectionControllerSync';
 import { syncReferenceImageDisplayRecords } from './referenceImageVisuals';
+import { buildDecorationHitIndex, type DecorationHitIndex } from './decorationHitIndex';
 import type { ReferenceImageLayer } from '../../types/referenceImage';
 import type { ReferenceImageOptions } from './types';
 
@@ -176,6 +177,7 @@ export function syncDisguiseChildOrder(
     replaceDisguiseChildren(scene.disguiseRoot, fullOrder);
   }
   scene.lastDisguiseChildOrder = fullOrder;
+  scene.decorationHitIndex = null;
 }
 
 export function setDecorationInteractionEnabled(
@@ -184,14 +186,24 @@ export function setDecorationInteractionEnabled(
 ): void {
   if (scene.decorationInteractionEnabled === enabled) return;
   scene.decorationInteractionEnabled = enabled;
-  for (const { container } of scene.decoDisplays.values()) {
-    container.eventMode = enabled ? 'static' : 'none';
-    container.cursor = enabled ? 'pointer' : 'default';
-  }
   for (const { container } of scene.referenceImageDisplays?.values?.() ?? []) {
     container.eventMode = enabled ? 'static' : 'none';
     container.cursor = enabled ? 'pointer' : 'default';
   }
+}
+
+export function ensureDecorationHitIndex(
+  scene: StageSceneState,
+  role: RoleDocument
+): DecorationHitIndex {
+  if (!scene.decorationHitIndex) {
+    scene.decorationHitIndex = buildDecorationHitIndex(
+      role.decorations,
+      scene.decoDisplays,
+      scene.layerOrder
+    );
+  }
+  return scene.decorationHitIndex;
 }
 
 function selectedDecorationsFromLookup(
@@ -257,8 +269,7 @@ export function syncDecorationDisplayRecords(
         pending.add(deco.id);
         continue;
       }
-      container.eventMode = scene.decorationInteractionEnabled ? 'static' : 'none';
-      container.cursor = scene.decorationInteractionEnabled ? 'pointer' : 'default';
+      container.eventMode = 'none';
       record = {
         container,
         displayKey,
@@ -293,6 +304,7 @@ export function syncDecorationDisplayRecords(
     }
     orderCache.delete(scene);
   }
+  scene.decorationHitIndex = null;
   displaySyncCache.set(scene, { decorations: role.decorations, options: decoOptions, pending });
 }
 

@@ -230,7 +230,7 @@ describe('stage scene synchronization', () => {
     expect(scene.decoDisplays.get('b')!.container).toBe(firstB);
   });
 
-  it('applies interaction changes once and gives new visuals the current mode', () => {
+  it('tracks interaction flag without touching per-decoration eventMode', () => {
     const scene = makeScene();
     setDecorationInteractionEnabled(scene, false);
     syncDecorationDisplayRecords(
@@ -239,12 +239,12 @@ describe('stage scene synchronization', () => {
       decoOptions
     );
     const first = scene.decoDisplays.get('a')!.container;
+    expect(scene.decorationInteractionEnabled).toBe(false);
     expect(first.eventMode).toBe('none');
-    expect(first.cursor).toBe('default');
 
     setDecorationInteractionEnabled(scene, true);
-    expect(first.eventMode).toBe('static');
-    expect(first.cursor).toBe('pointer');
+    expect(scene.decorationInteractionEnabled).toBe(true);
+    expect(first.eventMode).toBe('none');
   });
 
   it('keeps controller and brush overlays in child order when visibility changes', () => {

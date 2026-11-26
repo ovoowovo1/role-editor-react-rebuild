@@ -14,13 +14,15 @@ const mocks = vi.hoisted(() => ({
   isDecorationDisplaySyncCurrent: vi.fn(() => false),
   createLargeMultiDragPreview: vi.fn((_width: number, _height: number) => new Container()),
   setDecorationInteractionEnabled: vi.fn(),
-  syncDisguiseChildOrder: vi.fn()
+  syncDisguiseChildOrder: vi.fn(),
+  syncSelectionControllerForIds: vi.fn()
 }));
 
 vi.mock('./sceneSync', () => ({
   isDecorationDisplaySyncCurrent: mocks.isDecorationDisplaySyncCurrent,
   setDecorationInteractionEnabled: mocks.setDecorationInteractionEnabled,
-  syncDisguiseChildOrder: mocks.syncDisguiseChildOrder
+  syncDisguiseChildOrder: mocks.syncDisguiseChildOrder,
+  syncSelectionControllerForIds: mocks.syncSelectionControllerForIds
 }));
 
 vi.mock('./stageOverlayVisuals', () => ({ createLargeMultiDragPreview: mocks.createLargeMultiDragPreview }));

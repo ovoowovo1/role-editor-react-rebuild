@@ -11,7 +11,8 @@ import { getDisplayRootPosition } from './sceneGeometry';
 import {
   isDecorationDisplaySyncCurrent,
   setDecorationInteractionEnabled,
-  syncDisguiseChildOrder
+  syncDisguiseChildOrder,
+  syncSelectionControllerForIds
 } from './sceneSync';
 import type { DraggedDisplayItem, StagePointerPosition, StageRuntimeRefs, StageSceneState } from './types';
 
@@ -191,7 +192,8 @@ export function beginDecorationDrag(
   id: string,
   global: StagePointerPosition,
   root: Container,
-  refs: StageRuntimeRefs
+  refs: StageRuntimeRefs,
+  overrideSelectedIds?: readonly string[]
 ): void {
   if (refs.brushFillRef.current.active || refs.dragRef.current) return;
 
@@ -199,7 +201,7 @@ export function beginDecorationDrag(
   if (!scene) return;
 
   const role = refs.roleRef.current;
-  const selectedIds = refs.selectedIdsRef.current;
+  const selectedIds = overrideSelectedIds ?? refs.selectedIdsRef.current;
   if (selectedIds.length === 1 && selectedIds[0] !== id) return;
   // A single selected ID can't be affected by the document's layer order.
   // While display synchronization is deferred, read the live document instead.
@@ -307,6 +309,14 @@ export function commitDecorationDrag(refs: StageRuntimeRefs): boolean {
   if (scene) {
     setDecorationInteractionEnabled(scene, !refs.brushFillRef.current.active);
     syncDisguiseChildOrder(scene, refs.roleRef.current, refs.layerOrderRef?.current);
+    if (visual.kind !== 'reference-image') {
+      syncSelectionControllerForIds(
+        scene,
+        refs.selectedIdsRef.current,
+        false,
+        refs.headGlowAlwaysOnRef?.current ?? false
+      );
+    }
   }
 
   if (visual.kind === 'reference-image') {

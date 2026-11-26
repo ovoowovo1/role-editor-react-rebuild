@@ -103,6 +103,7 @@ export function useStageSceneLifecycle({
           ? DEFAULT_ACTOR_BODY_ANIMATION_LABEL
           : bodyAnimationLabel,
         onSelectionDragPointerDown: (event, currentScene) => {
+          if (event.shiftKey || event.ctrlKey || event.metaKey) return;
           const targetId = currentScene.selectionDragTargetId;
           if (!targetId) return;
           decoOptions.onPointerDown(

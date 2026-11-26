@@ -81,7 +81,12 @@ export function buildStageScene({
   brushFillOverlay.visible = false;
   brushFillOverlay.eventMode = 'none';
   brushFillOverlay.addChild(brushFillCommittedGraphic, brushFillDraftGraphic);
-  disguiseRoot.addChild(selectionDragController, brushFillOverlay, headLayerSelectionOverlay);
+
+  const marqueeSelectionGraphic = new Graphics();
+  marqueeSelectionGraphic.visible = false;
+  marqueeSelectionGraphic.eventMode = 'none';
+
+  disguiseRoot.addChild(selectionDragController, brushFillOverlay, marqueeSelectionGraphic, headLayerSelectionOverlay);
 
   const updatePosition = () => {
     const host = hostRef.current;
@@ -110,6 +115,7 @@ export function buildStageScene({
     brushFillOverlay,
     brushFillCommittedGraphic,
     brushFillDraftGraphic,
+    marqueeSelectionGraphic,
     selectionDragVisualKey: '',
     selectionDragVisualsById: new Map(),
     selectionDragVisualDisplayKeysById: new Map(),
@@ -123,6 +129,7 @@ export function buildStageScene({
     referenceImagesById: new Map(),
     layerOrder: [],
     decorationInteractionEnabled: true,
+    decorationHitIndex: null,
     lastDisguiseChildOrder: [],
     updatePosition
   };

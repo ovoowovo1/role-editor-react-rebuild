@@ -12,21 +12,15 @@ export { createDecorationVisual };
 export function createDisguiseEntryDisplay(
   deco: DecorationLayer,
   failedTextures: Set<string>,
-  disguiseRoot: Container,
-  decoOptions: DisguiseDecoOptions
+  _disguiseRoot: Container,
+  _decoOptions?: DisguiseDecoOptions
 ): Container | null {
   const wrapper = createDecorationVisual(deco, failedTextures);
   if (!wrapper) return null;
-  wrapper.eventMode = 'static';
-  wrapper.cursor = 'pointer';
-
-  wrapper.on('pointerdown', (event) => {
-    decoOptions.onPointerDown(
-      deco.id,
-      { x: event.global.x, y: event.global.y },
-      disguiseRoot
-    );
-  });
+  // Stage-level spatial hit-testing handles decoration clicks in O(1),
+  // so individual decoration containers stay non-interactive to avoid
+  // O(N) Pixi EventSystem traversal on pointermove.
+  wrapper.eventMode = 'none';
   return wrapper;
 }
 

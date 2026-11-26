@@ -28,6 +28,8 @@ interface CharacterStageProps {
   referenceImages: ReferenceImageLayer[];
   layerOrder: string[];
   onCommitReferenceImageDrag(id: string, dx: number, dy: number): void;
+  onSelectDecoration?(id: string, additive: boolean): void;
+  onSelectMultipleDecorations?(ids: string[]): void;
   onClearSelection(): void;
   brushFillActive?: boolean;
   brushFillBrushSize?: number;
@@ -49,6 +51,8 @@ export function CharacterStage({
   referenceImages,
   layerOrder,
   onCommitReferenceImageDrag,
+  onSelectDecoration,
+  onSelectMultipleDecorations,
   onClearSelection,
   brushFillActive = false,
   brushFillBrushSize = 18,
@@ -77,6 +81,8 @@ export function CharacterStage({
     layerOrder,
     onCommitDrag,
     onCommitReferenceImageDrag,
+    onSelectDecoration,
+    onSelectMultipleDecorations,
     onClearSelection,
     onBrushFillMaskChange
   });

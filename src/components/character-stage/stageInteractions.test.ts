@@ -22,6 +22,19 @@ vi.mock('./dragInteractions', () => ({
   updateDecorationDrag: mocks.updateDecorationDrag
 }));
 
+vi.mock('./stageOverlayVisuals', () => ({
+  getCachedControllerGlowFilter: vi.fn(() => ({}))
+}));
+
+vi.mock('./pixiVisuals', () => ({
+  applyDecorationDisplayTransform: vi.fn(),
+  createDecorationVisual: vi.fn(() => new Container()),
+  createDisguiseEntryDisplay: vi.fn(() => new Container())
+}));
+
+import { Container, Rectangle } from 'pixi.js';
+import { buildDecorationHitIndex } from './decorationHitIndex';
+import { beginDecorationDrag } from './dragInteractions';
 import { createStagePointerHandlers } from './stageInteractions';
 
 interface RafHarness {
@@ -205,5 +218,174 @@ describe('stage pointer interactions', () => {
     handlers.handleUp(pointerEvent(2, 3, image, stage));
 
     expect(refs.callbacksRef.current.onClearSelection).not.toHaveBeenCalled();
+  });
+
+  it('selects and immediately starts dragging an unselected decoration hit via spatial index', () => {
+    const refs = makeRuntimeRefs();
+    const onSelectDecoration = vi.fn();
+    refs.callbacksRef.current.onSelectDecoration = onSelectDecoration;
+    const disguiseRoot = new Container();
+    disguiseRoot.toLocal = (pt) => pt as never;
+    const hitContainer = new Container();
+    hitContainer.getLocalBounds = () => new Rectangle(-10, -10, 20, 20);
+    const deco = {
+      id: 'deco-a',
+      code: 'c1',
+      assetId: 'a1',
+      name: 'Deco A',
+      x: 50,
+      y: 60,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      visible: true,
+      opacity: 1
+    };
+    const decoDisplays = new Map([['deco-a', { container: hitContainer, displayKey: 'k', transformKey: 't' }]]);
+    refs.roleRef.current = { decorations: [deco] } as never;
+    refs.sceneRef.current = {
+      disguiseRoot,
+      decorationInteractionEnabled: true,
+      decoDisplays,
+      decorationHitIndex: buildDecorationHitIndex([deco], decoDisplays)
+    } as never;
+
+    const handlers = createStagePointerHandlers(refs);
+    const stage = {};
+    handlers.handlePointerDown(pointerEvent(50, 60, stage, stage));
+
+    expect(beginDecorationDrag).toHaveBeenCalledWith(
+      'deco-a',
+      { x: 50, y: 60 },
+      disguiseRoot,
+      refs,
+      ['deco-a']
+    );
+    expect(onSelectDecoration).not.toHaveBeenCalled();
+    raf.runNext();
+    expect(onSelectDecoration).toHaveBeenCalledWith('deco-a', false);
+
+    handlers.handleUp(pointerEvent(50, 60, stage, stage));
+    expect(refs.callbacksRef.current.onClearSelection).not.toHaveBeenCalled();
+  });
+
+  it('supports shift-click additive multi-selection and drag on the stage', () => {
+    const refs = makeRuntimeRefs();
+    const onSelectDecoration = vi.fn();
+    refs.callbacksRef.current.onSelectDecoration = onSelectDecoration;
+    refs.selectedIdsRef.current = ['deco-a'];
+    const disguiseRoot = new Container();
+    disguiseRoot.toLocal = (pt) => pt as never;
+    const hitContainer = new Container();
+    hitContainer.getLocalBounds = () => new Rectangle(-10, -10, 20, 20);
+    const decoB = {
+      id: 'deco-b',
+      code: 'c2',
+      assetId: 'a2',
+      name: 'Deco B',
+      x: 100,
+      y: 100,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      visible: true,
+      opacity: 1
+    };
+    const decoDisplays = new Map([['deco-b', { container: hitContainer, displayKey: 'k', transformKey: 't' }]]);
+    refs.roleRef.current = { decorations: [decoB] } as never;
+    refs.sceneRef.current = {
+      disguiseRoot,
+      decorationInteractionEnabled: true,
+      decoDisplays,
+      decorationHitIndex: buildDecorationHitIndex([decoB], decoDisplays)
+    } as never;
+
+    const handlers = createStagePointerHandlers(refs);
+    const stage = {};
+    const shiftDown = {
+      ...pointerEvent(100, 100, stage, stage),
+      shiftKey: true
+    } as unknown as FederatedPointerEvent;
+
+    handlers.handlePointerDown(shiftDown);
+
+    expect(refs.selectedIdsRef.current).toEqual(['deco-a', 'deco-b']);
+    expect(beginDecorationDrag).toHaveBeenCalledWith(
+      'deco-b',
+      { x: 100, y: 100 },
+      disguiseRoot,
+      refs,
+      ['deco-a', 'deco-b']
+    );
+    raf.runNext();
+    expect(onSelectDecoration).toHaveBeenCalledWith('deco-b', true);
+  });
+
+  it('supports marquee box selection when dragging on empty stage', () => {
+    const refs = makeRuntimeRefs();
+    const onSelectMultipleDecorations = vi.fn();
+    refs.callbacksRef.current.onSelectMultipleDecorations = onSelectMultipleDecorations;
+    const disguiseRoot = new Container();
+    disguiseRoot.toLocal = (pt) => pt as never;
+    const hitContainerA = new Container();
+    hitContainerA.getLocalBounds = () => new Rectangle(-10, -10, 20, 20);
+    const hitContainerB = new Container();
+    hitContainerB.getLocalBounds = () => new Rectangle(-10, -10, 20, 20);
+    const decoA = {
+      id: 'deco-a',
+      code: 'c1',
+      assetId: 'a1',
+      name: 'Deco A',
+      x: 20,
+      y: 20,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      visible: true,
+      opacity: 1
+    };
+    const decoB = {
+      id: 'deco-b',
+      code: 'c2',
+      assetId: 'a2',
+      name: 'Deco B',
+      x: 60,
+      y: 60,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      visible: true,
+      opacity: 1
+    };
+    const decoDisplays = new Map([
+      ['deco-a', { container: hitContainerA, displayKey: 'k1', transformKey: 't1' }],
+      ['deco-b', { container: hitContainerB, displayKey: 'k2', transformKey: 't2' }]
+    ]);
+    refs.roleRef.current = { decorations: [decoB, decoA] } as never;
+    refs.sceneRef.current = {
+      disguiseRoot,
+      decorationInteractionEnabled: true,
+      decoDisplays,
+      decorationsById: new Map([['deco-a', decoA], ['deco-b', decoB]]),
+      decorationHitIndex: buildDecorationHitIndex([decoB, decoA], decoDisplays),
+      headLayerClip: { visible: false },
+      headLayerSelectionOverlay: { visible: false },
+      headLayerSelectionVisual: { position: { copyFrom: vi.fn() }, scale: { copyFrom: vi.fn() } },
+      selectionDragController: { visible: false, position: { set: vi.fn() }, filters: null },
+      selectionDragVisualKey: '',
+      selectionDragVisualsById: new Map(),
+      selectionDragVisualDisplayKeysById: new Map(),
+      selectionDragControllerVisuals: new Container(),
+      selectionDragControllerGraphic: { clear: vi.fn(), beginFill: vi.fn(), drawRect: vi.fn(), endFill: vi.fn() }
+    } as never;
+
+    const handlers = createStagePointerHandlers(refs);
+    const stage = {};
+    handlers.handlePointerDown(pointerEvent(0, 0, stage, stage));
+    handlers.handleMove(pointerEvent(80, 80, stage, stage));
+    raf.runNext();
+    handlers.handleUp(pointerEvent(80, 80, stage, stage));
+
+    expect(onSelectMultipleDecorations).toHaveBeenCalledWith(['deco-b', 'deco-a']);
   });
 });

@@ -30,6 +30,8 @@ interface StageRuntimeControllerOptions {
   layerOrder: string[];
   onCommitDrag(selectionIds: readonly string[], dx: number, dy: number): void;
   onCommitReferenceImageDrag(id: string, dx: number, dy: number): void;
+  onSelectDecoration?(id: string, additive: boolean): void;
+  onSelectMultipleDecorations?(ids: string[]): void;
   onClearSelection(): void;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
 }
@@ -49,6 +51,8 @@ export function useStageRuntimeController({
   layerOrder,
   onCommitDrag,
   onCommitReferenceImageDrag,
+  onSelectDecoration,
+  onSelectMultipleDecorations,
   onClearSelection,
   onBrushFillMaskChange
 }: StageRuntimeControllerOptions) {
@@ -65,6 +69,8 @@ export function useStageRuntimeController({
   const callbacksRef = useRef<StageCallbacks>({
     onCommitDrag,
     onCommitReferenceImageDrag,
+    onSelectDecoration,
+    onSelectMultipleDecorations,
     onClearSelection,
     onBrushFillMaskChange
   });
@@ -94,6 +100,8 @@ export function useStageRuntimeController({
     callbacksRef.current = {
       onCommitDrag,
       onCommitReferenceImageDrag,
+      onSelectDecoration,
+      onSelectMultipleDecorations,
       onClearSelection,
       onBrushFillMaskChange
     };
@@ -121,6 +129,8 @@ export function useStageRuntimeController({
     onBrushFillMaskChange,
     onClearSelection,
     onCommitDrag,
+    onSelectDecoration,
+    onSelectMultipleDecorations,
     role,
     selectedIds,
     selectedReferenceImageId,
@@ -139,7 +149,8 @@ export function useStageRuntimeController({
       dragRef,
       brushDrawRef,
       referenceImagesRef,
-      layerOrderRef
+      layerOrderRef,
+      headGlowAlwaysOnRef
     }),
     []
   );

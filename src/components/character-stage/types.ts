@@ -5,6 +5,7 @@ import type { ActorClip } from '../../lib/runtime/actorClip';
 import type { GafMovieClip } from '../../lib/runtime/gafMovieClip';
 import type { DecorationLayer, RoleDocument } from '../../types/role';
 import type { ReferenceImageLayer } from '../../types/referenceImage';
+import type { DecorationHitIndex } from './decorationHitIndex';
 
 export interface StagePointerPosition {
   x: number;
@@ -63,6 +64,8 @@ export interface BrushDrawState {
 export interface StageCallbacks {
   onCommitDrag(selectionIds: readonly string[], dx: number, dy: number): void;
   onCommitReferenceImageDrag?(id: string, dx: number, dy: number): void;
+  onSelectDecoration?(id: string, additive: boolean): void;
+  onSelectMultipleDecorations?(ids: string[]): void;
   onClearSelection(): void;
   onBrushFillMaskChange?(mask: BrushFillMask): void;
 }
@@ -116,6 +119,7 @@ export interface StageSceneState {
   brushFillOverlay: Container;
   brushFillCommittedGraphic: Graphics;
   brushFillDraftGraphic: Graphics;
+  marqueeSelectionGraphic?: Graphics;
   selectionDragVisualKey: string;
   selectionDragVisualsById: Map<string, Container>;
   selectionDragVisualDisplayKeysById: Map<string, string>;
@@ -129,6 +133,7 @@ export interface StageSceneState {
   referenceImagesById: Map<string, ReferenceImageLayer>;
   layerOrder: string[];
   decorationInteractionEnabled: boolean;
+  decorationHitIndex?: DecorationHitIndex | null;
   lastDisguiseChildOrder: Container[];
   updatePosition(): void;
 }
@@ -144,4 +149,5 @@ export interface StageRuntimeRefs {
   brushDrawRef: MutableRefObject<BrushDrawState | null>;
   referenceImagesRef?: MutableRefObject<ReferenceImageLayer[]>;
   layerOrderRef?: MutableRefObject<string[]>;
+  headGlowAlwaysOnRef?: MutableRefObject<boolean>;
 }
