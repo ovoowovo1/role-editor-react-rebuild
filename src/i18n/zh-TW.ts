@@ -326,6 +326,7 @@ export const zhTW: Record<string, string> = {
   'shortcuts.scaleDown': '縮小選取物件',
   'shortcuts.ratioUp': '增加長寬比',
   'shortcuts.ratioDown': '降低長寬比',
+  'shortcuts.scrollToSelected': '捲動圖層列表至選取項目（多選可依序循環）',
   'shortcuts.deleteSelected': '刪除選取物件',
 
   // WeaponAnimation

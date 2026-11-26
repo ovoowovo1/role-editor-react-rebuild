@@ -21,7 +21,8 @@ export function useEditorShellShortcuts(
   setStatus: (message: string) => void,
   reference?: ReferenceApi,
   undoOverride?: () => void,
-  redoOverride?: () => void
+  redoOverride?: () => void,
+  onScrollToSelected?: () => void
 ) {
   const shortcutActions = useMemo(
     () => ({
@@ -57,9 +58,10 @@ export function useEditorShellShortcuts(
       },
       rotateBy: editor.rotateSelectedBy,
       scaleBy: editor.scaleSelectedBy,
-      ratioBy: editor.ratioSelectedBy
+      ratioBy: editor.ratioSelectedBy,
+      scrollToSelected: onScrollToSelected
     }),
-    [editor, reference, redoOverride, setStatus, undoOverride]
+    [editor, onScrollToSelected, reference, redoOverride, setStatus, undoOverride]
   );
 
   useKeyboardShortcuts(shortcutActions);

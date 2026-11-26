@@ -1,6 +1,8 @@
 import {
+  forwardRef,
   memo,
   useCallback,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -10,6 +12,7 @@ import {
 } from 'react';
 import { t } from '../../i18n';
 import { HEAD_LAYER_ID } from '../../constants/layers';
+import { REFERENCE_IMAGE_LAYER_PREFIX } from '../../types/referenceImage';
 import type { DecorationGroup, DecorationLayer, HeadLayerTransform } from '../../types/role';
 import type { ReferenceImageLayer } from '../../types/referenceImage';
 import type { LayerReorderOptions } from '../../lib/editor/editorLayerDrag';
@@ -17,8 +20,10 @@ import { GroupHeaderRow, HeadRow, LayerItemRow, ReferenceImageRow } from './Laye
 import {
   applyLayerSelection,
   buildLayerRowModels,
+  collapsedAncestorGroupIdsForLayer,
   createLayerSelectionState,
   mergeReferenceImageRows,
+  orderedSelectionTargetsForScroll
 } from './layerListModels';
 import { SelectLayerDialog } from './SelectLayerDialog';
 import { useLayerListDrag } from './useLayerListDrag';
@@ -69,7 +74,11 @@ const LAYER_SPACER: VirtualLayerRow = {
   selected: false
 };
 
-export const LayerList = memo(function LayerList({
+export interface LayerListHandle {
+  scrollToSelected(): void;
+}
+
+export const LayerList = memo(forwardRef<LayerListHandle, LayerListProps>(function LayerList({
   decorations,
   headLayer,
   headLayerIndex,
@@ -95,7 +104,7 @@ export const LayerList = memo(function LayerList({
   onSelectReferenceImage = () => undefined,
   onToggleReferenceImageVisibility = () => undefined,
   onDeleteReferenceImage = () => undefined
-}: LayerListProps) {
+}: LayerListProps, ref) {
   const [selectItemsOpen, setSelectItemsOpen] = useState(false);
   const [viewportWindow, setViewportWindow] = useState<VirtualWindow>(() => ({
     startIndex: 0,
@@ -210,6 +219,67 @@ export const LayerList = memo(function LayerList({
     updateSize();
   }, [updateWindow]);
 
+  const cycleCursorRef = useRef<{ key: string; nextIndex: number }>({ key: '', nextIndex: 0 });
+  const pendingScrollRowIdRef = useRef<string | null>(null);
+
+  const scrollRowToCenter = useCallback((rowId: string): boolean => {
+    const scrollEl = scrollRef.current;
+    const rowIndex = rowIndexById.get(rowId);
+    if (!scrollEl || rowIndex === undefined) return false;
+    const rowTop = offsets[rowIndex] ?? 0;
+    const rowHeight = heights[rowIndex] ?? 0;
+    const viewportHeight = scrollEl.clientHeight;
+    const maxScrollTop = Math.max(0, totalHeight - viewportHeight);
+    const centeredTop = rowTop - Math.max(0, (viewportHeight - rowHeight) / 2);
+    const nextScrollTop = Math.min(maxScrollTop, Math.max(0, centeredTop));
+    scrollEl.scrollTop = nextScrollTop;
+    updateWindow(nextScrollTop, viewportHeight);
+    return true;
+  }, [heights, offsets, rowIndexById, totalHeight, updateWindow]);
+
+  useLayoutEffect(() => {
+    const pendingRowId = pendingScrollRowIdRef.current;
+    if (!pendingRowId) return;
+    if (scrollRowToCenter(pendingRowId)) {
+      pendingScrollRowIdRef.current = null;
+    }
+  }, [scrollRowToCenter]);
+
+  useImperativeHandle(ref, () => ({
+    scrollToSelected() {
+      const targets = orderedSelectionTargetsForScroll({
+        decorations,
+        headLayerIndex,
+        selectedIds,
+        selectedReferenceImageId
+      });
+      if (!targets.length) return;
+
+      const key = targets.map((entry) => entry.targetId).join('\0');
+      const index = cycleCursorRef.current.key === key ? cycleCursorRef.current.nextIndex : 0;
+      const target = targets[index];
+      cycleCursorRef.current = {
+        key,
+        nextIndex: (index + 1) % targets.length
+      };
+
+      const collapsedIds = target.targetId.startsWith(REFERENCE_IMAGE_LAYER_PREFIX)
+        ? []
+        : collapsedAncestorGroupIdsForLayer(groups, target.targetId);
+
+      if (collapsedIds.length > 0) {
+        pendingScrollRowIdRef.current = target.rowId;
+        for (const groupId of collapsedIds) {
+          onToggleGroupCollapsed(groupId);
+        }
+        return;
+      }
+
+      pendingScrollRowIdRef.current = null;
+      scrollRowToCenter(target.rowId);
+    }
+  }), [decorations, groups, headLayerIndex, onToggleGroupCollapsed, scrollRowToCenter, selectedIds, selectedReferenceImageId]);
+
   useLayoutEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return;
@@ -322,4 +392,4 @@ export const LayerList = memo(function LayerList({
       />
     </aside>
   );
-});
+}));

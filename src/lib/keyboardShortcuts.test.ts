@@ -55,6 +55,11 @@ describe('keyboard shortcut helpers', () => {
       amount: 0.002,
       preventDefault: true
     });
+    expect(resolveKeyboardShortcutCommand({ key: 'f' }, selectable)).toEqual({
+      action: 'scrollToSelected',
+      preventDefault: true
+    });
+    expect(resolveKeyboardShortcutCommand({ key: 'f' }, { hasSelection: false, canGroupSelected: false })).toBeNull();
     expect(resolveKeyboardShortcutCommand({ key: 'Delete' }, { hasSelection: false, canGroupSelected: true })).toBeNull();
   });
 });

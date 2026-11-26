@@ -27,7 +27,8 @@ export type KeyboardShortcutCommand =
   | { action: 'nudge'; dx: number; dy: number; preventDefault: true }
   | { action: 'rotateBy'; degrees: number; preventDefault: true }
   | { action: 'scaleBy'; amount: number; preventDefault: true }
-  | { action: 'ratioBy'; amount: number; preventDefault: true };
+  | { action: 'ratioBy'; amount: number; preventDefault: true }
+  | { action: 'scrollToSelected'; preventDefault: true };
 
 const TEXT_INPUT_TYPES = new Set([
   'date',
@@ -132,6 +133,8 @@ export function resolveKeyboardShortcutCommand(
     case '+':
     case '=':
       return { action: 'scaleBy', amount: clamp(0.002, 0.001, 0.1), preventDefault: true };
+    case 'f':
+      return { action: 'scrollToSelected', preventDefault: true };
     default:
       return null;
   }

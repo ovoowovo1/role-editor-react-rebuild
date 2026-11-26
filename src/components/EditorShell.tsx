@@ -1,6 +1,6 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import { t } from '../i18n';
-import { LayerList } from './layers/LayerListFixed';
+import { LayerList, type LayerListHandle } from './layers/LayerListFixed';
 import { TabBar } from './TabBar';
 import { TopMenu } from './TopMenu';
 import { useRoleEditor } from '../hooks/useRoleEditor';
@@ -61,7 +61,12 @@ export function EditorShell() {
     return editor.role.parts[editor.selectedTab as keyof typeof editor.role.parts];
   }, [editor.role.parts, editor.selectedDecorations, editor.selectedTab, shell.topBarMode]);
 
-  useEditorShellShortcuts(editor, setStatus, reference, undo, redo);
+  const layerListRef = useRef<LayerListHandle | null>(null);
+  const scrollToSelectedLayer = useCallback(() => {
+    layerListRef.current?.scrollToSelected();
+  }, []);
+
+  useEditorShellShortcuts(editor, setStatus, reference, undo, redo, scrollToSelectedLayer);
 
   const openShortcuts = useCallback(() => shell.setShortcutsOpen(true), [shell.setShortcutsOpen]);
   const closeShortcuts = useCallback(() => shell.setShortcutsOpen(false), [shell.setShortcutsOpen]);
@@ -130,6 +135,7 @@ export function EditorShell() {
           <EditorStagePanel editor={editor} shell={shell} reference={reference} onClearSelection={clearSelection} onCommitReferenceImageDrag={commitReferenceImageDrag} />
 
           <LayerList
+            ref={layerListRef}
             decorations={editor.role.decorations}
             headLayer={editor.role.headLayer}
             headLayerIndex={editor.role.headLayerIndex}

@@ -326,6 +326,7 @@ export const en: Record<string, string> = {
   'shortcuts.scaleDown': 'Shrink selected',
   'shortcuts.ratioUp': 'Increase aspect ratio',
   'shortcuts.ratioDown': 'Decrease aspect ratio',
+  'shortcuts.scrollToSelected': 'Scroll layer list to selected (cycle multi-select)',
   'shortcuts.deleteSelected': 'Delete selected',
 
   // WeaponAnimation

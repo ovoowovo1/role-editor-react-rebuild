@@ -1,7 +1,7 @@
 import { GROUP_ROW_PREFIX, HEAD_LAYER_ID, HEAD_ROW_ID, ITEM_ROW_PREFIX } from '../../constants/layers';
 import type { DecorationGroup, DecorationLayer } from '../../types/role';
 import { referenceImageLayerToken, type ReferenceImageLayer } from '../../types/referenceImage';
-import { createGroupTreeIndex } from '../../lib/editor/groupTree';
+import { createGroupTreeIndex, directParentGroup } from '../../lib/editor/groupTree';
 
 interface VirtualLayerModel {
   id: string;
@@ -310,4 +310,75 @@ export function mergeReferenceImageRows(
     if (index < roleRows.length) result.push(roleRows[index]);
   }
   return result;
+}
+
+export interface ScrollTargetEntry {
+  targetId: string;
+  rowId: string;
+}
+
+/**
+ * Returns selected targets ordered top-to-bottom as they appear in the layer
+ * list, including items inside collapsed groups so F-key cycling can expand
+ * and scroll to them.
+ */
+export function orderedSelectionTargetsForScroll({
+  decorations,
+  headLayerIndex,
+  selectedIds,
+  selectedReferenceImageId
+}: {
+  decorations: readonly Pick<DecorationLayer, 'id'>[];
+  headLayerIndex: number;
+  selectedIds: readonly string[];
+  selectedReferenceImageId?: string | null;
+}): ScrollTargetEntry[] {
+  if (selectedReferenceImageId) {
+    const token = referenceImageLayerToken(selectedReferenceImageId);
+    return [{ targetId: token, rowId: token }];
+  }
+  if (!selectedIds.length) return [];
+
+  const selectedSet = new Set(selectedIds);
+  const normalizedHeadIndex = Math.max(0, Math.min(decorations.length, headLayerIndex));
+  const targets: ScrollTargetEntry[] = [];
+  let headAdded = false;
+
+  for (let i = 0; i < decorations.length; i += 1) {
+    if (i === normalizedHeadIndex) {
+      headAdded = true;
+      if (selectedSet.has(HEAD_LAYER_ID)) {
+        targets.push({ targetId: HEAD_LAYER_ID, rowId: HEAD_ROW_ID });
+      }
+    }
+    const id = decorations[i].id;
+    if (selectedSet.has(id)) {
+      targets.push({ targetId: id, rowId: itemRowId(id) });
+    }
+  }
+
+  if (!headAdded && selectedSet.has(HEAD_LAYER_ID)) {
+    targets.push({ targetId: HEAD_LAYER_ID, rowId: HEAD_ROW_ID });
+  }
+
+  return targets;
+}
+
+/**
+ * Returns collapsed ancestor group IDs for a decoration or head layer so the
+ * layer list can expand them before scrolling to the item.
+ */
+export function collapsedAncestorGroupIdsForLayer(
+  groups: DecorationGroup[],
+  layerId: string
+): string[] {
+  const collapsedIds: string[] = [];
+  const seen = new Set<string>();
+  let parent = directParentGroup(groups, { type: 'layer', id: layerId });
+  while (parent && !seen.has(parent.id)) {
+    seen.add(parent.id);
+    if (parent.collapsed) collapsedIds.push(parent.id);
+    parent = directParentGroup(groups, { type: 'group', id: parent.id });
+  }
+  return collapsedIds;
 }

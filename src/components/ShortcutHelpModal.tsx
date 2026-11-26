@@ -26,6 +26,7 @@ export function getShortcutItems(): ShortcutItem[] {
     { keys: ['X'], description: t('shortcuts.scaleDown') },
     { keys: ['Shift', 'Z'], description: t('shortcuts.ratioUp') },
     { keys: ['Shift', 'X'], description: t('shortcuts.ratioDown') },
+    { keys: ['F'], description: t('shortcuts.scrollToSelected') },
     { keys: ['Delete / Backspace'], description: t('shortcuts.deleteSelected') }
   ];
 }

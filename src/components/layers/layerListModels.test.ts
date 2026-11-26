@@ -4,8 +4,10 @@ import type { DecorationGroup, DecorationLayer } from '../../types/role';
 import {
   applyLayerSelection,
   buildLayerRowModels,
+  collapsedAncestorGroupIdsForLayer,
   createLayerSelectionState,
-  mergeReferenceImageRows
+  mergeReferenceImageRows,
+  orderedSelectionTargetsForScroll
 } from './layerListModels';
 import type { ReferenceImageLayer } from '../../types/referenceImage';
 import { buildVirtualGeometry, type VirtualLayerRow } from './layerListVirtualization';
@@ -243,5 +245,28 @@ describe('layer list row models', () => {
     expect(merged.map((row) => row.rowId)).toEqual([
       'reference-image:ref', 'group:g', 'item:a', 'item:b', HEAD_ROW_ID
     ]);
+  });
+
+  it('orders multi-selected targets across 5,500 decorations and finds collapsed ancestor groups', () => {
+    const decorations = Array.from({ length: 5500 }, (_, i) => layer(`d-${i + 1}`));
+    const g1 = { ...group('g1', [{ type: 'layer', id: 'd-2' }, { type: 'layer', id: 'd-3' }]), collapsed: false };
+    const g2Inner = { ...group('g2-inner', [{ type: 'layer', id: 'd-5400' }]), collapsed: true };
+    const g2Outer = { ...group('g2-outer', [{ type: 'group', id: 'g2-inner' }]), collapsed: true };
+
+    const targets = orderedSelectionTargetsForScroll({
+      decorations,
+      headLayerIndex: 1,
+      selectedIds: ['d-5400', HEAD_LAYER_ID, 'd-2'],
+      selectedReferenceImageId: null
+    });
+
+    expect(targets).toEqual([
+      { targetId: HEAD_LAYER_ID, rowId: HEAD_ROW_ID },
+      { targetId: 'd-2', rowId: 'item:d-2' },
+      { targetId: 'd-5400', rowId: 'item:d-5400' }
+    ]);
+
+    expect(collapsedAncestorGroupIdsForLayer([g1, g2Inner, g2Outer], 'd-2')).toEqual([]);
+    expect(collapsedAncestorGroupIdsForLayer([g1, g2Inner, g2Outer], 'd-5400')).toEqual(['g2-inner', 'g2-outer']);
   });
 });

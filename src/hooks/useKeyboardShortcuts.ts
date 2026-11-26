@@ -19,6 +19,7 @@ interface ShortcutActions {
   rotateBy(degrees: number): void;
   scaleBy(amount: number): void;
   ratioBy(amount: number): void;
+  scrollToSelected?(): void;
 }
 
 export function useKeyboardShortcuts(actions: ShortcutActions) {
@@ -71,6 +72,9 @@ export function useKeyboardShortcuts(actions: ShortcutActions) {
           return;
         case 'ratioBy':
           actions.ratioBy(command.amount);
+          return;
+        case 'scrollToSelected':
+          actions.scrollToSelected?.();
           return;
         default:
           return;
