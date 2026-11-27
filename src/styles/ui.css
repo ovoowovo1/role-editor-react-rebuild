@@ -409,12 +409,12 @@ dialog.modal::backdrop {
   overscroll-behavior: contain;
 }
 
-.modal--small {
+dialog.modal.modal--small {
   width: min(440px, calc(100vw - 32px));
 }
 
-.modal--large {
-  width: min(760px, calc(100vw - 32px));
+dialog.modal.modal--large {
+  width: min(860px, calc(100vw - 32px));
 }
 
 .modal-header {
@@ -696,8 +696,8 @@ dialog.modal::backdrop {
   }
 
   dialog.modal,
-  .modal--small,
-  .modal--large {
+  dialog.modal.modal--small,
+  dialog.modal.modal--large {
     width: calc(100vw - 20px);
     max-height: calc(100dvh - 20px);
     margin-bottom: 10px;
