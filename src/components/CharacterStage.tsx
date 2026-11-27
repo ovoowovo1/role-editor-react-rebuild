@@ -114,7 +114,6 @@ export function CharacterStage({
     sceneBuildConfigRef: stageRuntime.sceneBuildConfigRef,
     hostRef,
     stageBgRef,
-    decoOptions: stageRuntime.decoOptions,
     referenceImageOptions: stageRuntime.referenceImageOptions,
     sceneKey,
     cancelDeferredStageSync,
@@ -137,7 +136,6 @@ export function CharacterStage({
     referenceImages,
     layerOrder,
     referenceImageOptions: stageRuntime.referenceImageOptions,
-    decoOptions: stageRuntime.decoOptions,
     scheduleDeferredStageSync,
     cancelDeferredStageSync
   });

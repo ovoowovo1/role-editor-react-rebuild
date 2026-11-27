@@ -82,10 +82,6 @@ export interface StageSceneBuildConfig {
   bodyAnimationLabel: string;
 }
 
-export interface DisguiseDecoOptions {
-  onPointerDown(id: string, global: StagePointerPosition, disguiseRoot: Container): void;
-}
-
 export interface ReferenceImageOptions {
   onPointerDown(id: string, global: StagePointerPosition, disguiseRoot: Container): void;
 }

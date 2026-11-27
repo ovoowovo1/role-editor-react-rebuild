@@ -1,8 +1,5 @@
-import type { DecorationGroup, DecorationLayer, RoleDocument } from '../../types/role';
-import {
-  createRoleJsonBlobWithThumb,
-  createTwroleBlobWithThumb
-} from './legacyTwroleExport';
+import type { DecorationLayer, RoleDocument } from '../../types/role';
+import { createTwroleBlobWithThumb } from './legacyTwroleExport';
 import { normalizeRoleDocument } from './roleSchemaV1';
 import {
   rotationRadiansForExport,
@@ -10,37 +7,6 @@ import {
   type LegacyCompactRoleConfig
 } from './roleSerializationLegacy';
 
-interface ExportEnvelope {
-  source: string;
-  schemaVersion: 1;
-  exportedAt: string;
-  data: RoleDocument;
-  thumb: null;
-  decoGroups: DecorationGroup[];
-  mockAdapters: string[];
-}
-
-function cloneRole(role: RoleDocument): RoleDocument {
-  return structuredClone(role);
-}
-
-export function roleToEnvelope(role: RoleDocument): ExportEnvelope {
-  const cleanRole = normalizeRoleDocument(role);
-  return {
-    source: 'tw-role-editor-react-rebuild',
-    schemaVersion: 1,
-    exportedAt: new Date().toISOString(),
-    data: {
-      ...cleanRole,
-      updatedAt: new Date().toISOString()
-    },
-    thumb: null,
-    decoGroups: cloneRole(cleanRole).groups ?? [],
-    mockAdapters: ['Base.resourceManager', 'TwilightWarsLib.ActorClip', 'TWLibLib.ActorPart', 'RoleDecosList', 'GLT/auth']
-  };
-}
-
-export const createRoleJsonBlob = createRoleJsonBlobWithThumb;
 export const createTwroleBlob = createTwroleBlobWithThumb;
 
 function exportOldEditorDecolist(role: RoleDocument): LegacyCompactDecoEntry[] {

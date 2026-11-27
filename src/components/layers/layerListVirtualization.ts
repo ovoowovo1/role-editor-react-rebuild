@@ -274,10 +274,6 @@ export function isReferenceImageRowId(rowId: string): boolean {
   return rowId.startsWith('reference-image:');
 }
 
-export function referenceImageIdFromRowId(rowId: string): string | null {
-  return isReferenceImageRowId(rowId) ? rowId.slice('reference-image:'.length) : null;
-}
-
 export function groupIdFromRowId(rowId: string): string | null {
   return rowId.startsWith(GROUP_ROW_PREFIX) ? rowId.slice(GROUP_ROW_PREFIX.length) : null;
 }

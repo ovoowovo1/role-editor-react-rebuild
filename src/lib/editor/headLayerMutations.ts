@@ -354,11 +354,6 @@ export function groupContainsHeadLayer(role: RoleDocument, groupId: string): boo
   return groupsContainHead(role.groups ?? [], groupId);
 }
 
-export function decorationIdsFromLayerIds(role: RoleDocument, layerIds: string[]): string[] {
-  const existing = new Set(role.decorations.map((item) => item.id));
-  return layerIds.filter((id) => existing.has(id));
-}
-
 export function toggleLayerSelection(current: string[], ids: string[], additive: boolean): string[] {
   if (!additive) return ids;
   const next = new Set(current);

@@ -254,14 +254,6 @@ export const genders: { code: GenderCode; name: string }[] = [
   { code: 'female', name: 'Female' }
 ];
 
-export const tabLabels: Record<PartTab, string> = {
-  deco: 'Deco',
-  head: 'Head',
-  hand: 'Hand',
-  foot: 'Foot',
-  cape: 'Cape'
-};
-
 export function defaultParts(): RoleParts {
   return {
     head: findFrameOption(partOptions.head, actorPartRuntime.head.defaultFrame)?.id ?? partOptions.head[0].id,

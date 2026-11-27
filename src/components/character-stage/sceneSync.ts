@@ -13,7 +13,7 @@ import {
   applyDecorationDisplayTransform,
   createDisguiseEntryDisplay
 } from './pixiVisuals';
-import type { DisguiseDecoOptions, StageSceneState } from './types';
+import type { StageSceneState } from './types';
 import { syncHeadLayerSelection, syncSelectionDragController } from './selectionControllerSync';
 import { syncReferenceImageDisplayRecords } from './referenceImageVisuals';
 import { buildDecorationHitIndex, type DecorationHitIndex } from './decorationHitIndex';
@@ -28,7 +28,6 @@ interface OrderCache {
 }
 interface DisplaySyncCache {
   decorations: readonly DecorationLayer[];
-  options: DisguiseDecoOptions;
   pending: ReadonlySet<string>;
 }
 const displaySyncCache = new WeakMap<StageSceneState, DisplaySyncCache>();
@@ -232,19 +231,17 @@ export function syncSelectionControllerForIds(
 export function syncDecorationDisplayRecords(
   scene: StageSceneState,
   role: RoleDocument,
-  decoOptions: DisguiseDecoOptions,
   activeDragIds?: ReadonlySet<string> | null
 ): void {
   const decorationsById = scene.decorationsById;
   const previous = displaySyncCache.get(scene);
-  const comparable = previous?.options === decoOptions ? previous : undefined;
-  if (comparable?.decorations === role.decorations && comparable.pending.size === 0) return;
+  if (previous?.decorations === role.decorations && previous.pending.size === 0) return;
 
   let membershipChanged = decorationsById.size !== role.decorations.length;
   const pending = new Set<string>();
   for (let index = 0; index < role.decorations.length; index++) {
     const deco = role.decorations[index];
-    if (comparable?.decorations[index] === deco && !comparable.pending.has(deco.id)) continue;
+    if (previous?.decorations[index] === deco && !previous.pending.has(deco.id)) continue;
     const known = decorationsById.get(deco.id);
     if (!known) membershipChanged = true;
     if (known !== deco) decorationsById.set(deco.id, deco);
@@ -261,9 +258,7 @@ export function syncDecorationDisplayRecords(
     if (!record) {
       const container = createDisguiseEntryDisplay(
         deco,
-        scene.failedTextures,
-        scene.disguiseRoot,
-        decoOptions
+        scene.failedTextures
       );
       if (!container) {
         pending.add(deco.id);
@@ -305,7 +300,7 @@ export function syncDecorationDisplayRecords(
     orderCache.delete(scene);
   }
   scene.decorationHitIndex = null;
-  displaySyncCache.set(scene, { decorations: role.decorations, options: decoOptions, pending });
+  displaySyncCache.set(scene, { decorations: role.decorations, pending });
 }
 
 export function syncReferenceImages(

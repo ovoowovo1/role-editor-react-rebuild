@@ -5,15 +5,12 @@ import {
   displayTransformPatchForDecoration,
   type DisplayTransformPatch
 } from '../../lib/stage/characterStageHelpers';
-import type { DisguiseDecoOptions } from './types';
 
 export { createDecorationVisual };
 
 export function createDisguiseEntryDisplay(
   deco: DecorationLayer,
-  failedTextures: Set<string>,
-  _disguiseRoot: Container,
-  _decoOptions?: DisguiseDecoOptions
+  failedTextures: Set<string>
 ): Container | null {
   const wrapper = createDecorationVisual(deco, failedTextures);
   if (!wrapper) return null;

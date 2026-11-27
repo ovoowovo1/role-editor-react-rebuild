@@ -15,7 +15,7 @@ import {
 import { drawBrushFillOverlay } from './stageOverlayVisuals';
 import { ensureRenderWhenTexturesLoad, requestStageRender } from './stageApplicationLifecycle';
 import { gafSources } from '../../mock/gafManifest';
-import type { BrushDrawState, DisguiseDecoOptions, DragState, ReferenceImageOptions, StageSceneState } from './types';
+import type { BrushDrawState, DragState, ReferenceImageOptions, StageSceneState } from './types';
 import type { ReferenceImageLayer } from '../../types/referenceImage';
 
 interface StageDisplaySyncOptions {
@@ -34,7 +34,6 @@ interface StageDisplaySyncOptions {
   sceneRef: MutableRefObject<StageSceneState | null>;
   dragRef: MutableRefObject<DragState | null>;
   brushDrawRef: MutableRefObject<BrushDrawState | null>;
-  decoOptions: DisguiseDecoOptions;
   scheduleDeferredStageSync(run: () => void): void;
   cancelDeferredStageSync(): void;
 }
@@ -59,7 +58,6 @@ export function useStageDisplaySync({
   sceneRef,
   dragRef,
   brushDrawRef,
-  decoOptions,
   scheduleDeferredStageSync,
   cancelDeferredStageSync
 }: StageDisplaySyncOptions): void {
@@ -83,7 +81,6 @@ export function useStageDisplaySync({
       syncDecorationDisplayRecords(
         currentScene,
         currentRole,
-        decoOptions,
         activeDecorationDragIds(activeDrag)
       );
       syncReferenceImages(currentScene, referenceImages, referenceImageOptions);
@@ -120,7 +117,6 @@ export function useStageDisplaySync({
     syncDisplays(false);
   }, [
     cancelDeferredStageSync,
-    decoOptions,
     dragRef,
     role.decorations,
     referenceImages,

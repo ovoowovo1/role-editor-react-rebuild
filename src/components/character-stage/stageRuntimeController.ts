@@ -3,11 +3,10 @@ import type { Application } from 'pixi.js';
 import type { BrushFillMask } from '../../lib/conversion/brushFillToDeco';
 import type { RoleDocument } from '../../types/role';
 import type { ReferenceImageLayer } from '../../types/referenceImage';
-import { beginDecorationDrag, beginReferenceImageDrag } from './dragInteractions';
+import { beginReferenceImageDrag } from './dragInteractions';
 import type {
   BrushDrawState,
   BrushFillState,
-  DisguiseDecoOptions,
   DragState,
   StageCallbacks,
   StageRuntimeRefs,
@@ -155,15 +154,6 @@ export function useStageRuntimeController({
     []
   );
 
-  const decoOptions = useMemo<DisguiseDecoOptions>(
-    () => ({
-      onPointerDown: (id, global, root) => {
-        beginDecorationDrag(id, global, root, stageRuntimeRefs);
-      }
-    }),
-    [stageRuntimeRefs]
-  );
-
   const referenceImageOptions = useMemo(
     () => ({
       onPointerDown: (id: string, global: { x: number; y: number }, root: import('pixi.js').Container) => {
@@ -191,7 +181,6 @@ export function useStageRuntimeController({
     lastPlaybackResetRef,
     sceneBuildConfigRef,
     stageRuntimeRefs,
-    decoOptions,
     referenceImageOptions
   };
 }

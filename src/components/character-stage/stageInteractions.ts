@@ -9,8 +9,15 @@ import {
   commitDecorationDrag,
   updateDecorationDrag
 } from './dragInteractions';
-import { hitTestDecorationAt, hitTestDecorationsInRect } from './decorationHitIndex';
-import { ensureDecorationHitIndex, syncSelectionControllerForIds } from './sceneSync';
+import { hitTestDecorationAt } from './decorationHitIndex';
+import {
+  beginMarqueeSelection,
+  commitMarqueeSelection,
+  drawMarqueeSelectionBox,
+  updateMarqueeSelection,
+  type MarqueeSelectionState
+} from './marqueeInteractions';
+import { ensureDecorationHitIndex } from './sceneSync';
 import type { StagePointerPosition, StageRuntimeRefs } from './types';
 
 export { beginDecorationDrag } from './dragInteractions';
@@ -28,34 +35,8 @@ export function createStagePointerHandlers(
   let pointerDown: { x: number; y: number; emptyStageTarget: boolean } | null = null;
   let pendingMove: StagePointerPosition | null = null;
   let moveRafId = 0;
-  let marquee: {
-    startX: number;
-    startY: number;
-    currentX: number;
-    currentY: number;
-    additive: boolean;
-    moved: boolean;
-  } | null = null;
-
-  const drawMarqueeBox = () => {
-    const graphic = refs.sceneRef.current?.marqueeSelectionGraphic;
-    if (!graphic) return;
-    if (!marquee || !marquee.moved) {
-      graphic.clear();
-      graphic.visible = false;
-      return;
-    }
-    const left = Math.min(marquee.startX, marquee.currentX);
-    const top = Math.min(marquee.startY, marquee.currentY);
-    const width = Math.abs(marquee.currentX - marquee.startX);
-    const height = Math.abs(marquee.currentY - marquee.startY);
-    graphic.clear();
-    graphic.lineStyle(1.5, 0x38bdf8, 0.95);
-    graphic.beginFill(0x38bdf8, 0.14);
-    graphic.drawRect(left, top, width, height);
-    graphic.endFill();
-    graphic.visible = true;
-  };
+  let pendingSelectRafId = 0;
+  let marquee: MarqueeSelectionState | null = null;
 
   const pointerMovedFromDown = (event: FederatedPointerEvent): boolean => {
     if (!pointerDown) return false;
@@ -70,21 +51,9 @@ export function createStagePointerHandlers(
 
   const applyPointerMove = (position: StagePointerPosition): boolean => {
     if (marquee) {
-      const scene = refs.sceneRef.current;
-      if (!scene) return false;
-      const local = scene.disguiseRoot.toLocal(position);
-      marquee.currentX = local.x;
-      marquee.currentY = local.y;
-      if (!marquee.moved) {
-        const dx = local.x - marquee.startX;
-        const dy = local.y - marquee.startY;
-        if (dx * dx + dy * dy > CLICK_MOVE_TOLERANCE_SQUARED) {
-          marquee.moved = true;
-        }
-      }
-      drawMarqueeBox();
-      onRenderRequest?.();
-      return true;
+      const updated = updateMarqueeSelection(marquee, position, refs, CLICK_MOVE_TOLERANCE_SQUARED);
+      if (updated) onRenderRequest?.();
+      return updated;
     }
     const updated = refs.brushDrawRef.current
       ? appendBrushFillPoint(position, refs)
@@ -122,8 +91,6 @@ export function createStagePointerHandlers(
     }
     return true;
   };
-
-  let pendingSelectRafId = 0;
 
   const scheduleSelectDecoration = (id: string, additive: boolean) => {
     if (pendingSelectRafId) cancelAnimationFrame(pendingSelectRafId);
@@ -163,14 +130,7 @@ export function createStagePointerHandlers(
     );
     if (!hitId) {
       if (event.target === event.currentTarget) {
-        marquee = {
-          startX: local.x,
-          startY: local.y,
-          currentX: local.x,
-          currentY: local.y,
-          additive,
-          moved: false
-        };
+        marquee = beginMarqueeSelection(local.x, local.y, additive);
       }
       return;
     }
@@ -210,41 +170,14 @@ export function createStagePointerHandlers(
     }
   };
 
-  const commitMarqueeSelection = (): boolean => {
-    const activeMarquee = marquee;
-    marquee = null;
-    drawMarqueeBox();
-    if (!activeMarquee || !activeMarquee.moved) return false;
-
-    const scene = refs.sceneRef.current;
-    if (!scene) return false;
-    const boxedIds = hitTestDecorationsInRect(
-      ensureDecorationHitIndex(scene, refs.roleRef.current),
-      activeMarquee.startX,
-      activeMarquee.startY,
-      activeMarquee.currentX,
-      activeMarquee.currentY
-    );
-    const nextIds = activeMarquee.additive
-      ? Array.from(new Set([...refs.selectedIdsRef.current, ...boxedIds]))
-      : boxedIds;
-    refs.selectedIdsRef.current = nextIds;
-    syncSelectionControllerForIds(
-      scene,
-      nextIds,
-      false,
-      refs.headGlowAlwaysOnRef?.current ?? false
-    );
-    refs.callbacksRef.current.onSelectMultipleDecorations?.(nextIds);
-    onRenderRequest?.();
-    return true;
-  };
-
   const finishPointerOperation = (event: FederatedPointerEvent): boolean => {
     if (hasActivePointerOperation()) {
       flushScheduledMove(pointerPosition(event));
     }
-    if (commitMarqueeSelection()) {
+    const activeMarquee = marquee;
+    marquee = null;
+    if (commitMarqueeSelection(activeMarquee, refs)) {
+      onRenderRequest?.();
       return true;
     }
     if (commitBrushFillDraw(refs)) {
@@ -281,7 +214,7 @@ export function createStagePointerHandlers(
   const dispose = () => {
     pointerDown = null;
     marquee = null;
-    drawMarqueeBox();
+    drawMarqueeSelectionBox(refs, null);
     if (pendingSelectRafId) cancelAnimationFrame(pendingSelectRafId);
     pendingSelectRafId = 0;
     cancelScheduledMove();

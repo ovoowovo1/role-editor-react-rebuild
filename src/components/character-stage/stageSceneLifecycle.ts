@@ -15,6 +15,7 @@ import {
   syncDisguiseChildOrder,
   syncSelectionControllerForIds
 } from './sceneSync';
+import { beginDecorationDrag } from './dragInteractions';
 import { createStagePointerHandlers } from './stageInteractions';
 import { ensureRenderWhenTexturesLoad, requestStageRender } from './stageApplicationLifecycle';
 import { gafSources } from '../../mock/gafManifest';
@@ -23,7 +24,6 @@ import { drawBrushFillOverlay } from './stageOverlayVisuals';
 import { buildStageScene } from './stageSceneBuilder';
 import type {
   BrushFillState,
-  DisguiseDecoOptions,
   DragState,
   ReferenceImageOptions,
   StageRuntimeRefs,
@@ -45,7 +45,6 @@ export function useStageSceneLifecycle({
   sceneBuildConfigRef,
   hostRef,
   stageBgRef,
-  decoOptions,
   referenceImageOptions,
   sceneKey,
   cancelDeferredStageSync,
@@ -64,7 +63,6 @@ export function useStageSceneLifecycle({
   sceneBuildConfigRef: MutableRefObject<StageSceneBuildConfig>;
   hostRef: MutableRefObject<HTMLDivElement | null>;
   stageBgRef: MutableRefObject<HTMLDivElement | null>;
-  decoOptions: DisguiseDecoOptions;
   referenceImageOptions: ReferenceImageOptions;
   sceneKey: string;
   cancelDeferredStageSync(): void;
@@ -106,10 +104,11 @@ export function useStageSceneLifecycle({
           if (event.shiftKey || event.ctrlKey || event.metaKey) return;
           const targetId = currentScene.selectionDragTargetId;
           if (!targetId) return;
-          decoOptions.onPointerDown(
+          beginDecorationDrag(
             targetId,
             { x: event.global.x, y: event.global.y },
-            currentScene.disguiseRoot
+            currentScene.disguiseRoot,
+            stageRuntimeRefs
           );
         },
         onPositionUpdated: () => requestStageRender(app)
@@ -121,7 +120,7 @@ export function useStageSceneLifecycle({
       applyHeadLayerDisplayTransform(scene.headLayerClip, currentRole);
       drawBrushFillOverlay(scene, brushFillRef.current.mask);
       setDecorationInteractionEnabled(scene, !brushFillRef.current.active);
-      syncDecorationDisplayRecords(scene, currentRole, decoOptions);
+      syncDecorationDisplayRecords(scene, currentRole);
       if (stageRuntimeRefs.referenceImagesRef) {
         syncReferenceImages(
           scene,
@@ -192,7 +191,6 @@ export function useStageSceneLifecycle({
     appRef,
     brushFillRef,
     cancelDeferredStageSync,
-    decoOptions,
     referenceImageOptions,
     dragRef,
     roleRef,
